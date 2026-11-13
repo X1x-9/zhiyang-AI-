@@ -3,7 +3,7 @@
 import * as React from "react";
 import { createPortal } from "react-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Camera, Check, Loader2, Pencil, Plus, ShieldCheck, Sparkles, Trash2, X } from "lucide-react";
+import { ArrowUp, Camera, Check, Loader2, Pencil, Plus, ShieldCheck, Sparkles, Trash2, X } from "lucide-react";
 import { HamsterLoader } from "@/components/experience";
 import { Button } from "@/components/ui/button";
 import type { DynamicPlanAdjustment } from "@/lib/plan-adjustment";
@@ -76,6 +76,24 @@ type AdjustmentResponse = {
   message?: string;
 };
 
+type SignedAdjustment = {
+  suggestion: DynamicPlanAdjustment;
+  signature: string;
+};
+
+type AdjustmentChatMessage = {
+  role: "user" | "assistant";
+  content: string;
+};
+
+type AdjustmentChatResponse = {
+  reply?: string;
+  suggestion?: DynamicPlanAdjustment;
+  signature?: string;
+  applied?: boolean;
+  message?: string;
+};
+
 const mealTypeLabel: Record<string, string> = {
   BREAKFAST: "早餐",
   LUNCH: "午餐",
@@ -115,9 +133,18 @@ function DynamicAdjustPrompt({ suggestion, applying, onClose, onApply }: {
   suggestion: DynamicPlanAdjustment;
   applying: boolean;
   onClose: () => void;
-  onApply: () => void;
+  onApply: (payload?: SignedAdjustment) => Promise<string | null>;
 }) {
   const dialogRef = React.useRef<HTMLDivElement>(null);
+  const threadRef = React.useRef<HTMLDivElement>(null);
+  const [current, setCurrent] = React.useState(suggestion);
+  const [signature, setSignature] = React.useState<string | null>(null);
+  const [messages, setMessages] = React.useState<AdjustmentChatMessage[]>([]);
+  const [draft, setDraft] = React.useState("");
+  const [chatting, setChatting] = React.useState(false);
+  const [chatError, setChatError] = React.useState<string | null>(null);
+  const [applyError, setApplyError] = React.useState<string | null>(null);
+  const busy = applying || chatting;
 
   React.useEffect(() => {
     const previous = document.body.style.overflow;
@@ -132,6 +159,54 @@ function DynamicAdjustPrompt({ suggestion, applying, onClose, onApply }: {
       window.removeEventListener("keydown", onKeyDown);
     };
   }, [applying, onClose]);
+
+  React.useEffect(() => {
+    const thread = threadRef.current;
+    if (thread) thread.scrollTop = thread.scrollHeight;
+  }, [messages, chatting]);
+
+  async function sendMessage(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const text = draft.trim();
+    if (!text || busy) return;
+    const nextMessages = [...messages, { role: "user" as const, content: text }];
+    setMessages(nextMessages);
+    setDraft("");
+    setChatError(null);
+    setApplyError(null);
+    setChatting(true);
+    try {
+      const response = await fetch("/api/plans/adjust/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messages: nextMessages.slice(-12),
+          ...(signature ? { current: { suggestion: current, signature } } : {}),
+        }),
+      });
+      const data = (await response.json().catch(() => null)) as AdjustmentChatResponse | null;
+      if (!response.ok) throw new Error(data?.message ?? "刚才没接上话，再发一次试试。");
+      if (data?.reply) {
+        const reply = data.reply;
+        setMessages((previous) => [...previous, { role: "assistant", content: reply }]);
+      }
+      if (data?.suggestion && data.signature) {
+        setCurrent(data.suggestion);
+        setSignature(data.signature);
+      }
+    } catch (error) {
+      setChatError(error instanceof Error ? error.message : "刚才没接上话，再发一次试试。");
+    } finally {
+      setChatting(false);
+    }
+  }
+
+  async function apply() {
+    if (busy) return;
+    setApplyError(null);
+    const error = await onApply(signature ? { suggestion: current, signature } : undefined);
+    if (error) setApplyError(error);
+  }
 
   if (typeof document === "undefined") return null;
 
@@ -149,78 +224,111 @@ function DynamicAdjustPrompt({ suggestion, applying, onClose, onApply }: {
         aria-labelledby="pp-adjust-title"
         tabIndex={-1}
       >
-        <header className="pp-adjust-head">
-          <div>
-            <div className="pp-adjust-kicker">动态饮食调整 · 不占版本</div>
-            <h2 id="pp-adjust-title">{suggestion.title}</h2>
-            <p>{suggestion.summary}</p>
-          </div>
-          <button type="button" className="pp-adjust-close" onClick={onClose} disabled={applying} aria-label="关闭调整建议">
-            <X size={16} />
-          </button>
-        </header>
+        <div className="pp-adjust-sheet">
+          <div className="pp-adjust-inner">
+            <header className="pp-adjust-head">
+              <div>
+                <h2 id="pp-adjust-title">{current.title}</h2>
+                <p>{current.summary}</p>
+              </div>
+              <button type="button" className="pp-adjust-close" onClick={onClose} disabled={applying} aria-label="关闭调整建议">
+                <X size={16} />
+              </button>
+            </header>
 
-        <div className="pp-adjust-body">
-          <div className="pp-adjust-evidence">
-            <span>为什么建议调整</span>
-            <ul>
-              {suggestion.evidence.map((item) => <li key={item}>{item}</li>)}
-            </ul>
-          </div>
+            <div className="pp-adjust-body">
+              <div className="pp-adjust-evidence">
+                <span>为什么建议调整</span>
+                <ul>
+                  {current.evidence.map((item) => <li key={item}>{item}</li>)}
+                </ul>
+              </div>
 
-          <div className="pp-adjust-section">
-            <div className="pp-adjust-subhead">
-              <strong>今天剩下</strong>
-              <span>按七分饱，不跳过</span>
-            </div>
-            {suggestion.remainingToday.length > 0 ? (
-              <ul className="pp-adjust-meals">
-                {suggestion.remainingToday.map((meal) => (
-                  <li key={`${meal.label}-${meal.time}`}>
-                    <span className="pp-adjust-time">{meal.time}</span>
-                    <div>
-                      <strong>{meal.label} · {meal.title}</strong>
-                      <p>{meal.change}{meal.kcalHint ? ` · ${meal.kcalHint}` : ""}</p>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="pp-adjust-empty">今天的计划餐次已经记录完，主要调整明天。</p>
-            )}
-          </div>
+              <div className="pp-adjust-section">
+                <div className="pp-adjust-subhead">
+                  <strong>今天剩下</strong>
+                  <span>按七分饱，不跳过</span>
+                </div>
+                {current.remainingToday.length > 0 ? (
+                  <ul className="pp-adjust-meals">
+                    {current.remainingToday.map((meal) => (
+                      <li key={`${meal.label}-${meal.time}`}>
+                        <span className="pp-adjust-time">{meal.time}</span>
+                        <div>
+                          <strong>{meal.label} · {meal.title}</strong>
+                          <p>{meal.change}{meal.kcalHint ? ` · ${meal.kcalHint}` : ""}</p>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="pp-adjust-empty">今天的计划餐次已经记录完，主要调整明天。</p>
+                )}
+              </div>
 
-          <div className="pp-adjust-section">
-            <div className="pp-adjust-subhead">
-              <strong>{suggestion.nextDayLabel}</strong>
-              <span>正常节奏</span>
-            </div>
-            <ul className="pp-adjust-meals">
-              {suggestion.nextDayMeals.map((meal) => (
-                <li key={`${meal.label}-${meal.time}`}>
-                  <span className="pp-adjust-time">{meal.time}</span>
-                  <div>
-                    <strong>{meal.label} · {meal.title}</strong>
-                    <p>{meal.change}{meal.kcalHint ? ` · ${meal.kcalHint}` : ""}</p>
+              <div className="pp-adjust-section">
+                <div className="pp-adjust-subhead">
+                  <strong>{current.nextDayLabel}</strong>
+                  <span>正常节奏</span>
+                </div>
+                <ul className="pp-adjust-meals">
+                  {current.nextDayMeals.map((meal) => (
+                    <li key={`${meal.label}-${meal.time}`}>
+                      <span className="pp-adjust-time">{meal.time}</span>
+                      <div>
+                        <strong>{meal.label} · {meal.title}</strong>
+                        <p>{meal.change}{meal.kcalHint ? ` · ${meal.kcalHint}` : ""}</p>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              <div className="pp-adjust-chat">
+                <div className="pp-adjust-chat-head">
+                  <Sparkles size={13} aria-hidden="true" />
+                  <span>和搭子说说</span>
+                </div>
+                {messages.length > 0 && (
+                  <div className="pp-adjust-thread" ref={threadRef} role="log" aria-live="polite">
+                    {messages.map((message, index) => (
+                      <p key={index} className={`pp-adjust-msg is-${message.role}`}>{message.content}</p>
+                    ))}
+                    {chatting && <p className="pp-adjust-msg is-assistant is-typing">正在想…</p>}
                   </div>
-                </li>
-              ))}
-            </ul>
+                )}
+                <form className="pp-adjust-composer" onSubmit={sendMessage}>
+                  <input
+                    type="text"
+                    value={draft}
+                    onChange={(event) => setDraft(event.target.value)}
+                    maxLength={600}
+                    placeholder="比如：明晚换成鸡肉，或午餐主食少一点"
+                    aria-label="告诉搭子你想怎么调整"
+                    disabled={applying}
+                  />
+                  <button type="submit" className="pp-adjust-send" disabled={!draft.trim() || busy} aria-label="发送">
+                    {chatting ? <Loader2 size={15} className="pp-spin" aria-hidden="true" /> : <ArrowUp size={16} aria-hidden="true" />}
+                  </button>
+                </form>
+                {chatError && <p className="pp-adjust-chat-error" role="status">{chatError}</p>}
+                <details className="pp-adjust-safety-note">
+                  <summary><ShieldCheck size={12} aria-hidden="true" />安全边界</summary>
+                  <p>{current.safetyNote}</p>
+                </details>
+              </div>
+            </div>
+
+            <footer className="pp-adjust-foot">
+              {applyError && <p className="pp-adjust-apply-error" role="status">{applyError}</p>}
+              <button type="button" className="pp-adjust-dismiss" onClick={onClose} disabled={applying}>先不用，保持原计划</button>
+              <button type="button" className="pp-adjust-apply" onClick={() => void apply()} disabled={busy}>
+                {applying ? <Loader2 size={15} className="pp-spin" aria-hidden="true" /> : <Check size={15} aria-hidden="true" />}
+                {applying ? "调整中…" : "调整今天和明天"}
+              </button>
+            </footer>
           </div>
-
-          <p className="pp-adjust-safety">
-            <ShieldCheck size={14} aria-hidden="true" />
-            {suggestion.safetyNote}
-          </p>
         </div>
-
-        <footer className="pp-adjust-foot">
-          <button type="button" className="pp-adjust-dismiss" onClick={onClose} disabled={applying}>先不用，保持原计划</button>
-          <button type="button" className="pp-adjust-apply" onClick={onApply} disabled={applying}>
-            {applying ? <Loader2 size={15} className="pp-spin" aria-hidden="true" /> : <Check size={15} aria-hidden="true" />}
-            {applying ? "调整中…" : "调整今天和明天"}
-          </button>
-        </footer>
       </div>
     </div>,
     document.body,
@@ -651,9 +759,35 @@ export function MealRecorder() {
   const cameraInput = React.useRef<HTMLInputElement>(null);
   const processing = React.useRef(false);
   const adjustRequest = React.useRef(0);
+  const foodLayoutRef = React.useRef<HTMLDivElement>(null);
+  const foodMainRef = React.useRef<HTMLDivElement>(null);
   const [adjustSuggestion, setAdjustSuggestion] = React.useState<DynamicPlanAdjustment | null>(null);
   const [adjustApplying, setAdjustApplying] = React.useState(false);
   const [adjustNotice, setAdjustNotice] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    const layout = foodLayoutRef.current;
+    const main = foodMainRef.current;
+    if (!layout || !main) return;
+    const media = window.matchMedia("(min-width: 801px)");
+    const sync = () => {
+      if (!media.matches) {
+        layout.style.removeProperty("--food-main-height");
+        return;
+      }
+      const height = Math.round(main.getBoundingClientRect().height);
+      if (height > 0) layout.style.setProperty("--food-main-height", `${height}px`);
+    };
+    const observer = new ResizeObserver(sync);
+    observer.observe(main);
+    media.addEventListener("change", sync);
+    sync();
+    return () => {
+      observer.disconnect();
+      media.removeEventListener("change", sync);
+      layout.style.removeProperty("--food-main-height");
+    };
+  }, []);
 
   const invalidateAll = () => {
     void queryClient.invalidateQueries({ queryKey: ["meals"] });
@@ -676,14 +810,18 @@ export function MealRecorder() {
     }
   }, []);
 
-  const applyAdjustment = React.useCallback(async () => {
-    if (adjustApplying) return;
+  const applyAdjustment = React.useCallback(async (payload?: SignedAdjustment): Promise<string | null> => {
+    if (adjustApplying) return null;
     setAdjustApplying(true);
     setAdjustNotice(null);
     try {
-      const response = await fetch("/api/plans/adjust/apply", { method: "POST" });
+      const response = await fetch("/api/plans/adjust/apply", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload ?? {}),
+      });
       const data = (await response.json().catch(() => null)) as AdjustmentResponse | null;
-      if (!response.ok) throw new Error(data?.message ?? "调整没有保存成功，请稍后重试。");
+      if (!response.ok) return data?.message ?? "调整没有保存成功，请稍后重试。";
       setAdjustSuggestion(null);
       if (data?.status === "APPLIED") {
         setAdjustNotice("已调整今天剩下的餐次和明天。计划页可以看到这次调整，随时能恢复正式计划。");
@@ -691,8 +829,9 @@ export function MealRecorder() {
       } else {
         setAdjustNotice(data?.reason ?? "记录已变化，暂不需要调整。");
       }
-    } catch (err) {
-      setAdjustNotice(err instanceof Error ? err.message : "调整没有保存成功，请稍后重试。");
+      return null;
+    } catch {
+      return "网络不太稳，调整没有保存成功，请稍后重试。";
     } finally {
       setAdjustApplying(false);
     }
@@ -888,8 +1027,8 @@ export function MealRecorder() {
 
   return (
     <>
-    <div className="food-layout">
-      <div className="food-main">
+    <div className="food-layout" ref={foodLayoutRef}>
+      <div className="food-main" ref={foodMainRef}>
         {adjustNotice && <p className="pp-adjust-notice" role="status">{adjustNotice}</p>}
         <section className="surface meal-card food-upload">
           <SectionTitle title="拍照记录" />
@@ -1086,7 +1225,7 @@ export function MealRecorder() {
         suggestion={adjustSuggestion}
         applying={adjustApplying}
         onClose={() => setAdjustSuggestion(null)}
-        onApply={() => void applyAdjustment()}
+        onApply={(payload) => applyAdjustment(payload)}
       />
     )}
     </>
