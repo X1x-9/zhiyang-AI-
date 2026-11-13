@@ -1,12 +1,12 @@
 import {
-  activityLabels,
+  activityText,
   buildDietPlan,
   buildGoalLine,
   buildMovementPlan,
   buildSpaceTargets,
-  dietLabels,
-  environmentLabels,
-  goalLabels,
+  dietText,
+  environmentText,
+  goalText,
   spaceCompleteness,
   type DietSlot,
   type SpaceProfile,
@@ -76,6 +76,11 @@ export type PlanAgentAdjustment = {
   reason: string;
 };
 
+export type PlanAgentCitation = {
+  note: string;
+  referenceIndex: number;
+};
+
 export type PlanInputSummary = {
   profileFields: string[];
   confirmedMeals: number;
@@ -95,6 +100,7 @@ export type PlanAgentMeta = {
   rationale: string[];
   adjustments: PlanAgentAdjustment[];
   references: PlanAgentReference[];
+  citations?: PlanAgentCitation[];
   ragStatus: PlanRagStatus;
 };
 
@@ -117,6 +123,7 @@ export type PlanAgentDraft = {
   rationale: string[];
   adjustments: PlanAgentAdjustment[];
   references: PlanAgentReference[];
+  citations: PlanAgentCitation[];
   toolLog: PlanAgentToolLog[];
   ragStatus: PlanRagStatus;
 };
@@ -151,7 +158,6 @@ export type PlanDocument = {
     meals: PlanMeal[];
     avoidNote: string;
     budgetNote: string;
-    energySplitNote: string | null;
   };
   movement: ReturnType<typeof buildMovementPlan>;
   safety: PlanSafety;
@@ -221,9 +227,9 @@ function buildSafety(profile: SpaceProfile, targets: SpaceTargets | null, target
   const budget = num(profile.budget);
 
   if (!targets && targetsReason) flags.push(targetsReason);
-  if (avoid) flags.push(`已记录忌口：${avoid}。计划不会逐项核对加工食品配料表，购买前仍需确认。`);
-  if (profile.diet === "vegetarian") flags.push("素食结构需要留意蛋白质、铁和维生素 B12；长期素食建议咨询营养师。");
-  if (budget !== null) flags.push(`预算约 ¥${budget}/天，只作为采购和外食的参考，不代表营养保证。`);
+  if (avoid) flags.push(`已记录忌口：${avoid}；加工食品仍需自行核对配料。`);
+  if (profile.diet === "vegetarian") flags.push("素食需要留意蛋白质、铁和维生素 B12。");
+  if (budget !== null) flags.push(`预算约 ¥${budget}/天，仅作采购参考。`);
   if (weight !== null && targetWeight !== null && weight > 0) {
     const change = Math.abs(targetWeight - weight) / weight;
     if (change > 0.1) flags.push("目标体重与当前体重差距超过 10%，建议拆成阶段目标，并和专业人士确认节奏。");
@@ -231,14 +237,14 @@ function buildSafety(profile: SpaceProfile, targets: SpaceTargets | null, target
   if (targets && targets.bmi < 18.5 && (profile.goal === "lose" || (weight !== null && targetWeight !== null && targetWeight < weight))) {
     flags.push("按填写的身高体重计算，BMI 低于 18.5 的常见范围，不建议继续减脂；请先咨询医生或营养师。");
   }
-  if (profile.goal === "lose") flags.push("热量参考设置了 1400 kcal 下限；下限不等于适合所有人，长期低于需求需要专业评估。");
+  if (profile.goal === "lose") flags.push("热量下限设为 1400 kcal，长期低于需求请先咨询专业人士。");
   if (mealSummary && mealSummary.recordCount > 0 && mealSummary.macroCompleteMeals < mealSummary.recordCount) {
-    flags.push(`近 ${mealSummary.windowDays} 天有 ${mealSummary.recordCount - mealSummary.macroCompleteMeals} 餐缺少完整蛋白质、碳水或脂肪字段；缺失不等于没吃，也不据此判断摄入是否达标。`);
+    flags.push(`近 ${mealSummary.windowDays} 天有 ${mealSummary.recordCount - mealSummary.macroCompleteMeals} 餐营养字段不完整，未计入汇总。`);
   }
 
   return {
     flags,
-    disclaimer: "本计划由固定规则生成；AI 建议只在受约束范围内选择建议重点并解释，不计算营养数值。计划不构成医疗诊断、营养处方或效果承诺，也不替代医生或注册营养师。",
+    disclaimer: "固定规则生成，AI 仅在约束内选择建议重点；不构成医疗诊断、营养处方或效果承诺。",
   };
 }
 
@@ -261,22 +267,22 @@ function buildDataBasis(profile: SpaceProfile, targets: SpaceTargets | null, mea
 
   const notes: string[] = [];
   if (!mealSummary?.recordCount) {
-    notes.push("近 7 天没有读到已确认餐食；本次只按资料生成，不推断你的饮食情况，也不把缺失记录当成没吃。");
+    notes.push("近 7 天没有已确认餐食，本次只按资料生成。");
   } else {
-    notes.push(`读取了 ${mealSummary.recordCount} 餐已确认记录，覆盖 ${mealSummary.recordedDays} 天；其中 ${mealSummary.macroCompleteMeals} 餐含完整蛋白质、碳水与脂肪字段。`);
+    notes.push(`读取 ${mealSummary.recordCount} 餐已确认记录（${mealSummary.recordedDays} 天），其中 ${mealSummary.macroCompleteMeals} 餐营养字段完整。`);
     if (mealSummary.macroCompleteMeals < mealSummary.recordCount) {
-      notes.push("缺少营养字段的餐食不进入宏量营养素汇总；缺失只代表记录不完整，不代表实际摄入。");
+      notes.push("营养字段不完整的餐食未计入汇总。");
     }
     if (mealSummary.completeDayCount < 2) {
-      notes.push("记录较完整的天数不足 2 天，本次不根据单日数据调整计划。");
+      notes.push("完整记录不足 2 天，本次不按单日数据调整。");
     }
   }
-  notes.push("热量与蛋白质是区间参考，不是精确消耗或处方；实际需求会随身体状况变化。");
-  notes.push("餐次结构和替换建议来自固定模板，会按饮食偏好与训练环境选择。");
+  notes.push("热量与蛋白质为区间参考。");
+  notes.push("餐次结构与替换来自固定模板，并按饮食偏好与训练环境选择。");
   if (agent?.status === "OK") {
-    notes.push("AI 只选择受约束的建议重点并解释；热量计算、营养汇总和安全边界由确定性规则完成。");
+    notes.push("AI 仅选择建议重点，数值与安全边界由规则完成。");
   } else if (agent) {
-    notes.push("本次 AI 建议未完成，计划仍按确定性规则生成；不会用模型编造数据补齐。");
+    notes.push("AI 建议未完成，计划仍按规则生成。");
   }
 
   return {
@@ -303,11 +309,11 @@ function buildCoaching(mealSummary?: PlanMealSummary | null, agent?: PlanAgentDr
   let focusNote = agent?.focusNote?.trim() || "";
   if (!focusNote) {
     if (!mealSummary?.recordCount) {
-      focusNote = "近 7 天没有已确认餐食，本次只按资料生成结构，不推断你的饮食情况。";
+      focusNote = "近 7 天没有已确认餐食，只按资料生成。";
     } else if (mealSummary.completeDayCount < 2) {
-      focusNote = "记录较完整的天数不足 2 天，本次不根据单日记录调整计划，保持资料生成的结构。";
+      focusNote = "完整记录不足 2 天，暂不调整计划。";
     } else {
-      focusNote = "已确认餐食中没有触发可安全执行的调整条件，本次保持资料生成的结构。";
+      focusNote = "没有触发可安全执行的调整，保持现有结构。";
     }
   }
   return {
@@ -340,6 +346,7 @@ function buildAgentMeta(agent: PlanAgentDraft, profile: SpaceProfile, mealSummar
     rationale: agent.rationale,
     adjustments: agent.adjustments,
     references: agent.references,
+    citations: agent.citations,
     ragStatus: agent.ragStatus,
   };
 }
@@ -423,10 +430,10 @@ export function buildPlan(profile: SpaceProfile, version = 1, now = new Date(), 
     profileSnapshot: {
       name: profile.name,
       goal: profile.goal,
-      goalLabel: goalLabels[profile.goal],
-      activityLabel: activityLabels[profile.activity],
-      environmentLabel: environmentLabels[profile.environment],
-      dietLabel: dietLabels[profile.diet],
+      goalLabel: goalText(profile.goal),
+      activityLabel: activityText(profile.activity),
+      environmentLabel: environmentText(profile.environment),
+      dietLabel: dietText(profile.diet),
       age: profile.age,
       gender: profile.gender,
       heightCm: profile.heightCm,
@@ -444,9 +451,6 @@ export function buildPlan(profile: SpaceProfile, version = 1, now = new Date(), 
       meals: buildMealHints(diet.meals, targets),
       avoidNote: diet.avoidNote,
       budgetNote: diet.budgetNote,
-      energySplitNote: targets
-        ? "每餐热量按早餐 25%、午餐 35%、加餐 10%、晚餐 30% 粗略分配，只用于安排结构，不需要精确到每一口。"
-        : null,
     },
     movement,
     safety: buildSafety(profile, targets, targetResult.reason, mealSummary),

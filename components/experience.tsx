@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { motion, useReducedMotion, useScroll, useSpring } from "framer-motion";
-import { Activity, ArrowUp, ChevronRight, Coffee, Droplets, Heart, Info, Moon, NotebookPen, Pause, Play, Salad, Sparkles, Sun, Utensils, Wind, X } from "lucide-react";
+import { Activity, ArrowUp, ChevronRight, Coffee, Droplets, Heart, Moon, NotebookPen, Pause, Play, Salad, Sparkles, Sun, Utensils, Wind, X } from "lucide-react";
 
 const ease = [0.22, 1, 0.36, 1] as const;
 
@@ -82,7 +82,6 @@ export function HealthTipsCarousel() {
         <div>
           <div className="tips-eyebrow"><Sparkles size={13} /> 轻提示</div>
           <h2 id="tips-title">今天，给自己一个小提醒</h2>
-          <p>10 条一般生活建议，慢慢转；悬停或点暂停，可以停下来读。不替代个体化指导。</p>
         </div>
         <div className="tips-controls">
           <button
@@ -113,10 +112,6 @@ export function HealthTipsCarousel() {
                 </div>
                 <h3>{tip.title}</h3>
                 <p>{tip.body}</p>
-                <div className="tip-foot">
-                  <Info size={11} aria-hidden="true" />
-                  <span>一般生活建议</span>
-                </div>
               </article>
             );
           })}

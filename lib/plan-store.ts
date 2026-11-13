@@ -1,4 +1,4 @@
-import { listDemoMeals } from "./demo-data";
+import { listDemoSessionMeals } from "./demo-data";
 import type { Identity } from "./identity";
 import { PLANS_WINDOW_DAYS, summarizeMeals, planMealRecordFromDemo, type PlanMealRecord } from "./plan-context";
 import { runPlanAgent } from "./plan-agent";
@@ -17,6 +17,7 @@ export type PlanState = {
   activePlan: PlanDocument | null;
   activeVersion: number | null;
   versions: PlanVersionSummary[];
+  versionTotal: number;
   persisted: boolean;
   demo: boolean;
 };
@@ -48,6 +49,10 @@ function memoryRecords(identity: Identity) {
   return memoryStore().get(memoryKey(identity)) ?? [];
 }
 
+export function clearDemoPlanMemory(sessionId: string) {
+  memoryStore().delete(`demo:${sessionId}`);
+}
+
 function toSummary(plan: PlanDocument, active: boolean, isLatest: boolean): PlanVersionSummary {
   return {
     version: plan.version,
@@ -62,8 +67,9 @@ function toSummary(plan: PlanDocument, active: boolean, isLatest: boolean): Plan
 
 function demoMealsForPlan(identity: Identity): PlanMealRecord[] {
   if (identity.kind !== "demo") return [];
-  return listDemoMeals(identity.sessionId)
-    .filter((meal) => meal.status === "CONFIRMED")
+  const cutoff = Date.now() - PLANS_WINDOW_DAYS * 86_400_000;
+  return listDemoSessionMeals(identity.sessionId)
+    .filter((meal) => meal.status === "CONFIRMED" && new Date(meal.eatenAt).getTime() >= cutoff)
     .map((meal) => planMealRecordFromDemo(meal));
 }
 
@@ -74,7 +80,7 @@ function planContext(profile: SpaceProfile, meals: PlanMealRecord[], currentPlan
   return { targets, mealSummary, nextVersion };
 }
 
-async function buildNextPlan(profile: SpaceProfile, meals: PlanMealRecord[], currentPlan: PlanDocument | null) {
+async function runPlanDraft(profile: SpaceProfile, meals: PlanMealRecord[], currentPlan: PlanDocument | null) {
   const { mealSummary, nextVersion, targets } = planContext(profile, meals, currentPlan);
   const agent = await runPlanAgent({
     profile,
@@ -83,11 +89,40 @@ async function buildNextPlan(profile: SpaceProfile, meals: PlanMealRecord[], cur
     currentPlanVersion: currentPlan?.version ?? null,
     nextVersion,
   });
-  return buildPlan(profile, nextVersion, new Date(), {
+  return { mealSummary, agent };
+}
+
+function composePlan(
+  profile: SpaceProfile,
+  mealSummary: Awaited<ReturnType<typeof runPlanDraft>>["mealSummary"],
+  agent: Awaited<ReturnType<typeof runPlanDraft>>["agent"],
+  previousPlan: PlanDocument | null,
+) {
+  return buildPlan(profile, (previousPlan?.version ?? 0) + 1, new Date(), {
     mealSummary,
     agent,
-    previousPlan: currentPlan,
+    previousPlan,
   });
+}
+
+function isVersionConflict(error: unknown) {
+  return typeof error === "object"
+    && error !== null
+    && "code" in error
+    && (error as { code?: unknown }).code === "P2002";
+}
+
+async function readLatestPlan(profileId: string): Promise<PlanDocument | null> {
+  try {
+    const row = await getPrisma().planVersion.findFirst({
+      where: { profileId },
+      orderBy: { version: "desc" },
+    });
+    return (row?.plan as unknown as PlanDocument | undefined) ?? null;
+  } catch (error) {
+    console.error("PLAN LATEST READ ERROR", error);
+    throw new PlanStorageError();
+  }
 }
 
 function saveToMemory(identity: Identity, plan: PlanDocument): StoredPlan {
@@ -102,14 +137,17 @@ function saveToMemory(identity: Identity, plan: PlanDocument): StoredPlan {
 export async function generatePlanVersion(identity: Identity, profile: SpaceProfile): Promise<StoredPlan> {
   if (identity.kind === "demo") {
     const current = memoryRecords(identity)[memoryRecords(identity).length - 1]?.plan ?? null;
-    const plan = await buildNextPlan(profile, demoMealsForPlan(identity), current);
+    const draft = await runPlanDraft(profile, demoMealsForPlan(identity), current);
+    const plan = composePlan(profile, draft.mealSummary, draft.agent, current);
     return saveToMemory(identity, plan);
   }
   if (!process.env.DATABASE_URL) throw new PlanStorageError();
 
+  const prisma = getPrisma();
+  let latestRow;
+  let mealRows;
   try {
-    const prisma = getPrisma();
-    const [latestRow, mealRows] = await Promise.all([
+    [latestRow, mealRows] = await Promise.all([
       prisma.planVersion.findFirst({
         where: { profileId: identity.profileId },
         orderBy: { version: "desc" },
@@ -133,26 +171,38 @@ export async function generatePlanVersion(identity: Identity, profile: SpaceProf
         take: 50,
       }),
     ]);
-
-    const currentPlan = (latestRow?.plan as unknown as PlanDocument | undefined) ?? null;
-    const meals: PlanMealRecord[] = mealRows.map((meal) => ({
-      title: meal.title,
-      mealType: meal.mealType,
-      eatenAt: meal.eatenAt,
-      kcal: meal.estimatedKcal,
-      proteinG: meal.proteinG,
-      carbsG: meal.carbsG,
-      fatG: meal.fatG,
-    }));
-    const plan = await buildNextPlan(profile, meals, currentPlan);
-
-    await prisma.planVersion.create({
-      data: { profileId: identity.profileId, version: plan.version, plan },
-    });
-    return { plan, persisted: true, demo: false };
   } catch (error) {
-    console.error("PLAN GENERATE ERROR", error);
+    console.error("PLAN INPUT READ ERROR", error);
     throw new PlanStorageError();
+  }
+
+  let currentPlan = (latestRow?.plan as unknown as PlanDocument | undefined) ?? null;
+  const meals: PlanMealRecord[] = mealRows.map((meal) => ({
+    title: meal.title,
+    mealType: meal.mealType,
+    eatenAt: meal.eatenAt,
+    kcal: meal.estimatedKcal,
+    proteinG: meal.proteinG,
+    carbsG: meal.carbsG,
+    fatG: meal.fatG,
+  }));
+  const draft = await runPlanDraft(profile, meals, currentPlan);
+
+  for (let attempt = 0; ; attempt += 1) {
+    const plan = composePlan(profile, draft.mealSummary, draft.agent, currentPlan);
+    try {
+      await prisma.planVersion.create({
+        data: { profileId: identity.profileId, version: plan.version, plan },
+      });
+      return { plan, persisted: true, demo: false };
+    } catch (error) {
+      if (isVersionConflict(error) && attempt < 2) {
+        currentPlan = (await readLatestPlan(identity.profileId)) ?? currentPlan;
+        continue;
+      }
+      console.error("PLAN VERSION WRITE ERROR", error);
+      throw new PlanStorageError();
+    }
   }
 }
 
@@ -199,6 +249,7 @@ export async function getPlanState(identity: Identity): Promise<PlanState> {
       activePlan: active?.plan ?? null,
       activeVersion: active?.plan.version ?? null,
       versions: [...records].reverse().map((record, index) => toSummary(record.plan, record.active, index === 0)),
+      versionTotal: records.length,
       persisted: false,
       demo: true,
     };
@@ -207,7 +258,7 @@ export async function getPlanState(identity: Identity): Promise<PlanState> {
 
   try {
     const prisma = getPrisma();
-    const [rows, activeRow] = await Promise.all([
+    const [rows, activeRow, versionTotal] = await Promise.all([
       prisma.planVersion.findMany({
         where: { profileId: identity.profileId },
         orderBy: { version: "desc" },
@@ -217,6 +268,7 @@ export async function getPlanState(identity: Identity): Promise<PlanState> {
         where: { profileId: identity.profileId, activeAt: { not: null } },
         orderBy: { activeAt: "desc" },
       }),
+      prisma.planVersion.count({ where: { profileId: identity.profileId } }),
     ]);
     const latest = rows[0] ?? null;
     const allRows = activeRow && !rows.some((row) => row.id === activeRow.id)
@@ -230,6 +282,7 @@ export async function getPlanState(identity: Identity): Promise<PlanState> {
         const plan = row.plan as unknown as PlanDocument;
         return toSummary(plan, row.activeAt !== null, row.id === latest?.id);
       }),
+      versionTotal,
       persisted: true,
       demo: false,
     };

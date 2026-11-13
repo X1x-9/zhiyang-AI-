@@ -118,7 +118,7 @@ export function AccountPanel({ data, loading, onChanged, compact = false }: Acco
         {!compact && (
           <span className="account-copy">
             <strong>{loading ? "读取账户…" : authenticated ? displayName : demo ? "登录 / 注册" : "登录"}</strong>
-            <small>{authenticated ? data?.account?.email ?? "" : demo ? "演示沙盒 · 会话隔离" : "保存你的记录"}</small>
+            <small>{authenticated ? data?.account?.email ?? "" : demo ? "演示沙盒" : "保存你的记录"}</small>
           </span>
         )}
       </button>
@@ -135,7 +135,7 @@ export function AccountPanel({ data, loading, onChanged, compact = false }: Acco
                 <span className="account-badge"><UserRound size={16} aria-hidden="true" />已登录</span>
                 <h2 id="account-title">{displayName}</h2>
                 <p className="account-email">{data?.account?.email}</p>
-                <p className="account-hint">餐食、个人资料和计划都保存在你的账户下；换设备登录后仍会同步。</p>
+                <p className="account-hint">资料与餐食保存在账户下。</p>
                 {error && <p className="account-error" role="alert">{error}</p>}
                 <button type="button" className="account-submit is-ghost" disabled={pending} onClick={() => void handleSignOut()}>
                   <LogOut size={15} aria-hidden="true" />{pending ? "正在退出…" : "退出登录"}
@@ -147,8 +147,8 @@ export function AccountPanel({ data, loading, onChanged, compact = false }: Acco
                 <h2 id="account-title">{mode === "login" ? "欢迎回来" : "创建账户"}</h2>
                 <p className="account-hint">
                   {demo
-                    ? "当前是匿名演示沙盒：资料和餐食只保存在这个浏览器会话里。登录后会切换到你的账户，不再与演示数据混在一起。"
-                    : "登录后，餐食记录、个人资料和计划版本都会归到你的账户下。"}
+                    ? "数据只保存在当前浏览器；登录后切到你的账户。"
+                    : "记录与计划归到你的账户。"}
                 </p>
 
                 <div className="account-tabs" role="tablist" aria-label="登录或注册">
@@ -176,7 +176,7 @@ export function AccountPanel({ data, loading, onChanged, compact = false }: Acco
                 <button type="submit" className="account-submit" disabled={pending || !email.trim() || !password}>
                   {pending ? "请稍候…" : mode === "register" ? "注册并登录" : "登录"}
                 </button>
-                <p className="account-fineprint">密码只保存加密后的哈希值。智养 AI 不提供医疗诊断。</p>
+                <p className="account-fineprint">密码仅保存加密哈希。</p>
               </form>
             )}
           </div>

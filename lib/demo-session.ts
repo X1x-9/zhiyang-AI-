@@ -17,3 +17,7 @@ export function writeDemoProfile(sessionId: string, profile: SpaceProfile) {
   profileStore().set(sessionId, profile);
   return profile;
 }
+
+export function clearDemoProfile(sessionId: string) {
+  profileStore().delete(sessionId);
+}

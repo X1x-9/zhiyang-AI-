@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { IdentityError, resolveIdentity } from "@/lib/identity";
-import { loadProfile, saveProfile } from "@/lib/profile-store";
+import { loadProfile, clearProfile, saveProfile } from "@/lib/profile-store";
 import { normalizeSpaceProfile, validateSpaceProfile } from "@/lib/space";
 
 const bodySchema = z.object({ profile: z.unknown() });
@@ -68,5 +68,23 @@ export async function PUT(request: Request) {
     }
     console.error("PROFILE PUT ERROR", error);
     return NextResponse.json({ error: "PROFILE_SAVE_FAILED", message: "资料没有保存成功，请稍后重试。" }, { status: 503 });
+  }
+}
+
+export async function DELETE() {
+  try {
+    const identity = await resolveIdentity();
+    if (!identity) {
+      return NextResponse.json({ error: "AUTH_REQUIRED", message: "请先登录后再清空个人资料。" }, { status: 401 });
+    }
+
+    await clearProfile(identity);
+    return NextResponse.json({ cleared: true, demo: identity.kind === "demo" });
+  } catch (error) {
+    if (error instanceof IdentityError) {
+      return NextResponse.json({ error: "DATABASE_UNAVAILABLE", message: "数据服务暂时不可用，请稍后重试。" }, { status: 503 });
+    }
+    console.error("PROFILE DELETE ERROR", error);
+    return NextResponse.json({ error: "PROFILE_CLEAR_FAILED", message: "资料和对应计划没有清空成功，请稍后重试。" }, { status: 503 });
   }
 }

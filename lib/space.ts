@@ -13,12 +13,12 @@ export type SpaceProfile = {
   heightCm: string;
   weightKg: string;
   targetWeightKg: string;
-  goal: SpaceGoal;
-  activity: SpaceActivity;
-  days: SpaceDays;
-  minutes: SpaceMinutes;
-  environment: SpaceEnvironment;
-  diet: SpaceDiet;
+  goal: SpaceGoal | "";
+  activity: SpaceActivity | "";
+  days: SpaceDays | "";
+  minutes: SpaceMinutes | "";
+  environment: SpaceEnvironment | "";
+  diet: SpaceDiet | "";
   avoid: string;
   budget: string;
   source: "demo" | "local";
@@ -100,6 +100,35 @@ export const dietOptions: Array<{ value: SpaceDiet; label: string }> = [
   { value: "light", label: "清淡少油" },
 ];
 
+export function goalText(value: SpaceProfile["goal"]) {
+  return value ? goalLabels[value] : "健康目标待选择";
+}
+
+export function activityText(value: SpaceProfile["activity"]) {
+  return value ? activityLabels[value] : "活动水平待选择";
+}
+
+export function environmentText(value: SpaceProfile["environment"]) {
+  return value ? environmentLabels[value] : "训练环境待选择";
+}
+
+export function dietText(value: SpaceProfile["diet"]) {
+  return value ? dietLabels[value] : "饮食偏好待选择";
+}
+
+export function hasRhythmChoices(profile: SpaceProfile) {
+  return Boolean(profile.goal && profile.activity && profile.days && profile.minutes && profile.environment && profile.diet);
+}
+
+export function rhythmText(profile: SpaceProfile) {
+  const parts = [
+    profile.goal ? goalLabels[profile.goal] : "",
+    profile.days ? `每周 ${profile.days} 次` : "",
+    profile.environment ? environmentLabels[profile.environment] : "",
+  ].filter(Boolean);
+  return parts.length > 0 ? parts.join(" · ") : "还没有选择健康目标与训练节奏";
+}
+
 const coreFields: Array<[keyof SpaceProfile, string]> = [
   ["name", "称呼"],
   ["age", "年龄"],
@@ -119,6 +148,10 @@ function text(value: unknown, fallback = "", max = 400) {
 
 function pick<T extends string>(value: unknown, allowed: readonly T[], fallback: T): T {
   return typeof value === "string" && (allowed as readonly string[]).includes(value) ? value as T : fallback;
+}
+
+function pickChoice<T extends string>(value: unknown, allowed: readonly T[]): T | "" {
+  return typeof value === "string" && (allowed as readonly string[]).includes(value) ? value as T : "";
 }
 
 export function createDemoSpaceProfile(name = "林同学", weightKg: number | null = 63.4): SpaceProfile {
@@ -149,12 +182,12 @@ export function createEmptySpaceProfile(name = ""): SpaceProfile {
     heightCm: "",
     weightKg: "",
     targetWeightKg: "",
-    goal: "maintain",
-    activity: "light",
-    days: "3",
-    minutes: "25",
-    environment: "home",
-    diet: "balanced",
+    goal: "",
+    activity: "",
+    days: "",
+    minutes: "",
+    environment: "",
+    diet: "",
     avoid: "",
     budget: "",
     source: "local",
@@ -171,12 +204,12 @@ export function normalizeSpaceProfile(raw: unknown): SpaceProfile | null {
     heightCm: text(value.heightCm, "", 6),
     weightKg: text(value.weightKg, "", 6),
     targetWeightKg: text(value.targetWeightKg, "", 6),
-    goal: pick(value.goal, ["lose", "maintain", "gain", "steady"], "maintain"),
-    activity: pick(value.activity, ["low", "light", "moderate", "high"], "light"),
-    days: pick(value.days, ["2", "3", "4", "5"], "3"),
-    minutes: pick(value.minutes, ["15", "25", "40"], "25"),
-    environment: pick(value.environment, ["home", "gear", "gym"], "home"),
-    diet: pick(value.diet, ["balanced", "takeout", "protein", "vegetarian", "light"], "balanced"),
+    goal: pickChoice(value.goal, ["lose", "maintain", "gain", "steady"]),
+    activity: pickChoice(value.activity, ["low", "light", "moderate", "high"]),
+    days: pickChoice(value.days, ["2", "3", "4", "5"]),
+    minutes: pickChoice(value.minutes, ["15", "25", "40"]),
+    environment: pickChoice(value.environment, ["home", "gear", "gym"]),
+    diet: pickChoice(value.diet, ["balanced", "takeout", "protein", "vegetarian", "light"]),
     avoid: text(value.avoid, "", 80),
     budget: text(value.budget, "", 6),
     source: value.source === "demo" ? "demo" : "local",
@@ -233,6 +266,9 @@ export function buildSpaceTargets(profile: SpaceProfile): SpaceTargetResult {
   }
   if (age > 90 || height < 130 || height > 220 || weight < 35 || weight > 200) {
     return { targets: null, reason: "年龄、身高或体重超出本页的常见范围，先核对一下数值；暂时不估算。" };
+  }
+  if (!profile.activity || !profile.goal) {
+    return { targets: null, reason: "选择活动水平和健康目标后，才会给出热量参考。" };
   }
 
   const base = 10 * weight + 6.25 * height - 5 * age;
@@ -334,13 +370,13 @@ const dietTemplates: Record<SpaceDiet, DietSlot[]> = {
 export function buildDietPlan(profile: SpaceProfile) {
   const avoid = profile.avoid.trim();
   const budget = numeric(profile.budget);
-  const meals = dietTemplates[profile.diet].map((meal) => ({ ...meal }));
+  const meals = (profile.diet ? dietTemplates[profile.diet] : []).map((meal) => ({ ...meal }));
   const avoidNote = avoid
-    ? `已记录需要避开：${avoid}。下面是通用结构，具体配料请按忌口替换；外食前再确认一次。`
-    : "还没有填写忌口；如果存在过敏，先补充，再按这个结构准备。";
+    ? `已记录忌口：${avoid}；通用结构，配料按忌口替换。`
+    : "未填写忌口；如有过敏请先补充。";
   const budgetNote = budget !== null
-    ? `预算约 ¥${budget}/天：优先把预算放在蛋白质和蔬菜上，早餐和加餐尽量在家解决。`
-    : "没有填写预算；外食时先选蛋白质和蔬菜，再看价格。";
+    ? `预算约 ¥${budget}/天，优先花在蛋白质和蔬菜上。`
+    : "未填写预算；外食先选蛋白质和蔬菜。";
   return { meals, avoidNote, budgetNote };
 }
 
@@ -425,7 +461,22 @@ export type SpaceSession = {
   tone: SessionTone;
 };
 
-export function buildMovementPlan(profile: SpaceProfile) {
+export function buildMovementPlan(profile: SpaceProfile): {
+  sessions: SpaceSession[];
+  week: Array<{ label: string; short: string; session: SpaceSession | null }>;
+  sessionCount: number;
+  totalMinutes: number;
+  environmentLabel: string;
+} {
+  if (!profile.goal || !profile.days || !profile.minutes || !profile.environment) {
+    return {
+      sessions: [],
+      week: weekLabels.map((label, index) => ({ label, short: weekShorts[index], session: null })),
+      sessionCount: 0,
+      totalMinutes: 0,
+      environmentLabel: environmentText(profile.environment),
+    };
+  }
   const totalMinutes = Number(profile.minutes);
   const days = trainingDays[profile.days];
   const pattern = sessionPattern[profile.goal];
@@ -469,7 +520,7 @@ export function buildSpacePlans(profile: SpaceProfile) {
   };
 }
 
-export type SpaceFieldErrorKey = "name" | "age" | "heightCm" | "weightKg" | "targetWeightKg" | "budget" | "avoid";
+export type SpaceFieldErrorKey = "name" | "age" | "heightCm" | "weightKg" | "targetWeightKg" | "budget" | "avoid" | "goal" | "activity" | "days" | "minutes" | "environment" | "diet";
 export type SpaceFieldErrors = Partial<Record<SpaceFieldErrorKey, string>>;
 
 export function validateSpaceProfile(profile: SpaceProfile): SpaceFieldErrors {
@@ -477,6 +528,13 @@ export function validateSpaceProfile(profile: SpaceProfile): SpaceFieldErrors {
   const name = profile.name.trim();
   if (!name) errors.name = "先写一个称呼，规划里会用到。";
   else if (name.length > 12) errors.name = "称呼最多 12 个字。";
+
+  if (!profile.goal) errors.goal = "选一个健康目标，计划才有方向。";
+  if (!profile.activity) errors.activity = "选择日常活动水平，热量参考会更贴近你。";
+  if (!profile.days) errors.days = "选择每周训练次数。";
+  if (!profile.minutes) errors.minutes = "选择每次训练时长。";
+  if (!profile.environment) errors.environment = "选择训练环境，动作会按场地安排。";
+  if (!profile.diet) errors.diet = "选择饮食偏好，餐次会按偏好换菜。";
 
   const age = numeric(profile.age);
   if (profile.age.trim() && (age === null || !Number.isInteger(age) || age < 14 || age > 90)) {

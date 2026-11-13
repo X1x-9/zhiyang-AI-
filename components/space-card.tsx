@@ -4,8 +4,8 @@ import * as React from "react";
 import { ArrowRight, ChevronRight, type LucideIcon } from "lucide-react";
 import type { Page } from "@/stores/health-store";
 import {
-  environmentLabels,
-  goalLabels,
+  goalText,
+  rhythmText,
   spaceCompleteness,
   type SpaceProfile,
 } from "@/lib/space";
@@ -68,7 +68,7 @@ export function SpaceCard({ profile, saved, demo, active, shortcuts, onOpen, onN
           <span className="space-card-avatar" aria-hidden="true">{initial}</span>
           <span className="space-card-name">
             <strong>{name || "你的空间"}</strong>
-            <small>{goalLabels[profile.goal]} · 资料 {completeness.filled}/{completeness.total}</small>
+            <small>{goalText(profile.goal)} · 资料 {completeness.filled}/{completeness.total}</small>
           </span>
           <ChevronRight size={15} className="space-card-chev" aria-hidden="true" />
         </button>
@@ -105,7 +105,7 @@ export function SpaceCard({ profile, saved, demo, active, shortcuts, onOpen, onN
             </span>
           </div>
           <p className="space-card-goal">
-            {goalLabels[profile.goal]} · 每周 {profile.days} 次 · {environmentLabels[profile.environment]}
+            {rhythmText(profile)}
           </p>
           <div className="space-card-meter">
             <div><span>资料完整度</span><b>{completeness.filled}/{completeness.total}</b></div>

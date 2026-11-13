@@ -114,7 +114,7 @@ export function SectionHero({ onEnter }: SectionHeroProps) {
                 <span className="stat-kicker">餐食记录</span>
                 <span className="stat-number"><strong>一餐<span className="stat-unit">一拍</span></strong></span>
                 <span className="stat-bottom">
-                  <span className="stat-copy">拍照或手动记一餐，确认后才计入当天的营养统计。</span>
+                  <span className="stat-copy">拍照或手动记一餐，确认后计入统计。</span>
                   <span className="round-link" aria-hidden="true">↗</span>
                 </span>
               </button>
@@ -129,7 +129,7 @@ export function SectionHero({ onEnter }: SectionHeroProps) {
                 <span className="stat-kicker">饮食计划</span>
                 <span className="stat-number"><strong>一天<span className="stat-unit">一安排</span></strong></span>
                 <span className="stat-bottom">
-                  <span className="stat-copy">按已有记录查看饮食与训练安排，不合适就再调整。</span>
+                  <span className="stat-copy">按已有记录查看安排，不合适再调整。</span>
                   <span className="round-link" aria-hidden="true">↗</span>
                 </span>
               </button>

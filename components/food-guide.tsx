@@ -55,7 +55,7 @@ const guideCards = [
       { lead: "04", tail: "奶、豆和坚果，补充" },
       { lead: "05", tail: "油、盐，控制用量" },
     ],
-    note: "参考一般成人的日常搭配方向，份量随年龄和活动量调整。",
+    note: "份量随年龄与活动量调整。",
   },
 ] as const;
 
@@ -67,7 +67,6 @@ export function FoodGuide() {
       <header className="pp-sec-head">
         <div className="pp-sec-eyebrow">吃得明白</div>
         <h2 id="pp-food-guide-title">先搭好结构，再看每一口。</h2>
-        <p>三张卡片，讲清餐盘比例、核心营养和膳食结构。它们不读取你的记录，也不给这一餐打分。</p>
       </header>
 
       <Reveal>
@@ -123,11 +122,6 @@ export function FoodGuide() {
                       ))}
                     </span>
                     <span className="pp-taste-note">{card.note}</span>
-                    <span className="pp-taste-panel-foot">
-                      <span>一般性建议</span>
-                      <span className="pp-is-fine">移开收起</span>
-                      <span className="pp-is-coarse">轻点收起</span>
-                    </span>
                   </span>
                 </button>
               </div>
@@ -137,7 +131,7 @@ export function FoodGuide() {
 
         <p className="pp-taste-disclaimer">
           <Info size={12} aria-hidden="true" />
-          膳食结构参考中国营养学会《中国居民膳食指南（2022）》。封面为通用示意，内容不构成个体营养处方。
+          参考《中国居民膳食指南（2022）》；封面为通用示意，不构成营养处方。
         </p>
       </Reveal>
     </section>

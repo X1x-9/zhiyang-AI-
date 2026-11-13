@@ -21,14 +21,17 @@ import {
   activityOptions,
   buildSpacePlans,
   createDemoSpaceProfile,
+  createEmptySpaceProfile,
   dayOptions,
-  dietLabels,
   dietOptions,
-  environmentLabels,
+  dietText,
+  environmentText,
   environmentOptions,
-  goalLabels,
   goalOptions,
+  goalText,
+  hasRhythmChoices,
   minuteOptions,
+  rhythmText,
   spaceCompleteness,
   validateSpaceProfile,
   type SpaceFieldErrorKey,
@@ -70,15 +73,23 @@ function ChoiceGroup<T extends string>({
   options,
   onChange,
   wide,
+  error,
 }: {
   legend: string;
-  value: T;
+  value: T | "";
   options: ReadonlyArray<ChoiceOption<T>>;
   onChange: (value: T) => void;
   wide?: boolean;
+  error?: string;
 }) {
+  const errorId = `${legend}-error`;
   return (
-    <fieldset className={`ms-choice-set${wide ? " ms-choice-wide" : ""}`}>
+    <fieldset
+      className={`ms-choice-set${wide ? " ms-choice-wide" : ""}`}
+      aria-invalid={error ? true : undefined}
+      aria-describedby={error ? errorId : undefined}
+      tabIndex={error ? -1 : undefined}
+    >
       <legend>{legend}</legend>
       <div className="ms-choice">
         {options.map((option) => (
@@ -94,6 +105,7 @@ function ChoiceGroup<T extends string>({
           </label>
         ))}
       </div>
+      {error && <p className="ms-error" id={errorId}>{error}</p>}
     </fieldset>
   );
 }
@@ -152,11 +164,17 @@ export function MySpace({ data, loading, profile, hasStored, demo }: MySpaceProp
     text: "",
   });
   const [saving, setSaving] = React.useState(false);
+  const [clearing, setClearing] = React.useState(false);
+  const [confirmingClear, setConfirmingClear] = React.useState(false);
+  const [clearedGuard, setClearedGuard] = React.useState(false);
 
   if (profile !== draftBase) {
     setDraftBase(profile);
-    setDraft(profile);
-    setErrors({});
+    if (!clearedGuard || profile.savedAt) {
+      if (clearedGuard) setClearedGuard(false);
+      setDraft(profile);
+      setErrors({});
+    }
   }
 
   React.useEffect(() => {
@@ -188,6 +206,7 @@ export function MySpace({ data, loading, profile, hasStored, demo }: MySpaceProp
 
   const completeness = spaceCompleteness(draft);
   const plans = buildSpacePlans(draft);
+  const hasRhythm = hasRhythmChoices(draft);
   const goalLine = plans.goalLine;
   const isDemo = demo;
   const savedMoment = hasStored ? formatMoment(draft.savedAt) : "";
@@ -236,9 +255,57 @@ export function MySpace({ data, loading, profile, hasStored, demo }: MySpaceProp
     setStatus({ kind: "idle", text: hasStored ? "已恢复到上次保存的资料。" : "已恢复到初始内容。" });
   }
 
+  function beginClear() {
+    if (saving || clearing) return;
+    setConfirmingClear(true);
+    setStatus({
+      kind: "idle",
+      text: hasStored
+        ? "清空会同时删除已保存的资料和所有计划版本，且无法恢复。"
+        : "清空会移除当前填写内容，请先完成资料填写后再保存。",
+    });
+  }
+
+  function cancelClear() {
+    if (clearing) return;
+    setConfirmingClear(false);
+    setStatus({ kind: "idle", text: "" });
+  }
+
+  async function clearAll() {
+    if (saving || clearing) return;
+    setClearing(true);
+    setStatus({ kind: "idle", text: "正在清空资料与对应计划…" });
+    try {
+      if (hasStored) {
+        const response = await fetch("/api/profile", { method: "DELETE" });
+        const result = (await response.json().catch(() => null)) as { message?: string } | null;
+        if (!response.ok) throw new Error(result?.message ?? "清空失败，请稍后重试。");
+        setSpaceProfile(createEmptySpaceProfile());
+        void queryClient.invalidateQueries({ queryKey: ["profile"] });
+        void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+        void queryClient.invalidateQueries({ queryKey: ["plan"] });
+      }
+      setClearedGuard(true);
+      setDraft(createEmptySpaceProfile());
+      setErrors({});
+      setConfirmingClear(false);
+      setStatus({
+        kind: "saved",
+        text: hasStored
+          ? "资料和对应计划已清空。请先完成资料填写，再保存并生成计划。"
+          : "已清空填写内容。请先完成资料填写。",
+      });
+    } catch (error) {
+      setStatus({ kind: "error", text: error instanceof Error ? error.message : "清空失败，请稍后重试。" });
+    } finally {
+      setClearing(false);
+    }
+  }
+
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (saving) return;
+    if (saving || clearing) return;
     const nextErrors = validateSpaceProfile(draft);
     if (Object.keys(nextErrors).length > 0) {
       setErrors(nextErrors);
@@ -308,8 +375,8 @@ export function MySpace({ data, loading, profile, hasStored, demo }: MySpaceProp
 
   const targets = plans.targets;
   const targetsNote = targets
-    ? "热量用 Mifflin-St Jeor 与活动系数估算，蛋白质和饮水按体重估算；只作日常参考，不是医学评估或营养处方。"
-    : plans.targetsReason ?? "补充年龄、身高和体重后，才会给出热量参考。";
+    ? "按 Mifflin-St Jeor 公式估算。"
+    : plans.targetsReason ?? "补充年龄、身高与体重后给出参考。";
 
   return (
     <div className="ms-shell">
@@ -388,13 +455,13 @@ export function MySpace({ data, loading, profile, hasStored, demo }: MySpaceProp
           </div>
           <h2>{name || "还没有称呼"}</h2>
           <p className="ms-pass-goal">
-            {goalLabels[draft.goal]} · 每周 {draft.days} 次 · {environmentLabels[draft.environment]}
+            {rhythmText(draft)}
           </p>
           <dl className="ms-pass-grid">
             <div><dt>身高</dt><dd>{draft.heightCm ? `${draft.heightCm} cm` : "—"}</dd></div>
             <div><dt>体重</dt><dd>{draft.weightKg ? `${draft.weightKg} kg` : "—"}</dd></div>
             <div><dt>目标体重</dt><dd>{draft.targetWeightKg ? `${draft.targetWeightKg} kg` : "—"}</dd></div>
-            <div><dt>饮食偏好</dt><dd>{dietLabels[draft.diet]}</dd></div>
+            <div><dt>饮食偏好</dt><dd>{dietText(draft.diet)}</dd></div>
           </dl>
           <div className="ms-pass-ticks">
             <div className="ms-ticks" aria-hidden="true">
@@ -426,7 +493,6 @@ export function MySpace({ data, loading, profile, hasStored, demo }: MySpaceProp
           <div className="ms-form-head">
             <div>
               <h2>把你的情况写下来。</h2>
-              <p>称呼必填；其余留空时，相关估算会显示“待补充”，不会用示例值补齐。保存后写入你的账户，演示模式下写入当前浏览会话。</p>
             </div>
             <span className="ms-form-state">
               {hasStored ? `${isDemo ? "演示资料" : "账户资料"}${savedMoment ? ` · ${savedMoment}` : ""}` : "尚未保存"}
@@ -436,10 +502,9 @@ export function MySpace({ data, loading, profile, hasStored, demo }: MySpaceProp
           <section className="ms-form-section" aria-labelledby="ms-basic">
             <div className="ms-section-head">
               <h3 id="ms-basic"><span>01</span>先认识一下</h3>
-              <p>这些只用于估算与生成结构</p>
             </div>
             <div className="ms-grid">
-              <Field id="ms-name" label="称呼" hint="必填 · 最多 12 字" error={errors.name}>
+              <Field id="ms-name" label="称呼" hint="必填" error={errors.name}>
                 <input
                   className="ms-input"
                   id="ms-name"
@@ -469,7 +534,6 @@ export function MySpace({ data, loading, profile, hasStored, demo }: MySpaceProp
                     </label>
                   ))}
                 </div>
-                <p className="ms-field-hint">只用于热量公式，可选择不透露。</p>
               </fieldset>
 
               <Field id="ms-age" label="年龄" hint="14–90 岁" error={errors.age}>
@@ -522,7 +586,7 @@ export function MySpace({ data, loading, profile, hasStored, demo }: MySpaceProp
                 />
               </Field>
 
-              <Field id="ms-target-weight" label="目标体重" hint="kg · 可留空" error={errors.targetWeightKg}>
+              <Field id="ms-target-weight" label="目标体重" hint="kg" error={errors.targetWeightKg}>
                 <input
                   className="ms-input"
                   id="ms-target-weight"
@@ -544,27 +608,25 @@ export function MySpace({ data, loading, profile, hasStored, demo }: MySpaceProp
           <section className="ms-form-section" aria-labelledby="ms-rhythm">
             <div className="ms-section-head">
               <h3 id="ms-rhythm"><span>02</span>你的节奏</h3>
-              <p>按你现在能做到的来</p>
             </div>
             <div className="ms-choice-grid">
-              <ChoiceGroup legend="健康目标" value={draft.goal} options={goalOptions} onChange={(value) => update("goal", value)} />
-              <ChoiceGroup legend="日常活动" value={draft.activity} options={activityOptions} onChange={(value) => update("activity", value)} />
+              <ChoiceGroup legend="健康目标" value={draft.goal} options={goalOptions} onChange={(value) => update("goal", value)} error={errors.goal} />
+              <ChoiceGroup legend="日常活动" value={draft.activity} options={activityOptions} onChange={(value) => update("activity", value)} error={errors.activity} />
             </div>
             <div className="ms-choice-grid">
-              <ChoiceGroup legend="每周训练次数" value={draft.days} options={dayOptions} onChange={(value) => update("days", value)} />
-              <ChoiceGroup legend="每次训练时长" value={draft.minutes} options={minuteOptions} onChange={(value) => update("minutes", value)} />
+              <ChoiceGroup legend="每周训练次数" value={draft.days} options={dayOptions} onChange={(value) => update("days", value)} error={errors.days} />
+              <ChoiceGroup legend="每次训练时长" value={draft.minutes} options={minuteOptions} onChange={(value) => update("minutes", value)} error={errors.minutes} />
             </div>
-            <ChoiceGroup legend="训练环境" value={draft.environment} options={environmentOptions} onChange={(value) => update("environment", value)} wide />
+            <ChoiceGroup legend="训练环境" value={draft.environment} options={environmentOptions} onChange={(value) => update("environment", value)} wide error={errors.environment} />
           </section>
 
           <section className="ms-form-section" aria-labelledby="ms-table">
             <div className="ms-section-head">
               <h3 id="ms-table"><span>03</span>餐桌与预算</h3>
-              <p>计划会按偏好换菜</p>
             </div>
-            <ChoiceGroup legend="饮食偏好" value={draft.diet} options={dietOptions} onChange={(value) => update("diet", value)} wide />
+            <ChoiceGroup legend="饮食偏好" value={draft.diet} options={dietOptions} onChange={(value) => update("diet", value)} wide error={errors.diet} />
             <div className="ms-grid ms-grid-spaced">
-              <Field id="ms-budget" label="每日饮食预算" hint="元 / 天 · 可留空" error={errors.budget}>
+              <Field id="ms-budget" label="每日饮食预算" hint="元 / 天" error={errors.budget}>
                 <input
                   className="ms-input"
                   id="ms-budget"
@@ -579,7 +641,7 @@ export function MySpace({ data, loading, profile, hasStored, demo }: MySpaceProp
                   onChange={(event) => update("budget", event.target.value)}
                 />
               </Field>
-              <Field id="ms-avoid" label="需要避开的食物" hint="可留空" error={errors.avoid}>
+              <Field id="ms-avoid" label="需要避开的食物" error={errors.avoid}>
                 <input
                   className="ms-input"
                   id="ms-avoid"
@@ -601,12 +663,24 @@ export function MySpace({ data, loading, profile, hasStored, demo }: MySpaceProp
                 : status.kind === "error"
                   ? <CircleAlert size={13} aria-hidden="true" />
                   : <ShieldCheck size={13} aria-hidden="true" />}
-              <span>{status.text || "资料会写入你的账户；演示模式下只写入当前浏览会话。"}</span>
+              <span>{status.text || "保存后写入资料。"}</span>
             </p>
             <div className="ms-form-actions">
-              {isDemo && <button type="button" className="ms-ghost-btn" onClick={fillDemo}>填入演示资料</button>}
-              <button type="button" className="ms-ghost-btn" onClick={resetDraft}>撤销修改</button>
-              <GlitchButton type="submit" disabled={saving}>{saving ? "正在生成计划…" : "保存并生成计划"} {!saving && <ArrowRight size={15} aria-hidden="true" />}</GlitchButton>
+              {confirmingClear ? (
+                <>
+                  <button type="button" className="ms-ghost-btn is-danger" onClick={() => void clearAll()} disabled={clearing}>
+                    {clearing ? "正在清空…" : hasStored ? "确认清空资料与计划" : "确认清空"}
+                  </button>
+                  <button type="button" className="ms-ghost-btn" onClick={cancelClear} disabled={clearing}>取消</button>
+                </>
+              ) : (
+                <>
+                  {isDemo && <button type="button" className="ms-ghost-btn" onClick={fillDemo} disabled={clearing}>填入演示资料</button>}
+                  <button type="button" className="ms-ghost-btn is-danger" onClick={beginClear} disabled={clearing || saving}>清空资料</button>
+                  <button type="button" className="ms-ghost-btn" onClick={resetDraft}>撤销修改</button>
+                  <GlitchButton type="submit" disabled={saving || clearing}>{saving ? "正在生成计划…" : "保存并生成计划"} {!saving && <ArrowRight size={15} aria-hidden="true" />}</GlitchButton>
+                </>
+              )}
             </div>
           </div>
         </form>
@@ -619,25 +693,25 @@ export function MySpace({ data, loading, profile, hasStored, demo }: MySpaceProp
             </div>
             <div className="ms-ref-list">
               <div className="ms-ref-row">
-                <span className="ms-ref-label"><span>BMI</span><small>只按身高与体重计算</small></span>
+                <span className="ms-ref-label"><span>BMI</span></span>
                 <strong className="ms-ref-value">{bmi !== null ? bmi.toFixed(1) : "—"}<small>kg/m²</small></strong>
               </div>
               <div className="ms-ref-row">
-                <span className="ms-ref-label"><span>每日热量</span><small>按活动与目标估算</small></span>
+                <span className="ms-ref-label"><span>每日热量</span></span>
                 <strong className="ms-ref-value">
                   {targets ? `${targets.calorieLow.toLocaleString("zh-CN")}–${targets.calorieHigh.toLocaleString("zh-CN")}` : "—"}
                   <small>kcal</small>
                 </strong>
               </div>
               <div className="ms-ref-row">
-                <span className="ms-ref-label"><span>蛋白质</span><small>按体重估算</small></span>
+                <span className="ms-ref-label"><span>蛋白质</span></span>
                 <strong className="ms-ref-value">
                   {targets ? `${targets.proteinLow}–${targets.proteinHigh}` : "—"}
                   <small>g</small>
                 </strong>
               </div>
               <div className="ms-ref-row">
-                <span className="ms-ref-label"><span>饮水</span><small>按体重估算</small></span>
+                <span className="ms-ref-label"><span>饮水</span></span>
                 <strong className="ms-ref-value">
                   {targets ? `${targets.waterLow.toFixed(1)}–${targets.waterHigh.toFixed(1)}` : "—"}
                   <small>L</small>
@@ -651,9 +725,9 @@ export function MySpace({ data, loading, profile, hasStored, demo }: MySpaceProp
             <span className="ms-goal-label">目标线</span>
             <p>{goalLine ?? "还没有填写目标体重。先把目标写下来，或者先保持现在的节奏。"}</p>
             <div className="ms-goal-meta">
-              <span>{goalLabels[draft.goal]}</span>
-              <span>{draft.days} 次 / 周</span>
-              <span>{environmentLabels[draft.environment]}</span>
+              <span>{goalText(draft.goal)}</span>
+              <span>{draft.days ? `${draft.days} 次 / 周` : "每周次数待选择"}</span>
+              <span>{environmentText(draft.environment)}</span>
             </div>
             <button type="button" onClick={() => setPage("coach")}>
               和健康搭子聊聊 <ArrowRight size={13} aria-hidden="true" />
@@ -663,18 +737,19 @@ export function MySpace({ data, loading, profile, hasStored, demo }: MySpaceProp
       </div>
 
       <div className="ms-plans-wrap" ref={plansRef} tabIndex={-1} aria-label="按当前资料生成的饮食与运动计划">
-        <header className="ms-plans-head">
-          <h2>饮食与运动，先各排一版。</h2>
-          <p>以下内容按当前填写即时生成；保存后资料写入你的账户或演示沙盒。它们是一般结构，不是个体营养或医疗处方。</p>
-        </header>
+        {hasRhythm ? (
+          <>
+            <header className="ms-plans-head">
+              <h2>饮食与运动，先各排一版。</h2>
+            </header>
 
-        <div className="ms-plans">
+            <div className="ms-plans">
           <Reveal>
             <article className="ms-plan">
               <div className="ms-plan-head">
                 <div>
                   <h3>一日四餐，留出替换的余地。</h3>
-                  <p>{dietLabels[draft.diet]} · {draft.budget.trim() ? `预算约 ¥${draft.budget.trim()}/天` : "未填写预算"}</p>
+                  <p>{dietText(draft.diet)} · {draft.budget.trim() ? `预算约 ¥${draft.budget.trim()}/天` : "未填写预算"}</p>
                 </div>
                 <span className="ms-plan-tag">按当前资料</span>
               </div>
@@ -712,7 +787,7 @@ export function MySpace({ data, loading, profile, hasStored, demo }: MySpaceProp
                 <div>
                   <h3>一周几次，先排进日历。</h3>
                   <p>
-                    {environmentLabels[draft.environment]} · 每周 {plans.movement.sessionCount} 次 · 每次 {draft.minutes} 分钟
+                    {environmentText(draft.environment)} · 每周 {plans.movement.sessionCount} 次 · 每次 {draft.minutes} 分钟
                     · 共约 {plans.movement.totalMinutes} 分钟
                   </p>
                 </div>
@@ -751,29 +826,25 @@ export function MySpace({ data, loading, profile, hasStored, demo }: MySpaceProp
               </div>
             </article>
           </Reveal>
-        </div>
+            </div>
+          </>
+        ) : (
+          <div className="ms-plans-empty">
+            <span className="ms-plans-empty-kicker">饮食与运动计划</span>
+            <h2>去完善资料吧，找到属于你的节奏</h2>
+            <button type="button" className="ms-plan-cta" onClick={() => goTo(formRef)}>
+              去完善资料 <ArrowRight size={14} aria-hidden="true" />
+            </button>
+          </div>
+        )}
       </div>
 
       <Reveal>
-        <section className="ms-boundary" aria-labelledby="ms-boundary-title">
+        <section className="ms-boundary is-slim" aria-labelledby="ms-boundary-title">
           <div className="ms-boundary-copy">
             <h2 id="ms-boundary-title">这份计划是怎么来的。</h2>
-            <p>它按固定的营养与训练结构，从你填写的信息里取值；不调用 AI，也不做疾病风险判断。</p>
+            <p>按固定规则从资料生成，不调用 AI；缺失保持“待补充”，不补猜、不做疾病判断，也不是医疗处方。</p>
           </div>
-          <dl className="ms-boundary-list">
-            <div>
-              <dt>只算结构</dt>
-              <dd>热量与蛋白质是估算区间，不是个体营养处方。有慢性病、孕期、进食障碍风险或正在调整用药，请先咨询医生或营养师。</dd>
-            </div>
-            <div>
-              <dt>存到账户</dt>
-              <dd>资料保存在你的账户下，换设备登录后可同步；演示模式下只保存在当前浏览会话。</dd>
-            </div>
-            <div>
-              <dt>不猜缺失</dt>
-              <dd>没有填写的数字保持“待补充”，不会用演示数据补齐，也不会生成健康分或疾病风险。</dd>
-            </div>
-          </dl>
         </section>
       </Reveal>
     </div>

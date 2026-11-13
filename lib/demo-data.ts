@@ -332,6 +332,11 @@ export function listDemoMeals(sessionId: string) {
     .sort((a, b) => new Date(b.eatenAt).getTime() - new Date(a.eatenAt).getTime());
 }
 
+export function listDemoSessionMeals(sessionId: string) {
+  return [...sessionState(sessionId).meals]
+    .sort((a, b) => new Date(b.eatenAt).getTime() - new Date(a.eatenAt).getTime());
+}
+
 export function addDemoMeal(sessionId: string, input: {
   title: string;
   mealType?: DemoMealType;

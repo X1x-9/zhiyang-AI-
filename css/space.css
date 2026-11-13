@@ -723,6 +723,11 @@
   color: #a34b38;
 }
 
+.ms-choice-set .ms-error { margin-top: 7px; }
+.ms-choice-set[aria-invalid="true"] legend { color: #9b4a38; }
+.ms-choice-set[aria-invalid="true"] .ms-choice span { border-color: #e4cfc6; }
+.ms-choice-set:focus { outline: none; }
+
 .ms-field-hint {
   margin: 6px 0 0;
   font-size: 9.5px;
@@ -888,6 +893,17 @@
   border-color: #cbd8c3;
   background: #f2f6ed;
   color: #37503f;
+}
+
+.ms-ghost-btn.is-danger {
+  border-color: #e4cfc6;
+  color: #9b4a38;
+}
+
+.ms-ghost-btn.is-danger:hover {
+  border-color: #d6b3a6;
+  background: #fbefea;
+  color: #833a2a;
 }
 
 /* ---------------- reference rail ---------------- */
@@ -1078,6 +1094,41 @@
   gap: 18px;
   align-items: stretch;
 }
+
+.ms-plans-empty {
+  display: grid;
+  gap: 14px;
+  justify-items: start;
+  padding: 34px 32px;
+  border: 1px dashed #cfdcc6;
+  border-radius: 20px;
+  background: linear-gradient(180deg, #fdfcf7, #f6f7ef);
+}
+
+.ms-plans-empty-kicker {
+  font-size: 10.5px;
+  letter-spacing: .16em;
+  color: #8b968c;
+}
+
+.ms-plans-empty h2 {
+  margin: 0;
+  font-family: var(--ms-serif);
+  font-size: 28px;
+  font-weight: 600;
+  letter-spacing: -.02em;
+  color: #2b4233;
+}
+
+.ms-plans-empty p {
+  max-width: 540px;
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.85;
+  color: #6c7a6e;
+}
+
+.ms-plans-empty .ms-plan-cta { margin-top: 2px; }
 
 .ms-plan {
   display: flex;
@@ -1327,6 +1378,13 @@
   border-radius: 20px;
   background: #eef3e9;
 }
+
+.ms-boundary.is-slim {
+  grid-template-columns: 1fr;
+  padding: 24px 28px;
+}
+
+.ms-boundary.is-slim .ms-boundary-copy p { max-width: 760px; }
 
 .ms-boundary h2 {
   margin: 0;
@@ -1940,6 +1998,8 @@
   .ms-status { flex: none; }
 
   .ms-plans-head h2 { font-size: 23px; }
+  .ms-plans-empty { padding: 26px 20px; }
+  .ms-plans-empty h2 { font-size: 23px; }
   .ms-plan-head { padding: 18px 18px 14px; }
   .ms-meals { padding: 4px 18px; }
   .ms-week { padding: 14px 18px 4px; }

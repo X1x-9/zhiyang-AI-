@@ -108,3 +108,9 @@ button:active:not(:disabled),[role="button"]:active{transform:scale(.98)}
 .food-source-badge.is-manual,.food-source-badge.is-unknown{border-color:#e3e6e1;background:#f5f6f4;color:#6b756d}
 .food-source-note{margin-top:8px;font-size:10px;line-height:1.7;padding:6px 8px;border-radius:8px;border:1px dashed #dbe3d8;background:#f7faf5;color:#5f6f64}
 .food-source-note.is-model{border-color:#e6dcc3;background:#faf7ee;color:#79643a}
+
+/* 白色侧边栏 */
+.sidebar{background:linear-gradient(180deg,#fff 0%,#fefefc 62%,#fcfcf9 100%);border-right-color:#eaede6;box-shadow:20px 0 44px -36px rgba(31,45,36,.22)}
+.nav-item{color:#6f7a72}
+.nav-item:hover{background:#f5f7f3;color:var(--ink)}
+.nav-item.active{background:#eef3eb;color:#2f5740;box-shadow:inset 0 0 0 1px #e2e9dd}

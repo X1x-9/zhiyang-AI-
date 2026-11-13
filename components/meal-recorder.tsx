@@ -237,7 +237,7 @@ function SameDayRecords() {
   if (mealsQuery.isError) return <p className="mt-4 text-sm text-red-800" role="alert">{(mealsQuery.error as Error).message}</p>;
 
   const meals = mealsQuery.data?.meals ?? [];
-  const notice = mealsQuery.data?.notice ?? (mealsQuery.data?.demo ? "演示记录保存在当前浏览会话的独立沙盒中，不会影响其他访问者；请勿填写真实信息。" : null);
+  const notice = mealsQuery.data?.notice ?? (mealsQuery.data?.demo ? "演示沙盒 · 数据仅存当前会话，请勿填写真实信息。" : null);
 
   return (
     <div className="mt-4">
@@ -753,7 +753,7 @@ export function MealRecorder() {
                 <span className="meal-cam-brand" aria-hidden="true">智养 · 35mm</span>
                 <span className="meal-cam-lip" aria-hidden="true" />
               </button>
-              <span className="meal-cam-caption" aria-hidden="true">轻按相机 · 选照片</span>
+              <span className="meal-cam-caption" aria-hidden="true">选照片</span>
             </div>
 
             <div className="meal-cam-side">
@@ -779,12 +779,12 @@ export function MealRecorder() {
                       <X size={13} />移除
                     </button>
                   </div>
-                  <span className="meal-cam-hint">换一张会重新识别 · 支持 JPG / PNG / WebP</span>
+                  <span className="meal-cam-hint">支持 JPG / PNG / WebP</span>
                 </>
               ) : (
                 <>
                   <strong className="meal-cam-title">镜头就是快门</strong>
-                  <p className="meal-cam-copy">点一下相机选照片；也可以直接拍一张，或把照片拖进来、粘贴截图。</p>
+                  <p className="meal-cam-copy">拍照、拖入或粘贴截图都可以。</p>
                   <div className="meal-cam-actions">
                     <button type="button" className="meal-cam-action is-primary" disabled={cameraBusy} onClick={() => cameraInput.current?.click()}>
                       <Camera size={14} />打开相机拍摄
@@ -901,7 +901,7 @@ export function MealRecorder() {
         </section>
         <section className="info-panel">
           <h3>估算说明</h3>
-          <p>识别、份量和热量都是估算，会受拍摄角度、油量、隐藏配料影响。名称命中食物参考库时，会按每 100g 数据换算并标出来源；未收录的项使用 AI 估算，会单独标注。修改克数时，营养按当前每 100g 数据同步更新。确认前不会计入统计；如有食物过敏或特殊健康情况，请优先遵循专业建议。</p>
+          <p>识别与热量为估算；命中食物库时按每 100g 换算。确认前不计入统计。</p>
         </section>
       </div>
     </div>

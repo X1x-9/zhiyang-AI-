@@ -9,9 +9,9 @@
   padding: 14px 14px 12px;
   overflow: hidden;
   background:
-    radial-gradient(circle at 16% 4%, rgba(229, 180, 94, .18), transparent 44%),
-    radial-gradient(circle at 88% 92%, rgba(230, 236, 217, .55), transparent 46%),
-    var(--nb-card);
+    radial-gradient(circle at 16% 4%, rgba(183, 121, 67, .1), transparent 44%),
+    radial-gradient(circle at 88% 92%, rgba(230, 236, 217, .5), transparent 46%),
+    #fff;
 }
 
 .chat-aside .chat-laptop-panel h3 {
@@ -59,8 +59,8 @@
   transform: translateX(-50%);
   background: radial-gradient(
     ellipse,
-    rgba(229, 180, 94, .32) 0%,
-    rgba(229, 180, 94, .1) 42%,
+    rgba(229, 180, 94, .2) 0%,
+    rgba(229, 180, 94, .06) 42%,
     transparent 72%
   );
   filter: blur(0.5em);
@@ -173,7 +173,7 @@
     0 0 0 .1em #465c4a,
     0 0 0 .22em rgba(211, 198, 170, .5),
     0 1.2em 3em rgba(24, 40, 30, .5),
-    0 0 3.6em rgba(229, 180, 94, .22);
+    0 0 3.6em rgba(229, 180, 94, .12);
   animation: lp-bezelglow 6s ease-in-out infinite;
 }
 
@@ -188,7 +188,7 @@
       0 0 0 .1em #465c4a,
       0 0 0 .22em rgba(211, 198, 170, .5),
       0 1.2em 3em rgba(24, 40, 30, .5),
-      0 0 3.6em rgba(229, 180, 94, .22);
+      0 0 3.6em rgba(229, 180, 94, .12);
   }
   50% {
     box-shadow:
@@ -199,7 +199,7 @@
       0 0 0 .1em #465c4a,
       0 0 0 .22em rgba(211, 198, 170, .6),
       0 1.2em 3em rgba(24, 40, 30, .5),
-      0 0 4.6em rgba(229, 180, 94, .4);
+      0 0 4.6em rgba(229, 180, 94, .24);
   }
 }
 

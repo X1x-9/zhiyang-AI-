@@ -1,9 +1,10 @@
 "use client";
 
 import * as React from "react";
+import { createPortal } from "react-dom";
 import { motion } from "framer-motion";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Camera, ChartNoAxesCombined, ChevronRight, Droplets, Dumbbell, LayoutDashboard, Leaf, Loader2, MessageCircle, Plus, Salad, Trash2, UserRound, Utensils, X } from "lucide-react";
+import { Camera, ChartNoAxesCombined, ChevronRight, Droplets, Dumbbell, LayoutDashboard, Leaf, Loader2, Maximize2, MessageCircle, Minimize2, Plus, Salad, Trash2, UserRound, Utensils, X } from "lucide-react";
 import { AccountPanel } from "@/components/account-panel";
 import { Button } from "@/components/ui/button";
 import Hero38 from "@/components/originkit/hero-38";
@@ -16,7 +17,7 @@ import { DietPlan, ExercisePlan, PlanSwitcher } from "@/components/plan-experien
 import { SpaceCard } from "@/components/space-card";
 import { getDashboard, type DashboardData, type WeekSummary, type WeightPoint } from "@/lib/dashboard";
 import { fetchProfile } from "@/lib/profile-client";
-import { createDemoSpaceProfile, createEmptySpaceProfile, type SpaceProfile } from "@/lib/space";
+import { createEmptySpaceProfile, type SpaceProfile } from "@/lib/space";
 import { useHealthStore, type Page } from "@/stores/health-store";
 
 const useIsomorphicLayoutEffect = typeof window === "undefined" ? React.useEffect : React.useLayoutEffect;
@@ -87,7 +88,7 @@ function DemoNotice({ notice }: { notice?: string }) {
   return (
     <div className="demo-banner" role="note">
       <span className="demo-badge">演示沙盒</span>
-      <p>当前是只属于这个浏览器会话的演示沙盒，示例数据不会与其他访客混在一起，请勿填写真实健康信息；登录后会切换到你的账户数据。{notice ? ` ${notice}` : ""}</p>
+      <p>数据仅存当前浏览器，请勿填写真实健康信息；登录后切换到账户数据。{notice ? ` ${notice}` : ""}</p>
     </div>
   );
 }
@@ -168,7 +169,7 @@ function Dashboard() {
               <button className="water-add" onClick={() => addWater()} aria-label="记录一杯水，250 毫升">+</button>
             </div>
             <div className="water-progress"><span style={{ width: `${waterPercent}%` }} /></div>
-            <p className="water-note">{data.demo ? `演示基数 ${data.waterMl.toLocaleString("zh-CN")} ml，加上当前浏览器的临时记录；刷新后重置，不会同步到账号。` : "喝水记录只保存在当前浏览器，刷新后重新开始，尚未同步到账号。"}</p>
+            <p className="water-note">{data.demo ? "演示数据 · 刷新后重置" : "仅保存在当前浏览器"}</p>
           </section>
         </div>
 
@@ -193,7 +194,6 @@ function Dashboard() {
 
         <section className="assistant-card">
           <div className="assistant-head"><span className="assistant-spark"><Leaf size={17} /></span><strong>你的健康搭子</strong><small>日常建议</small></div>
-          <p>结合你的训练安排与饮食目标，一起找到更舒服、能坚持的日常节奏。</p>
           <div className="suggestions">
             <button className="suggestion" onClick={() => setPage("coach")}>晚餐怎么吃？</button>
             <button className="suggestion" onClick={() => setPage("coach")}>今天怎么练？</button>
@@ -270,8 +270,8 @@ function WeekTrail({ week }: { week: WeekSummary }) {
       </div>
       <p className="review-trail-note">
         {week.workouts === null
-          ? "训练与体重数据尚未接入，七帧只按饮食记录呈现；空白的天保持空白。"
-          : "只按已有记录呈现；空白的天不补推，也不合成执行分数。"}
+          ? "训练与体重尚未接入，只按饮食记录呈现。"
+          : "只按已有记录呈现。"}
       </p>
     </section>
   );
@@ -293,12 +293,11 @@ function ReviewPanel({ data, loading }: { data?: DashboardData; loading: boolean
           <div className="review-stat"><small>体重记录</small><strong>{week.weightEntries === null ? "未接入" : `${week.weightEntries} 次`}</strong></div>
         </div>
         <p className="review-note">{week.note}</p>
-        <p className="range-note">缺失的数据保持“未记录”，不补推、不猜测，也不合成一个执行分数。</p>
         {data.demo && <p className="chart-note">以上为演示数据，仅用于展示复盘结构。</p>}
       </section>
       <section className="assistant-card">
         <div className="assistant-head"><span className="assistant-spark"><Leaf size={17} /></span><strong>下周想调整什么？</strong><small>一起商量</small></div>
-        <p>记录少的时候，先理解这一周发生了什么，不急着改目标。需要时可以和健康搭子聊聊。</p>
+        <p>记录少的时候，先看看发生了什么，不急着改目标。</p>
         <Button className="mt-2 w-full" variant="secondary" onClick={() => useHealthStore.getState().setPage("coach")}>去聊聊 <ChevronRight size={15} /></Button>
       </section>
     </div>
@@ -349,7 +348,7 @@ const knownSources = [
   { title: "体力活动与心血管健康公平", meta: "AHA 科学声明 · 2023", url: "https://doi.org/10.1161/CIR.0000000000001148" },
 ] as const;
 
-const CHAT_INTRO = "你好，我是你的健康搭子。可以问我饮食搭配、训练安排，或怎么记录更准确。营养数字都是估算，身体不适请优先咨询医生。";
+const CHAT_INTRO = "你好，我是你的健康搭子。可以问饮食、训练或记录方法；数字是估算，不适请就医。";
 const CHAT_THREADS_KEY = "zhiyang-chat-threads-v1";
 const CHAT_THREAD_LIMIT = 30;
 
@@ -513,6 +512,7 @@ function ChatPanel({ identityKey }: { identityKey: string }) {
   const [pending, setPending] = React.useState(false);
   const [reaction, setReaction] = React.useState<ChatReactionId | null>(null);
   const [historyOpen, setHistoryOpen] = React.useState(() => typeof window === "undefined" || !window.matchMedia("(max-width: 640px)").matches);
+  const [expanded, setExpanded] = React.useState(false);
   const scrollRef = React.useRef<HTMLDivElement>(null);
 
   const orderedThreads = React.useMemo(() => [...threads].sort((a, b) => b.updatedAt - a.updatedAt), [threads]);
@@ -533,8 +533,26 @@ function ChatPanel({ identityKey }: { identityKey: string }) {
 
   React.useEffect(() => {
     if (messages.length < 2) return;
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
-  }, [messages]);
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: expanded ? "auto" : "smooth" });
+  }, [messages, expanded]);
+
+  React.useEffect(() => {
+    if (!expanded) return;
+    const root = document.documentElement;
+    const previousRootOverflow = root.style.overflow;
+    const previousBodyOverflow = document.body.style.overflow;
+    root.style.overflow = "hidden";
+    document.body.style.overflow = "hidden";
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setExpanded(false);
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      root.style.overflow = previousRootOverflow;
+      document.body.style.overflow = previousBodyOverflow;
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [expanded]);
 
   const sources = React.useMemo(() => {
     const entries = new Map<string, Omit<KnowledgeSource, "index">>();
@@ -691,7 +709,7 @@ function ChatPanel({ identityKey }: { identityKey: string }) {
   const suggestions = ["晚餐怎么搭配更合适？", "今天适合做什么训练？", "怎么记录才算准确？"];
   const activeReaction = chatReactions.find((item) => item.id === reaction);
 
-  return <div className="coach-layout">
+  const layout = <div className={`coach-layout${expanded ? " is-expanded" : ""}`}>
     <section className="surface chat-panel">
       <span className="chat-flag" aria-hidden="true">AI 健康搭子</span>
       <div className="chat-shell">
@@ -730,7 +748,7 @@ function ChatPanel({ identityKey }: { identityKey: string }) {
               </div>
             ))}
           </div>
-          <p className="chat-history-note">对话按账号分别保存在本机浏览器；切换账号不会看到其他账号的记录，清除站点数据后会消失。</p>
+          <p className="chat-history-note">对话按账号保存在本机浏览器，清除站点数据后消失。</p>
         </aside>
         <div className="chat-main">
           <div className="chat-head">
@@ -745,6 +763,16 @@ function ChatPanel({ identityKey }: { identityKey: string }) {
             >
               <MessageCircle size={11} aria-hidden="true" />
               <span>{threads.length} 条对话</span>
+            </button>
+            <button
+              type="button"
+              className="chat-expand"
+              aria-label={expanded ? "退出全屏" : "全屏聊天"}
+              aria-pressed={expanded}
+              title={expanded ? "退出全屏" : "全屏聊天"}
+              onClick={() => setExpanded((open) => !open)}
+            >
+              {expanded ? <Minimize2 size={13} aria-hidden="true" /> : <Maximize2 size={13} aria-hidden="true" />}
             </button>
           </div>
           <div className={`chat-messages${activeThread ? "" : " is-empty"}`} ref={scrollRef} aria-live="polite" aria-busy={pending}>
@@ -788,7 +816,7 @@ function ChatPanel({ identityKey }: { identityKey: string }) {
             </div>
           )}
           <div className="chat-reactions">
-            <span className="chat-reactions-label" aria-live="polite">{activeReaction ? `已选：${activeReaction.label}` : hasAnswer ? "快捷评价" : "先提问，再评价回答"}</span>
+            <span className="chat-reactions-label" aria-live="polite">{activeReaction ? `已选：${activeReaction.label}` : "快捷评价"}</span>
             <div className="chat-reaction-list" role="group" aria-label="快捷评价">
               {chatReactions.map(({ id, label, emoji }) => (
                 <button
@@ -817,16 +845,14 @@ function ChatPanel({ identityKey }: { identityKey: string }) {
     </section>
     <aside className="chat-aside">
       <section className="info-panel">
-        <h3>对话前请知道</h3>
-        <p>回答由模型生成，可能不准确。不要输入身份证、病历、检查报告等敏感信息；营养数字均为估算。</p>
-      </section>
-      <section className="info-panel">
         <h3>什么时候该找医生</h3>
         <p>持续疼痛、明显不适、进食障碍风险、孕期或慢性病用药调整，请优先咨询医生或营养师。</p>
       </section>
       <CoachLaptopIllustration />
     </aside>
   </div>;
+
+  return expanded && typeof document !== "undefined" ? createPortal(layout, document.body) : layout;
 }
 
 function CoachLaptopIllustration() {
@@ -993,10 +1019,10 @@ function OtherPage({ page, spaceProfile, hasStored, demo, identityKey }: { page:
         : <ExercisePlan data={dashboardQuery.data} profile={spaceProfile} hasStored={hasStored} />}
     </div>;
   }
-  const content: Record<string, { eyebrow: string; title: React.ReactNode; intro: string }> = {
-    food: { eyebrow: "多模态餐食记录", title: "一张照片，轻松记下一餐。", intro: "AI 先帮你看一眼；哪里不准，你来修正。确认之前不会计入营养统计。" },
-    coach: { eyebrow: "不确定的时候，随时聊聊", title: "你好，我在听。", intro: "回答基于你愿意分享的信息；不确定的地方会说清楚，也不替代医生。" },
-    review: { eyebrow: "看见过程，而不只是结果", title: <><span>这一周，</span><span className="review-title-second">只按已有记录复盘。</span></>, intro: "记录有限时，我们先理解情况，不急着调整目标，也不合成执行分数。" },
+  const content: Record<string, { eyebrow: string; title: React.ReactNode; intro?: string }> = {
+    food: { eyebrow: "多模态餐食记录", title: "一张照片，轻松记下一餐。" },
+    coach: { eyebrow: "不确定的时候，随时聊聊", title: "你好，我在听。" },
+    review: { eyebrow: "看见过程，而不只是结果", title: <><span>这一周，</span><span className="review-title-second">只按已有记录复盘。</span></> },
   };
   const item = content[page] ?? content.food;
   return <div className="app-content">
@@ -1004,7 +1030,7 @@ function OtherPage({ page, spaceProfile, hasStored, demo, identityKey }: { page:
       <div className="page-heading-copy">
         <div className="eyebrow">{item.eyebrow}</div>
         <h1>{item.title}</h1>
-        <p>{item.intro}</p>
+        {item.intro && <p>{item.intro}</p>}
       </div>
       {page === "coach" && <CoachCubes />}
       {page === "review" && (
@@ -1042,16 +1068,16 @@ function CoreApp({ onHome }: { onHome: () => void }) {
   const dashboard = dashboardQuery.data;
   const profilePage = page === "profile";
   const pendingMeals = dashboard?.pendingMeals ?? 0;
-  const hasStoredSpace = Boolean(storedSpaceProfile);
+  const hasStoredSpace = Boolean(storedSpaceProfile?.savedAt);
   const identityKey = profileQuery.data?.account?.email ?? (profileQuery.data?.demo ? "demo" : "pending");
   const spaceProfile = React.useMemo(() => {
     if (storedSpaceProfile) return storedSpaceProfile;
-    if (dashboard?.demo) return createDemoSpaceProfile(dashboard.displayName, dashboard.weightKg);
-    return createEmptySpaceProfile(dashboard?.displayName && dashboard.displayName !== "你" ? dashboard.displayName : "");
+    const accountName = dashboard?.demo ? "" : dashboard?.displayName && dashboard.displayName !== "你" ? dashboard.displayName : "";
+    return createEmptySpaceProfile(accountName);
   }, [storedSpaceProfile, dashboard]);
 
   React.useEffect(() => {
-    if (profileQuery.data) setSpaceProfile(profileQuery.data.profile);
+    if (profileQuery.data?.profile) setSpaceProfile(profileQuery.data.profile);
   }, [profileQuery.data, setSpaceProfile]);
 
   const handleAccountChanged = React.useCallback(() => {
@@ -1094,7 +1120,6 @@ function CoreApp({ onHome }: { onHome: () => void }) {
         <div className="coach-card">
           <CoachOrbitVisual />
           <strong>慢一点，也算在前进。</strong>
-          <p>每天的一点点，会慢慢连成改变。</p>
           <button className="coach-cta" onClick={() => setPage("coach")}>
             <i className="animation" aria-hidden="true" />
             和教练聊聊
@@ -1140,7 +1165,7 @@ function CoreApp({ onHome }: { onHome: () => void }) {
           </React.Activity>
         ))}
       </section>
-      <footer className="footer-note"><span>智养 AI 仅提供日常健康管理建议，不替代专业医疗意见。</span><span>把身体的声音，放回生活里。</span></footer>
+      <footer className="footer-note"><span>智养 AI 仅提供日常健康管理建议，不替代专业医疗意见。</span></footer>
     </main>
 
     <nav className="mobile-nav" aria-label="移动端导航">

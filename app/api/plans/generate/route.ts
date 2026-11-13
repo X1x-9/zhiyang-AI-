@@ -3,6 +3,7 @@ import { IdentityError, resolveIdentity } from "@/lib/identity";
 import { clientKey, rateLimit } from "@/lib/rate-limit";
 import { generatePlanVersion, getPlanState, PlanStorageError } from "@/lib/plan-store";
 import { loadProfile } from "@/lib/profile-store";
+import { validateSpaceProfile } from "@/lib/space";
 
 export const maxDuration = 60;
 
@@ -25,6 +26,13 @@ export async function POST(request: Request) {
     if (!profile) {
       return NextResponse.json(
         { error: "PROFILE_REQUIRED", message: "先在「我的空间」保存资料，才能按你的资料生成计划。" },
+        { status: 409 },
+      );
+    }
+    const profileErrors = validateSpaceProfile(profile);
+    if (Object.keys(profileErrors).length > 0) {
+      return NextResponse.json(
+        { error: "PROFILE_INCOMPLETE", message: "资料里还有没选好的项目，先在「我的空间」补齐后再生成计划。", errors: profileErrors },
         { status: 409 },
       );
     }
