@@ -20,13 +20,24 @@ const entryLinks = [
 export function SectionHero({ onEnter }: SectionHeroProps) {
   const [posterVisible, setPosterVisible] = React.useState(true);
   const [introDone, setIntroDone] = React.useState(false);
+  const posterTimer = React.useRef<number | null>(null);
 
   React.useEffect(() => {
     const timer = window.setTimeout(() => setIntroDone(true), 1300);
     return () => window.clearTimeout(timer);
   }, []);
 
-  const handleParticlesReady = React.useCallback(() => setPosterVisible(false), []);
+  React.useEffect(
+    () => () => {
+      if (posterTimer.current !== null) window.clearTimeout(posterTimer.current);
+    },
+    [],
+  );
+
+  const handleParticlesReady = React.useCallback(() => {
+    if (posterTimer.current !== null) window.clearTimeout(posterTimer.current);
+    posterTimer.current = window.setTimeout(() => setPosterVisible(false), 700);
+  }, []);
 
   return (
     <div className={introDone ? "hero-38" : "hero-38 hero-38--intro"}>

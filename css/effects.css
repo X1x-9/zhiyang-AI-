@@ -29,9 +29,9 @@
 .hero-garden {
   position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 1.05fr) minmax(300px, .82fr);
+  grid-template-columns: minmax(0, .92fr) minmax(0, 1.08fr) minmax(240px, .66fr);
   align-items: center;
-  gap: 20px;
+  gap: 18px;
   padding: 32px 34px;
   overflow: hidden;
   isolation: isolate;
@@ -105,6 +105,8 @@
 .hero-copy {
   position: relative;
   z-index: 3;
+  grid-column: 1;
+  grid-row: 1;
   max-width: 570px;
 }
 
@@ -270,6 +272,152 @@
   letter-spacing: -.4px;
   font-variant-numeric: tabular-nums;
 }
+
+.hero-energy {
+  --energy-ring: clamp(136px, 12vw, 174px);
+  position: relative;
+  z-index: 1;
+  grid-column: 2;
+  grid-row: 1;
+  justify-self: start;
+  width: 100%;
+  max-width: 390px;
+}
+
+.hero-energy .energy-body {
+  display: grid;
+  grid-template-columns: var(--energy-ring) minmax(0, 1fr);
+  align-items: center;
+  column-gap: 16px;
+  row-gap: 14px;
+  width: 100%;
+  padding: 0;
+}
+
+.hero-energy .ring {
+  width: var(--energy-ring);
+  height: var(--energy-ring);
+  box-shadow: 0 22px 42px -24px rgba(48, 78, 57, .58);
+}
+
+.hero-energy .ring::before {
+  inset: 10px;
+  background: linear-gradient(148deg, #fffef9 0%, #f6f9f1 70%, #eef4e9 100%);
+  box-shadow: inset 0 1px 0 #fff, 0 0 0 1px rgba(96, 126, 99, .06);
+}
+
+.hero-energy .ring-center strong {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 1px;
+  color: #2f4a38;
+  font-size: clamp(30px, 2.7vw, 39px);
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -1.8px;
+  font-variant-numeric: tabular-nums;
+}
+
+.hero-energy .ring-center small {
+  color: #758779;
+  font-size: clamp(11px, 1vw, 13px);
+  font-weight: 500;
+  letter-spacing: 0;
+}
+
+.hero-energy .energy-side { display: contents; }
+
+.hero-energy .energy-copy {
+  flex: none;
+  width: 100%;
+  min-width: 0;
+  text-align: left;
+}
+
+.hero-energy .kcal-label {
+  color: #7a897d;
+  font-size: 10px;
+  line-height: 1.4;
+  letter-spacing: .08em;
+}
+
+.hero-energy .kcal-number {
+  display: flex;
+  align-items: baseline;
+  justify-content: flex-start;
+  gap: 3px;
+  margin-top: 2px;
+  color: #405347;
+  white-space: nowrap;
+}
+
+.hero-energy .kcal-number b {
+  color: #2f4937;
+  font-size: clamp(28px, 2.3vw, 34px);
+  font-weight: 600;
+  line-height: 1.12;
+  letter-spacing: -1.2px;
+  font-variant-numeric: tabular-nums;
+}
+
+.hero-energy .kcal-number span {
+  color: #6f8073;
+  font-size: 10px;
+  letter-spacing: .02em;
+}
+
+.hero-energy .kcal-number em {
+  margin-left: 2px;
+  color: #95a097;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.hero-energy .remain {
+  max-width: 224px;
+  margin: 5px 0 0;
+  color: #6f8074;
+  font-size: 10.5px;
+  line-height: 1.65;
+}
+
+.hero-energy .remain strong {
+  color: #4f7258;
+  font-weight: 600;
+}
+
+.hero-energy .macro-list {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: 9px;
+  width: 100%;
+  margin-top: 0;
+  padding-top: 12px;
+  border-top: 1px solid rgba(87, 121, 91, .13);
+}
+
+.hero-energy .macro-line {
+  grid-template-columns: 38px minmax(0, 1fr) auto;
+  gap: 8px;
+  color: #687a6d;
+  font-size: 9.5px;
+}
+
+.hero-energy .macro-track {
+  height: 4px;
+  background: rgba(116, 143, 119, .14);
+}
+
+.hero-energy .macro-line b {
+  color: #637568;
+  font-size: 9px;
+}
+
+.hero-garden .hero-art { grid-column: 3; grid-row: 1; z-index: 0; }
+.hero-garden .hero-art-halo { width: 100%; height: 100%; }
 
 .hero-art {
   position: relative;
@@ -864,6 +1012,19 @@
   }
 }
 
+/* ---------------- dashboard card arrangement ---------------- */
+
+.dashboard-pair {
+  display: grid;
+  grid-template-columns: minmax(0, 1.12fr) minmax(0, .88fr);
+  gap: 16px;
+  align-items: stretch;
+}
+
+.dashboard-pair > .surface { min-width: 0; }
+
+.left-stack > .tips-section { margin-top: 0; }
+
 /* ---------------- 3D health tips carousel ---------------- */
 
 .tips-section {
@@ -937,12 +1098,12 @@
 .tips-toggle.is-paused { border-color: #5d7f65; background: #5d7f65; color: #fff; }
 
 .tips-stage {
-  --tip-w: clamp(248px, 19.5vw, 284px);
+  --tip-w: clamp(216px, 16.5vw, 240px);
   --tip-h: calc(var(--tip-w) * 1.18);
   --tip-radius: calc(var(--tip-w) * 1.5);
   position: relative;
   z-index: 2;
-  height: clamp(400px, 33vw, 462px);
+  height: clamp(356px, 27vw, 400px);
   margin-top: 6px;
   overflow: hidden;
   perspective: 1900px;
@@ -1672,9 +1833,72 @@
 
 /* ---------------- responsive ---------------- */
 
-@media (max-width: 1100px) {
-  .hero-garden { grid-template-columns: minmax(0, 1fr) minmax(260px, .8fr); padding: 28px; }
+@media (max-width: 1100px) and (min-width: 961px) {
+  .dashboard-pair { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 640px) {
+  .dashboard-pair { grid-template-columns: 1fr; }
+}
+
+@media (min-width: 1320px) {
+  .hero-energy .energy-side {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 14px;
+    align-self: stretch;
+    min-width: 0;
+  }
+  .hero-energy .energy-copy { flex: none; width: auto; }
+  .hero-energy .macro-list { width: 100%; padding-top: 11px; }
+}
+
+@media (min-width: 1320px) and (max-width: 1599px) {
+  .hero-energy {
+    align-self: start;
+    margin-top: -6px;
+    margin-left: clamp(-125px, calc((1320px - 100vw) * .45), -4px);
+  }
+}
+
+@media (min-width: 1600px) {
+  .hero-garden { grid-template-columns: minmax(0, 340px) minmax(0, 1fr) minmax(240px, 284px); }
+  .hero-energy {
+    --energy-ring: clamp(190px, 12.5vw, 240px);
+    align-self: start;
+    margin-top: 0;
+    margin-left: -66px;
+    max-width: 490px;
+  }
+  .hero-energy .energy-body { column-gap: 20px; align-items: center; }
+  .hero-energy .energy-side {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 14px;
+    align-self: stretch;
+    min-width: 0;
+  }
+  .hero-energy .energy-copy { flex: none; width: auto; }
+  .hero-energy .macro-list { width: 100%; padding-top: 11px; }
+  .hero-energy .macro-line { font-size: 10px; }
+  .hero-energy .macro-line b { font-size: 9.5px; }
+  .hero-energy .ring-center strong { font-size: clamp(38px, 2.6vw, 50px); letter-spacing: -2.4px; }
+  .hero-energy .ring-center small { font-size: clamp(12px, 1.1vw, 15px); }
+  .hero-energy .kcal-label { font-size: 11px; }
+  .hero-energy .kcal-number b { font-size: clamp(32px, 2.2vw, 42px); }
+  .hero-energy .kcal-number span,
+  .hero-energy .kcal-number em { font-size: 11px; }
+  .hero-energy .remain { max-width: none; font-size: 11.5px; }
+}
+
+@media (max-width: 1319px) {
+  .hero-garden { grid-template-columns: minmax(0, 1fr) minmax(300px, .85fr); padding: 28px; }
   .hero-garden h1 { font-size: 35px; }
+  .hero-copy { grid-column: 1; grid-row: 1; }
+  .hero-energy { grid-column: 2; grid-row: 1; justify-self: center; max-width: 360px; }
+  .hero-garden .hero-art { grid-column: 1 / -1; grid-row: 2; margin-top: 4px; }
   .hero-art-decor { width: min(100%, 332px); }
   .hero-art-halo { width: 296px; height: 296px; }
   .back-to-top { left: 243px; }
@@ -1687,6 +1911,9 @@
     padding: 26px;
   }
 
+  .hero-copy,
+  .hero-energy,
+  .hero-garden .hero-art { grid-column: auto; grid-row: auto; }
   .hero-copy { max-width: none; }
   .hero-art { margin-top: 4px; }
   .hero-art-decor { width: min(100%, 360px); }
@@ -1725,6 +1952,9 @@
   .hero-mosaic-label small { font-size: 8px; }
   .hero-mosaic-label strong { font-size: 10.5px; }
   .hero-mosaic-icon { width: 19px; height: 19px; border-radius: 6px; }
+
+  .dashboard-grid .quick-card { grid-column: 1 / -1; }
+  .dashboard-grid .assistant-card { grid-column: auto; }
 
   .tips-section { padding: 20px 16px 8px; border-radius: 16px; }
   .tips-head h2 { font-size: 15px; }

@@ -22,6 +22,8 @@ import {
 import { GlitchButton } from "@/components/glitch-button";
 import type { DashboardData } from "@/lib/dashboard";
 
+const ease = [0.22, 1, 0.36, 1] as const;
+
 type SliceTarget = "food" | "plans" | "exercise" | "review" | "profile" | "hydration";
 
 type DashboardHeroProps = {
@@ -43,8 +45,6 @@ type Slice = {
   target: SliceTarget;
   targetLabel: string;
 };
-
-const ease = [0.22, 1, 0.36, 1] as const;
 
 function buildSlices(data: DashboardData, water: number, percent: number): Slice[] {
   const macros = data.macros;
@@ -139,6 +139,64 @@ function TodayMosaic({ data, water, percent, onNavigate, onHydration }: TodayMos
   );
 }
 
+function Macro({ label, value, goal }: { label: string; value: number; goal: number }) {
+  const percent = goal > 0 ? Math.min(100, Math.round((value / goal) * 100)) : 0;
+  return (
+    <div className="macro-line">
+      <span>{label}</span>
+      <div className="macro-track" role="progressbar" aria-label={`${label}目标完成度`} aria-valuenow={percent} aria-valuemin={0} aria-valuemax={100}>
+        <div className="macro-fill" style={{ width: `${percent}%` }} />
+      </div>
+      <b>{Math.round(value)} / {goal}g</b>
+    </div>
+  );
+}
+
+function HeroEnergy({ data, percent }: { data: DashboardData; percent: number }) {
+  const reduce = useReducedMotion();
+  const ringDeg = Math.min(100, percent) * 3.6;
+  const remaining = data.calorieGoal - data.calories;
+  const macros = data.macros;
+
+  return (
+    <motion.div
+      className="hero-energy"
+      aria-label="今天的饮食节奏"
+      initial={reduce ? false : { opacity: 0, y: 18 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.58, delay: 0.08, ease }}
+    >
+      <div className="energy-body">
+        <div className="ring" role="img" aria-label={`今日热量目标完成 ${percent}%`} style={{ background: `conic-gradient(#6e9678 0deg ${ringDeg}deg, #eaf0e9 ${ringDeg}deg 360deg)` }}>
+          <div className="ring-center"><strong>{percent}<small>%</small></strong></div>
+        </div>
+        <div className="energy-side">
+          <div className="energy-copy">
+            <div className="kcal-label">已记录热量</div>
+            <div className="kcal-number">
+              <b>{data.calories.toLocaleString("zh-CN")}</b>
+              <span>kcal</span>
+              <em>/ {data.calorieGoal.toLocaleString("zh-CN")} kcal</em>
+            </div>
+            <div className="remain">
+              {remaining >= 0
+                ? <>距离参考目标还有 <strong>{remaining.toLocaleString("zh-CN")} kcal</strong></>
+                : <>已超过参考目标 <strong>{Math.abs(remaining).toLocaleString("zh-CN")} kcal</strong>，明天慢慢调整</>}
+            </div>
+          </div>
+          {macros && (
+            <div className="macro-list">
+              <Macro label="蛋白质" value={macros.protein.consumed} goal={macros.protein.goal} />
+              <Macro label="碳水" value={macros.carbs.consumed} goal={macros.carbs.goal} />
+              <Macro label="脂肪" value={macros.fat.consumed} goal={macros.fat.goal} />
+            </div>
+          )}
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
 export function DashboardHero({ data, water, percent, onRecord, onProfile, onNavigate, onHydration }: DashboardHeroProps) {
   const reduce = useReducedMotion();
   const stageRef = React.useRef<HTMLDivElement>(null);
@@ -225,6 +283,7 @@ export function DashboardHero({ data, water, percent, onRecord, onProfile, onNav
           </div>
         </motion.div>
 
+        <HeroEnergy data={data} percent={percent} />
         <TodayMosaic data={data} water={water} percent={percent} onNavigate={onNavigate} onHydration={onHydration} />
         <span className="hero-glare" aria-hidden="true" />
       </motion.section>

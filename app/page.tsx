@@ -3,12 +3,12 @@
 import * as React from "react";
 import { motion } from "framer-motion";
 import { useQuery } from "@tanstack/react-query";
-import { Camera, ChartNoAxesCombined, ChevronRight, CircleHelp, Droplets, Dumbbell, LayoutDashboard, Leaf, Loader2, MessageCircle, Plus, Salad, Trash2, UserRound, Utensils, X } from "lucide-react";
+import { Camera, ChartNoAxesCombined, ChevronRight, Droplets, Dumbbell, LayoutDashboard, Leaf, Loader2, MessageCircle, Plus, Salad, Trash2, UserRound, Utensils, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import Hero38 from "@/components/originkit/hero-38";
 import { LandingSections } from "@/components/landing/landing-sections";
 import { DashboardHero } from "@/components/dashboard-hero";
-import { BackToTop, FloatingCompanion, GrowingLoader, HamsterLoader, HealthTipsCarousel, Reveal, ScrollProgress } from "@/components/experience";
+import { BackToTop, FloatingCompanion, GrowingLoader, HamsterLoader, HealthTipsCarousel, ScrollProgress } from "@/components/experience";
 import { MealRecorder } from "@/components/meal-recorder";
 import { MySpace } from "@/components/my-space";
 import { DietPlan, ExercisePlan, PlanSwitcher } from "@/components/plan-experience";
@@ -37,19 +37,6 @@ function formatWeightChange(change: number | null) {
   if (change === null) return "暂无变化记录";
   if (Math.abs(change) < 0.05) return "与上次持平";
   return `${change > 0 ? "↑" : "↓"} ${Math.abs(change).toFixed(1)} kg`;
-}
-
-function Macro({ label, value, goal }: { label: string; value: number; goal: number }) {
-  const percent = goal > 0 ? Math.min(100, Math.round((value / goal) * 100)) : 0;
-  return (
-    <div className="macro-line">
-      <span>{label}</span>
-      <div className="macro-track" role="progressbar" aria-label={`${label}目标完成度`} aria-valuenow={percent} aria-valuemin={0} aria-valuemax={100}>
-        <div className="macro-fill" style={{ width: `${percent}%` }} />
-      </div>
-      <b>{Math.round(value)} / {goal}g</b>
-    </div>
-  );
 }
 
 function WeightChart({ series }: { series: WeightPoint[] }) {
@@ -119,11 +106,8 @@ function Dashboard() {
   if (isError || !data) return <div className="empty-note" role="alert">暂时无法载入今日数据。{error instanceof Error ? ` ${error.message}` : ""} <button className="link-button" onClick={() => void refetch()}>重试</button></div>;
 
   const percent = data.calorieGoal > 0 ? Math.round((data.calories / data.calorieGoal) * 100) : 0;
-  const ringDeg = Math.min(100, percent) * 3.6;
-  const remaining = data.calorieGoal - data.calories;
   const water = data.waterMl + waterAdded;
   const waterPercent = data.waterGoal > 0 ? Math.min(100, (water / data.waterGoal) * 100) : 0;
-  const macros = data.macros;
   const revealHydration = () => {
     const target = document.getElementById("hydration-card");
     if (!target) return;
@@ -153,67 +137,45 @@ function Dashboard() {
         viewport={{ once: true, amount: 0.08 }}
         transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
       >
-        <section className="surface energy-card">
-          <div className="section-heading"><h2>今天的饮食节奏</h2><span className="goal-tag">每日参考目标</span></div>
-          <div className="energy-body">
-            <div className="ring" role="img" aria-label={`今日热量目标完成 ${percent}%`} style={{ background: `conic-gradient(#6e9678 0deg ${ringDeg}deg, #eaf0e9 ${ringDeg}deg 360deg)` }}>
-              <div className="ring-center"><strong>{percent}%</strong><span>今日进度</span></div>
-            </div>
-            <div className="energy-copy">
-              <div className="kcal-label">已记录热量</div>
-              <div className="kcal-number"><b>{data.calories.toLocaleString("zh-CN")}</b> <span>/ {data.calorieGoal.toLocaleString("zh-CN")} kcal</span></div>
-              <div className="remain">
-                {remaining >= 0
-                  ? <>距离参考目标还有 <strong>{remaining.toLocaleString("zh-CN")} kcal</strong> 的弹性空间</>
-                  : <>已超过参考目标 <strong>{Math.abs(remaining).toLocaleString("zh-CN")} kcal</strong>，明天再慢慢调整</>}
-              </div>
-              <div className="macro-list">
-                {macros
-                  ? <>
-                      <Macro label="蛋白质" value={macros.protein.consumed} goal={macros.protein.goal} />
-                      <Macro label="碳水" value={macros.carbs.consumed} goal={macros.carbs.goal} />
-                      <Macro label="脂肪" value={macros.fat.consumed} goal={macros.fat.goal} />
-                    </>
-                  : <p className="macro-empty">蛋白质、碳水、脂肪的明细还没有接入记录，这里只展示热量合计。</p>}
-              </div>
-            </div>
-          </div>
-          <div className="energy-foot"><span>目标是参考范围，不是考试分数。</span><button className="link-button" onClick={() => setPage("plans")}>查看营养目标 <ChevronRight size={14} /></button></div>
-        </section>
-
-        <section className="surface training-card">
-          <SectionTitle title="今天的身体时间" action={<button onClick={() => setPage("exercise")}>查看运动计划 <ChevronRight size={13} /></button>} />
-          {data.workout ? (
-            <>
-              <div className="training-content">
+        <div className="dashboard-pair">
+          <section className="surface training-card">
+            <SectionTitle title="今天的身体时间" action={<button onClick={() => setPage("exercise")}>查看运动计划 <ChevronRight size={13} /></button>} />
+            {data.workout ? (
+              <>
+                <div className="training-content">
+                  <div className="training-icon"><Dumbbell size={21} /></div>
+                  <div className="training-info"><strong>{data.workout.title}</strong><p>{data.workout.exercises.join("、")}</p></div>
+                  <span className="training-time">约 {data.workout.durationMinutes} 分钟</span>
+                </div>
+                <div className="training-bottom">
+                  <span>{trainingStarted ? "已开始 · 按自己的状态调整强度" : "强度：轻松 · 可在家完成"}</span>
+                  {trainingStarted
+                    ? <Button variant="secondary" onClick={() => setTrainingStarted(false)}>结束训练</Button>
+                    : <Button onClick={() => setTrainingStarted(true)}>开始训练</Button>}
+                </div>
+                {trainingStarted && <p className="training-note" role="status">这里只做计划提醒，不记录心率或动作数据；身体不适请立即停止。</p>}
+              </>
+            ) : (
+              <div className="card-empty">
                 <div className="training-icon"><Dumbbell size={21} /></div>
-                <div className="training-info"><strong>{data.workout.title}</strong><p>{data.workout.exercises.join("、")}</p></div>
-                <span className="training-time">约 {data.workout.durationMinutes} 分钟</span>
+                <div><strong>今天还没有训练安排</strong><p>训练计划还没有接入个人记录，先按自己的节奏活动。</p></div>
               </div>
-              <div className="training-bottom">
-                <span>{trainingStarted ? "已开始 · 按自己的状态调整强度" : "强度：轻松 · 可在家完成"}</span>
-                {trainingStarted
-                  ? <Button variant="secondary" onClick={() => setTrainingStarted(false)}>结束训练</Button>
-                  : <Button onClick={() => setTrainingStarted(true)}>开始训练</Button>}
-              </div>
-              {trainingStarted && <p className="training-note" role="status">这里只做计划提醒，不记录心率或动作数据；身体不适请立即停止。</p>}
-            </>
-          ) : (
-            <div className="card-empty">
-              <div className="training-icon"><Dumbbell size={21} /></div>
-              <div><strong>今天还没有训练安排</strong><p>训练计划还没有接入个人记录，先按自己的节奏活动。</p></div>
-            </div>
-          )}
-        </section>
+            )}
+          </section>
 
-        <section className="surface quick-card">
-          <SectionTitle title="记录今天的一点点" action={<button onClick={() => setPage("food")}>全部记录 <ChevronRight size={13} /></button>} />
-          <div className="quick-actions">
-            <button className="quick-action" onClick={() => setPage("food")}><span className="quick-icon"><Camera size={16} /></span>拍照记一餐</button>
-            <button className="quick-action" onClick={() => setPage("food")}><span className="quick-icon"><Plus size={16} /></span>手动记一餐</button>
-            <button className="quick-action" onClick={() => setPage("review")}><span className="quick-icon"><ChartNoAxesCombined size={16} /></span>看看本周复盘</button>
-          </div>
-        </section>
+          <section className="surface hydration-card" id="hydration-card" tabIndex={-1} aria-labelledby="hydration-title">
+            <div className="section-title"><h2 id="hydration-title">喝水也算照顾自己</h2><span className="goal-tag">{water.toLocaleString("zh-CN")} / {data.waterGoal.toLocaleString("zh-CN")} ml</span></div>
+            <div className="hydration-row">
+              <span className="water-icon"><Droplets size={20} /></span>
+              <div className="water-detail"><strong>每一杯都算数</strong><small>{waterAdded > 0 ? `本次已加 ${waterAdded} ml` : "今天已记录"}</small></div>
+              <button className="water-add" onClick={() => addWater()} aria-label="记录一杯水，250 毫升">+</button>
+            </div>
+            <div className="water-progress"><span style={{ width: `${waterPercent}%` }} /></div>
+            <p className="water-note">{data.demo ? `演示基数 ${data.waterMl.toLocaleString("zh-CN")} ml，加上当前浏览器的临时记录；刷新后重置，不会同步到账号。` : "喝水记录只保存在当前浏览器，刷新后重新开始，尚未同步到账号。"}</p>
+          </section>
+        </div>
+
+        <HealthTipsCarousel />
       </motion.div>
 
       <motion.div
@@ -223,15 +185,14 @@ function Dashboard() {
         viewport={{ once: true, amount: 0.08 }}
         transition={{ duration: 0.55, delay: 0.08, ease: [0.22, 1, 0.36, 1] }}
       >
-        <button className="surface pending-card text-left" onClick={() => setPage("food")}>
-          <div className="pending-top">
-            <span className="pending-mark"><CircleHelp size={15} /></span>
-            <strong>{data.pendingMeals > 0 ? `有 ${data.pendingMeals} 条识别结果等你确认` : "今天的餐食记录"}</strong>
-            <small>{data.mealsToday} 餐已确认</small>
+        <section className="surface quick-card">
+          <SectionTitle title="记录今天的一点点" action={<button onClick={() => setPage("food")}>全部记录 <ChevronRight size={13} /></button>} />
+          <div className="quick-actions">
+            <button className="quick-action" onClick={() => setPage("food")}><span className="quick-icon"><Camera size={16} /></span>拍照记一餐</button>
+            <button className="quick-action" onClick={() => setPage("food")}><span className="quick-icon"><Plus size={16} /></span>手动记一餐</button>
+            <button className="quick-action" onClick={() => setPage("review")}><span className="quick-icon"><ChartNoAxesCombined size={16} /></span>看看本周复盘</button>
           </div>
-          <p>{data.pendingMeals > 0 ? "确认前不会计入今天的营养统计。份量由你来定。" : "还没有待确认的餐食。拍张照片或手动补一餐，记录才算数。"}</p>
-          <span className="link-button">去餐食记录 <ChevronRight size={14} /></span>
-        </button>
+        </section>
 
         <section className="assistant-card">
           <div className="assistant-head"><span className="assistant-spark"><Leaf size={17} /></span><strong>你的健康搭子</strong><small>日常建议</small></div>
@@ -257,21 +218,8 @@ function Dashboard() {
             </>
           )}
         </section>
-
-        <section className="surface hydration-card" id="hydration-card" tabIndex={-1} aria-labelledby="hydration-title">
-          <div className="section-title"><h2 id="hydration-title">喝水也算照顾自己</h2><span className="goal-tag">{water.toLocaleString("zh-CN")} / {data.waterGoal.toLocaleString("zh-CN")} ml</span></div>
-          <div className="hydration-row">
-            <span className="water-icon"><Droplets size={20} /></span>
-            <div className="water-detail"><strong>每一杯都算数</strong><small>{waterAdded > 0 ? `本次已加 ${waterAdded} ml` : "今天已记录"}</small></div>
-            <button className="water-add" onClick={() => addWater()} aria-label="记录一杯水，250 毫升">+</button>
-          </div>
-          <div className="water-progress"><span style={{ width: `${waterPercent}%` }} /></div>
-          <p className="water-note">{data.demo ? `演示基数 ${data.waterMl.toLocaleString("zh-CN")} ml，加上当前浏览器的临时记录；刷新后重置，不会同步到账号。` : "喝水记录只保存在当前浏览器，刷新后重新开始，尚未同步到账号。"}</p>
-        </section>
       </motion.div>
     </div>
-
-    <Reveal delay={0.05}><HealthTipsCarousel /></Reveal>
   </div>;
 }
 

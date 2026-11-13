@@ -5,6 +5,7 @@ import Image from "next/image";
 import { motion, useReducedMotion } from "framer-motion";
 import { ArrowDown, ArrowUp, ArrowUpRight } from "lucide-react";
 import type { Page } from "@/stores/health-store";
+import SphereGallery3D from "./sphere-gallery-3d";
 
 type LandingSectionsProps = {
   onEnter: (page: Page) => void;
@@ -46,7 +47,7 @@ function ModuleSection({
   meta: (typeof modules)[number];
   title: React.ReactNode;
   desc: string;
-  points: string[];
+  points: React.ReactNode[];
   cta: string;
   reverse?: boolean;
   onEnter: LandingSectionsProps["onEnter"];
@@ -73,8 +74,8 @@ function ModuleSection({
             {desc}
           </motion.p>
           <motion.ul className="module-points" {...reveal(0.18)}>
-            {points.map((point) => (
-              <li key={point}>{point}</li>
+            {points.map((point, index) => (
+              <li key={index}>{point}</li>
             ))}
           </motion.ul>
           <motion.div {...reveal(0.24)} className="module-action">
@@ -89,6 +90,271 @@ function ModuleSection({
         </motion.div>
       </div>
     </section>
+  );
+}
+
+const WEEK_PHOTOS = [
+  "/images/landing/week/week-coast.webp",
+  "/images/landing/week/week-salad-face.webp",
+  "/images/landing/week/week-morning-run.webp",
+  "/images/landing/week/week-hoop.webp",
+  "/images/landing/week/week-lake.webp",
+  "/images/landing/week/week-snow-run.webp",
+  "/images/landing/week/week-salad-splash.webp",
+  "/images/landing/week/week-sprint.webp",
+  "/images/landing/week/week-forest.webp",
+  "/images/landing/week/week-band-training.webp",
+  "/images/landing/week/week-skate.webp",
+  "/images/landing/week/week-wall-run.webp",
+  "/images/landing/week/week-longboard.webp",
+].map((image) => ({ image }));
+
+function WeeklySphere() {
+  return (
+    <div className="ls-orb">
+      <div className="ls-orb__head">
+        <span className="ls-orb__title">这周的样子</span>
+        <span className="ls-orb__stamp">示意照片</span>
+      </div>
+      <div className="ls-orb__stage">
+        <SphereGallery3D
+          images={WEEK_PHOTOS}
+          branches={WEEK_PHOTOS.length}
+          background="transparent"
+          scale={100}
+          size={32}
+          scatter={4}
+          speed={9}
+          direction="counterclockwise"
+          hover={150}
+          rounded={12}
+          core={{ coreSize: 10, coreColor: "#8ea87f59", lineColor: "#4a684c59" }}
+        />
+        <span className="ls-orb__hint">拖动旋转</span>
+      </div>
+    </div>
+  );
+}
+
+type MochiMood = "awake" | "happy" | "dozing";
+
+const MOCHI_BODY =
+  "M94 40L266 40C317.2 40 330 52.8 330 104L330 280C330 331.2 317.2 344 266 344L94 344C42.8 344 30 331.2 30 280L30 104C30 52.8 42.8 40 94 40Z";
+
+function MochiFigure() {
+  const reduce = useReducedMotion();
+  const hostRef = React.useRef<HTMLDivElement>(null);
+  const happyTimer = React.useRef<number | undefined>(undefined);
+  const hopTimer = React.useRef<number | undefined>(undefined);
+  const [mood, setMood] = React.useState<MochiMood>("awake");
+  const [hopping, setHopping] = React.useState(false);
+
+  React.useEffect(() => {
+    const host = hostRef.current;
+    if (!host || reduce) return;
+
+    let frame = 0;
+    let lastActivity = performance.now();
+    let lastGlance = 0;
+
+    const applyGaze = (x: number, y: number) => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        host.style.setProperty("--mx", x.toFixed(3));
+        host.style.setProperty("--my", y.toFixed(3));
+      });
+    };
+
+    const look = (event: PointerEvent) => {
+      const rect = host.getBoundingClientRect();
+      if (rect.width === 0) return;
+      const dx = event.clientX - (rect.left + rect.width / 2);
+      const dy = event.clientY - (rect.top + rect.height / 2);
+      const distance = Math.hypot(dx, dy);
+      if (distance < 2) {
+        applyGaze(0, 0);
+      } else {
+        const strength = Math.min(1, distance / 160);
+        applyGaze((dx / distance) * strength, (dy / distance) * strength);
+      }
+      lastActivity = performance.now();
+      setMood((current) => (current === "dozing" ? "awake" : current));
+    };
+
+    const restGaze = () => {
+      applyGaze(0, 0);
+    };
+
+    const idle = window.setInterval(() => {
+      if (document.hidden) return;
+      const now = performance.now();
+      const quiet = now - lastActivity;
+      if (quiet > 9000) {
+        setMood((current) => (current === "awake" ? "dozing" : current));
+        return;
+      }
+      if (quiet > 2400 && now - lastGlance > 2600) {
+        lastGlance = now;
+        const angle = Math.random() * Math.PI * 2;
+        applyGaze(Math.cos(angle) * 0.85, Math.sin(angle) * 0.55);
+      }
+    }, 600);
+
+    let lastY = window.scrollY;
+    let lastT = performance.now();
+    let hopCooldown = 0;
+    const onScroll = () => {
+      const now = performance.now();
+      const y = window.scrollY;
+      const dy = y - lastY;
+      const dt = Math.max(8, now - lastT);
+      lastY = y;
+      lastT = now;
+      if (dy > -18 || dy / dt > -1.1 || now < hopCooldown) return;
+      hopCooldown = now + 1100;
+      lastActivity = now;
+      setMood((current) => (current === "dozing" ? "awake" : current));
+      setHopping(true);
+      window.clearTimeout(hopTimer.current);
+      hopTimer.current = window.setTimeout(() => setHopping(false), 780);
+    };
+
+    window.addEventListener("pointermove", look, { passive: true });
+    window.addEventListener("blur", restGaze);
+    document.addEventListener("pointerleave", restGaze);
+    window.addEventListener("scroll", onScroll, { passive: true });
+
+    return () => {
+      cancelAnimationFrame(frame);
+      window.clearInterval(idle);
+      window.clearTimeout(happyTimer.current);
+      window.clearTimeout(hopTimer.current);
+      window.removeEventListener("pointermove", look);
+      window.removeEventListener("blur", restGaze);
+      document.removeEventListener("pointerleave", restGaze);
+      window.removeEventListener("scroll", onScroll);
+    };
+  }, [reduce]);
+
+  const tap = () => {
+    if (reduce) return;
+    setMood("happy");
+    window.clearTimeout(happyTimer.current);
+    happyTimer.current = window.setTimeout(() => setMood("awake"), 820);
+  };
+
+  return (
+    <div
+      className={`mochi is-${mood}${hopping ? " is-hop" : ""}`}
+      ref={hostRef}
+      role="img"
+      aria-label="健康搭子的形象：一枚淡奶绿色软方块，眼睛会跟着指针转动"
+      onPointerDown={tap}
+    >
+      <svg className="mochi__body" viewBox="0 0 360 400" aria-hidden="true">
+        <defs>
+          <radialGradient id="mochi-fill" cx="0.36" cy="0.18" r="0.96">
+            <stop offset="0" stopColor="#FFFEF8" />
+            <stop offset="0.25" stopColor="#FCFCF1" />
+            <stop offset="0.45" stopColor="#F5F8E6" />
+            <stop offset="0.65" stopColor="#EAF1D7" />
+            <stop offset="0.82" stopColor="#DDE7C4" />
+            <stop offset="0.92" stopColor="#D2DEB7" />
+            <stop offset="1" stopColor="#C6D2AA" />
+          </radialGradient>
+          <radialGradient id="mochi-glow">
+            <stop offset="0" stopColor="#FFFFFF" stopOpacity="0.95" />
+            <stop offset="0.55" stopColor="#FBFDEF" stopOpacity="0.22" />
+            <stop offset="1" stopColor="#FBFDEF" stopOpacity="0" />
+          </radialGradient>
+          <radialGradient id="mochi-specular">
+            <stop offset="0" stopColor="#FFFFFF" stopOpacity="0.7" />
+            <stop offset="1" stopColor="#FFFFFF" stopOpacity="0" />
+          </radialGradient>
+          <linearGradient id="mochi-rim" x1="0.18" y1="0.02" x2="0.8" y2="1">
+            <stop offset="0" stopColor="#6F7B66" stopOpacity="0" />
+            <stop offset="0.38" stopColor="#6F7B66" stopOpacity="0.06" />
+            <stop offset="0.66" stopColor="#616E58" stopOpacity="0.26" />
+            <stop offset="1" stopColor="#53604E" stopOpacity="0.44" />
+          </linearGradient>
+          <linearGradient id="mochi-rim-light" x1="0.12" y1="0" x2="0.72" y2="0.9">
+            <stop offset="0" stopColor="#FFFFFF" stopOpacity="0.7" />
+            <stop offset="0.3" stopColor="#FFFFFF" stopOpacity="0.28" />
+            <stop offset="0.6" stopColor="#FFFFFF" stopOpacity="0" />
+          </linearGradient>
+          <linearGradient id="mochi-side" x1="0.55" y1="0" x2="1" y2="0">
+            <stop offset="0" stopColor="#5D6A55" stopOpacity="0" />
+            <stop offset="0.6" stopColor="#5D6A55" stopOpacity="0.04" />
+            <stop offset="1" stopColor="#53604E" stopOpacity="0.22" />
+          </linearGradient>
+          <radialGradient id="mochi-left-shade">
+            <stop offset="0" stopColor="#6F7B66" stopOpacity="0.2" />
+            <stop offset="1" stopColor="#6F7B66" stopOpacity="0" />
+          </radialGradient>
+          <radialGradient id="mochi-bottom-shade">
+            <stop offset="0" stopColor="#5D6A55" stopOpacity="0.32" />
+            <stop offset="1" stopColor="#5D6A55" stopOpacity="0" />
+          </radialGradient>
+          <radialGradient id="mochi-shadow">
+            <stop offset="0" stopColor="#3E5647" stopOpacity="0.26" />
+            <stop offset="0.6" stopColor="#3E5647" stopOpacity="0.12" />
+            <stop offset="1" stopColor="#3E5647" stopOpacity="0" />
+          </radialGradient>
+          <filter id="mochi-rim-blur" x="-25%" y="-25%" width="150%" height="150%">
+            <feGaussianBlur stdDeviation="10" />
+          </filter>
+          <filter id="mochi-light-blur" x="-25%" y="-25%" width="150%" height="150%">
+            <feGaussianBlur stdDeviation="6" />
+          </filter>
+          <clipPath id="mochi-clip">
+            <path d={MOCHI_BODY} />
+          </clipPath>
+        </defs>
+        <ellipse className="mochi__shadow" cx="180" cy="368" rx="128" ry="17" fill="url(#mochi-shadow)" />
+        <g className="mochi__figure">
+          <path d={MOCHI_BODY} fill="url(#mochi-fill)" />
+          <g clipPath="url(#mochi-clip)">
+            <g className="mochi__sheen">
+              <ellipse cx="146" cy="90" rx="92" ry="70" fill="url(#mochi-glow)" />
+              <ellipse cx="196" cy="62" rx="84" ry="28" fill="url(#mochi-specular)" />
+            </g>
+            <path
+              d={MOCHI_BODY}
+              fill="none"
+              stroke="url(#mochi-rim)"
+              strokeWidth="54"
+              filter="url(#mochi-rim-blur)"
+            />
+            <rect x="30" y="40" width="300" height="304" fill="url(#mochi-side)" />
+            <ellipse cx="22" cy="210" rx="54" ry="172" fill="url(#mochi-left-shade)" />
+            <ellipse cx="180" cy="352" rx="172" ry="66" fill="url(#mochi-bottom-shade)" />
+            <path
+              d={MOCHI_BODY}
+              fill="none"
+              stroke="url(#mochi-rim-light)"
+              strokeWidth="22"
+              filter="url(#mochi-light-blur)"
+            />
+          </g>
+          <g className="mochi__eyes">
+            <g className="mochi__lid-state">
+              <g className="mochi__eye">
+                <rect className="mochi__eye-shape" x="120" y="153" width="24" height="42" rx="12" />
+                <circle className="mochi__glint" cx="125.8" cy="165" r="3.6" />
+              </g>
+              <path className="mochi__happy" d="M112 182Q132 158 152 182" />
+            </g>
+            <g className="mochi__lid-state">
+              <g className="mochi__eye">
+                <rect className="mochi__eye-shape" x="216" y="153" width="24" height="42" rx="12" />
+                <circle className="mochi__glint" cx="221.8" cy="165" r="3.6" />
+              </g>
+              <path className="mochi__happy" d="M208 182Q228 158 248 182" />
+            </g>
+          </g>
+        </g>
+      </svg>
+    </div>
   );
 }
 
@@ -203,22 +469,38 @@ export function LandingSections({ onEnter }: LandingSectionsProps) {
         cta="查看饮食计划"
         onEnter={onEnter}
       >
-        <figure className="media-frame media-frame--wide">
-          <Image
-            src="/images/landing/diet-plan.webp"
-            alt="奶油白桌面上的周计划手账与分格餐盘"
-            fill
-            sizes="(max-width: 960px) 88vw, 44vw"
-          />
-          <figcaption className="media-panel">
-            <span className="media-panel__tag">计划结构示意</span>
-            <ul>
-              <li>早餐</li>
-              <li>午餐</li>
-              <li>晚餐</li>
-            </ul>
-            <span className="media-panel__note">按画像与已有记录生成</span>
-          </figcaption>
+        <figure
+          className="diet-stack"
+          tabIndex={0}
+          aria-label="饮食计划示意：记录手账、每周计划与营养餐盘"
+        >
+          <div className="diet-stack__stage">
+            <div className="diet-stack__card diet-stack__card--journal">
+              <Image
+                src="/images/landing/diet-plan-journal.webp"
+                alt="白衬衫的人在手账上写下每周饮食计划，桌边放着记录餐食的手机和餐盘"
+                fill
+                sizes="(max-width: 700px) 40vw, (max-width: 980px) 38vw, 300px"
+              />
+            </div>
+            <div className="diet-stack__card diet-stack__card--plan">
+              <Image
+                src="/images/landing/diet-plan.webp"
+                alt="奶油白桌面上的周计划手账与分格餐盘"
+                fill
+                sizes="(max-width: 700px) 40vw, (max-width: 980px) 38vw, 300px"
+              />
+            </div>
+            <div className="diet-stack__card diet-stack__card--bowl">
+              <Image
+                src="/images/landing/diet-plan-bowl.webp"
+                alt="一碗鹰嘴豆、牛油果与小份谷物沙拉，旁边是一杯柠檬水"
+                fill
+                sizes="(max-width: 700px) 40vw, (max-width: 980px) 38vw, 300px"
+              />
+            </div>
+          </div>
+          <p className="media-credit diet-stack__credit">图片示意</p>
         </figure>
       </ModuleSection>
 
@@ -234,15 +516,31 @@ export function LandingSections({ onEnter }: LandingSectionsProps) {
         cta="打开运动计划"
         onEnter={onEnter}
       >
-        <figure className="media-frame media-frame--wide exercise-frame">
-          <Image
-            src="/images/landing/exercise-plan.webp"
-            alt="浅木地板上的鼠尾草绿瑜伽垫、哑铃和跳绳"
-            fill
-            sizes="(max-width: 960px) 88vw, 44vw"
-          />
-          <figcaption className="exercise-tag">完成一格 · 亮一格</figcaption>
-          <p className="exercise-note">训练状态由你勾选，未完成不代填</p>
+        <figure className="exercise-stack" aria-label="运动计划示意：户外慢跑、室内拉伸与居家训练">
+          <div className="exercise-stack__card exercise-stack__card--run">
+            <Image
+              src="/images/landing/exercise-run.webp"
+              alt="清晨在公园小路上慢跑的男性"
+              fill
+              sizes="(max-width: 700px) 50vw, 400px"
+            />
+          </div>
+          <div className="exercise-stack__card exercise-stack__card--stretch">
+            <Image
+              src="/images/landing/exercise-stretch.webp"
+              alt="在瑜伽垫上做侧向拉伸的女性"
+              fill
+              sizes="(max-width: 700px) 50vw, 400px"
+            />
+          </div>
+          <div className="exercise-stack__card exercise-stack__card--mat">
+            <Image
+              src="/images/landing/exercise-plan.webp"
+              alt="浅木地板上的鼠尾草绿瑜伽垫、哑铃和跳绳"
+              fill
+              sizes="(max-width: 700px) 50vw, 400px"
+            />
+          </div>
         </figure>
       </ModuleSection>
 
@@ -260,64 +558,35 @@ export function LandingSections({ onEnter }: LandingSectionsProps) {
         onEnter={onEnter}
       >
         <div className="ls-coach-visual">
-          <div className="ls-coach-orbit" aria-hidden="true" />
-          <svg className="ls-coach-cubes" viewBox="0 0 150 150" aria-hidden="true">
-            <g transform="translate(46 8)">
-              <polygon points="0,18 34,0 68,18 34,36" fill="#e4ecdb" />
-              <polygon points="0,18 34,36 34,72 0,54" fill="#9fb79a" />
-              <polygon points="68,18 34,36 34,72 68,54" fill="#75927a" />
-            </g>
-            <g transform="translate(12 60)">
-              <polygon points="0,18 34,0 68,18 34,36" fill="#f3ecd9" />
-              <polygon points="0,18 34,36 34,72 0,54" fill="#d5b98b" />
-              <polygon points="68,18 34,36 34,72 68,54" fill="#b9905d" />
-            </g>
-            <g transform="translate(80 80)">
-              <polygon points="0,15 26,0 52,15 26,30" fill="#efe9da" />
-              <polygon points="0,15 26,30 26,56 0,41" fill="#c3cfb8" />
-              <polygon points="52,15 26,30 26,56 52,41" fill="#8aa78c" />
-            </g>
-          </svg>
-          <div className="ls-coach-demo">
-            <span className="ls-coach-demo__tag">对话示意</span>
-            <p className="ls-coach-bubble ls-coach-bubble--user">今天晚餐怎么搭配？</p>
-            <p className="ls-coach-bubble ls-coach-bubble--ai">
-              建议先补一份深色蔬菜和一份优质蛋白，主食按今天的活动量来定。
-            </p>
-            <p className="ls-coach-demo__meta">回答附带出处 · 不做诊断</p>
-          </div>
+          <MochiFigure />
         </div>
       </ModuleSection>
 
       <ModuleSection
         meta={modules[4]}
-        title={<>一周七帧，<br />记录过才亮</>}
-        desc="把一周的饮食、运动和记录连续性放进七帧里。哪一天没有记录，就明确写未记录，不用估算把格子填满。"
+        title={<>这一周，<br />值得再看一眼</>}
+        desc="吃了什么、动了几天、哪天记了，都在这一页。"
         points={[
-          "七帧对应一周七天",
-          "只看真实记录与连续性",
-          "没有数据时保留空白",
+          <>
+            <span className="review-point__label">复盘</span>
+            <span className="review-point__rule" aria-hidden="true" />
+            <span className="review-point__text">一目了然</span>
+          </>,
+          <>
+            <span className="review-point__label">成果</span>
+            <span className="review-point__rule" aria-hidden="true" />
+            <span className="review-point__text">持续进步</span>
+          </>,
+          <>
+            <span className="review-point__label">反馈</span>
+            <span className="review-point__rule" aria-hidden="true" />
+            <span className="review-point__text">满满成就感</span>
+          </>,
         ]}
-        cta="查看本周复盘"
+        cta="翻开这周"
         onEnter={onEnter}
       >
-        <div className="review-visual">
-          <div className="review-orbit" aria-hidden="true" />
-          <div className="review-head">
-            <span className="review-title">本周七帧</span>
-            <span className="review-tag">界面示意</span>
-          </div>
-          <ol className="review-frames" aria-label="一周七帧示意">
-            {["一", "二", "三", "四", "五", "六", "日"].map((day) => (
-              <li key={day}>
-                <span className="review-day">周{day}</span>
-                <span className="review-state" aria-hidden="true">—</span>
-                <span className="review-pip" aria-hidden="true" />
-              </li>
-            ))}
-          </ol>
-          <p className="review-caption">记录后点亮；没有记录就保持空白。</p>
-        </div>
+        <WeeklySphere />
       </ModuleSection>
 
       <section className="landing-final" aria-labelledby="landing-final-title">
