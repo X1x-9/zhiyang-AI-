@@ -2138,6 +2138,11 @@
   transition: transform .16s ease, box-shadow .16s ease, background .16s ease;
 }
 
+.chat-reaction:disabled {
+  pointer-events: none;
+  opacity: .45;
+}
+
 .chat-reaction:hover,
 .chat-reaction:focus-visible {
   z-index: 2;

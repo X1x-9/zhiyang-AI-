@@ -8,13 +8,3 @@ build/
 *.tsbuildinfo
 prisma/generated/
 .neon
-.originkit/
-.shots/
-.ai-logs/
-.rag-eval/
-
-# local logs / OS junk
-*.log
-.DS_Store
-Thumbs.db
-vibe_images/

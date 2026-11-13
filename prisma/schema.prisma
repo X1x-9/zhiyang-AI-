@@ -1,0 +1,88 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum MealStatus {
+  PENDING
+  CONFIRMED
+  REJECTED
+}
+
+enum MealType {
+  BREAKFAST
+  LUNCH
+  DINNER
+  SNACK
+  OTHER
+}
+
+model HealthProfile {
+  id              String        @id @default(cuid())
+  displayName     String        @default("林同学")
+  goal            String        @default("温和减脂")
+  dietaryNotes    String        @default("")
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  meals           MealRecord[]
+  planVersions    PlanVersion[]
+  feedback        Feedback[]
+}
+
+model MealRecord {
+  id              String       @id @default(cuid())
+  profileId       String
+  eatenAt         DateTime     @default(now())
+  title           String
+  mealType        MealType     @default(OTHER)
+  items           Json
+  estimatedKcal   Int?
+  lowerKcal       Int?
+  upperKcal       Int?
+  notes           String       @default("")
+  status          MealStatus   @default(PENDING)
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  profile         HealthProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@index([profileId, eatenAt])
+  @@index([status, createdAt])
+}
+
+model PlanVersion {
+  id              String        @id @default(cuid())
+  profileId       String
+  version         Int
+  plan            Json
+  createdAt       DateTime      @default(now())
+  profile         HealthProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@unique([profileId, version])
+}
+
+model Feedback {
+  id          String        @id @default(cuid())
+  profileId   String
+  topic       String
+  rating      Int?
+  note        String        @default("")
+  createdAt   DateTime      @default(now())
+  profile     HealthProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@index([profileId, createdAt])
+}
+
+model KnowledgeChunk {
+  id          String                     @id @default(cuid())
+  title       String
+  source      String
+  content     String
+  embedding   Unsupported("vector(1024)")?
+  reviewedAt  DateTime?
+  createdAt   DateTime                   @default(now())
+
+  @@index([source])
+}

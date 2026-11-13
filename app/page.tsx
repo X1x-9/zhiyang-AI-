@@ -302,11 +302,12 @@ type ChatMessage = {
   content: string;
   failed?: boolean;
   retry?: string;
+  reaction?: ChatReactionId;
 };
 
 const chatReactions = [
   { id: "like", label: "喜欢", emoji: "👍" },
-  { id: "cheer", label: "加油", emoji: "👏🏻" },
+  { id: "confused", label: "疑惑", emoji: "🤔" },
   { id: "unsatisfied", label: "不满意", emoji: "👎" },
   { id: "appreciate", label: "欣赏", emoji: "✨" },
   { id: "smile", label: "微笑", emoji: "🙂" },
@@ -331,13 +332,15 @@ function ChatPanel() {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages]);
 
-  async function send(value: string, appendUser = true) {
+  async function send(value: string, options: { appendUser?: boolean; reaction?: ChatReactionId } = {}) {
+    const { appendUser = true, reaction: reactionId } = options;
     const text = value.trim();
-    if (!text || pending) return;
+    if (pending || (!text && !reactionId)) return;
     const history = messages
       .filter((message) => message.id !== "intro" && !message.failed && message.content.trim())
       .map(({ role, content }) => ({ role, content }))
       .slice(-12);
+    if (reactionId && !history.some((message) => message.role === "assistant")) return;
     if (appendUser) {
       history.push({ role: "user", content: text });
       setReaction(null);
@@ -355,7 +358,7 @@ function ChatPanel() {
       const response = await fetch("/api/assistant", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: history }),
+        body: JSON.stringify({ messages: history, ...(reactionId ? { reaction: reactionId } : {}) }),
       });
       if (!response.ok) {
         const data = (await response.json().catch(() => null)) as { message?: string } | null;
@@ -378,7 +381,7 @@ function ChatPanel() {
       if (!answer.trim()) throw new Error("这次没有收到回答，请再试一次。");
     } catch (error) {
       const message = error instanceof Error ? error.message : "请求失败，请稍后重试。";
-      setMessages((current) => current.map((item) => item.id === assistantId ? { ...item, content: message, failed: true, retry: text } : item));
+      setMessages((current) => current.map((item) => item.id === assistantId ? { ...item, content: message, failed: true, retry: text, reaction: reactionId } : item));
     } finally {
       setPending(false);
     }
@@ -389,7 +392,18 @@ function ChatPanel() {
     void send(question);
   }
 
+  function react(id: ChatReactionId) {
+    if (pending) return;
+    if (reaction === id) {
+      setReaction(null);
+      return;
+    }
+    setReaction(id);
+    void send("", { appendUser: false, reaction: id });
+  }
+
   const hasUserMessage = messages.some((message) => message.role === "user");
+  const hasAnswer = messages.some((message) => message.id !== "intro" && message.role === "assistant" && !message.failed && message.content.trim());
   const suggestions = ["晚餐怎么搭配更合适？", "今天适合做什么训练？", "怎么记录才算准确？"];
   const activeReaction = chatReactions.find((item) => item.id === reaction);
 
@@ -404,8 +418,8 @@ function ChatPanel() {
         {messages.map((message) => (
           <div className={`message ${message.role === "user" ? "user" : "bot"}${message.failed ? " failed" : ""}`} key={message.id}>
             {message.content || (pending ? <HamsterLoader size="mini" label="正在思考…" /> : null)}
-            {message.failed && message.retry && (
-              <button type="button" className="chat-retry" onClick={() => void send(message.retry ?? "", false)} disabled={pending}>重新发送</button>
+            {message.failed && (message.retry || message.reaction) && (
+              <button type="button" className="chat-retry" onClick={() => void send(message.retry ?? "", { appendUser: false, reaction: message.reaction })} disabled={pending}>重新发送</button>
             )}
           </div>
         ))}
@@ -417,7 +431,7 @@ function ChatPanel() {
         </div>
       )}
       <div className="chat-reactions">
-        <span className="chat-reactions-label" aria-live="polite">{activeReaction ? `已选：${activeReaction.label}` : "快捷评价"}</span>
+        <span className="chat-reactions-label" aria-live="polite">{activeReaction ? `已选：${activeReaction.label}` : hasAnswer ? "快捷评价" : "先提问，再评价回答"}</span>
         <div className="chat-reaction-list" role="group" aria-label="快捷评价">
           {chatReactions.map(({ id, label, emoji }) => (
             <button
@@ -426,7 +440,8 @@ function ChatPanel() {
               className={`chat-reaction${reaction === id ? " is-selected" : ""}`}
               aria-label={label}
               aria-pressed={reaction === id}
-              onClick={() => setReaction((current) => current === id ? null : id)}
+              disabled={!hasAnswer || pending}
+              onClick={() => react(id)}
             >
               <span className="chat-reaction-emoji" aria-hidden="true">{emoji}</span>
               <span className="chat-reaction-tip" aria-hidden="true">{label}</span>
