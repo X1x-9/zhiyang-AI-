@@ -21,6 +21,7 @@ import {
   Utensils,
   Wind,
 } from "lucide-react";
+import { FoodGuide } from "@/components/food-guide";
 import { Reveal } from "@/components/experience";
 import { GlitchButton } from "@/components/glitch-button";
 import type { DashboardData } from "@/lib/dashboard";
@@ -39,6 +40,7 @@ const planMeals = [
     title: "燕麦酸奶碗",
     tags: ["10 分钟", "无需开火"],
     swap: "无糖酸奶可以换成豆浆，燕麦换成全麦面包；蛋白质和主食都还在。",
+    tone: "amber",
   },
   {
     time: "12:30",
@@ -46,6 +48,7 @@ const planMeals = [
     title: "番茄鸡胸杂粮饭",
     tags: ["外食友好", "少油"],
     swap: "外食可以选少油盖饭，再加一份青菜；不必追求和示例完全一致。",
+    tone: "sage",
   },
   {
     time: "16:00",
@@ -53,6 +56,7 @@ const planMeals = [
     title: "无糖豆浆和坚果",
     tags: ["一小把", "不饿可省"],
     swap: "坚果一小把即可；不方便时，用一杯无糖酸奶替换也可以。",
+    tone: "clay",
   },
   {
     time: "19:00",
@@ -60,6 +64,7 @@ const planMeals = [
     title: "虾仁豆腐",
     tags: ["20 分钟", "清淡"],
     swap: "虾仁可以换成鱼或鸡蛋，豆腐可以换成其他豆制品。",
+    tone: "forest",
   },
 ] as const;
 
@@ -249,25 +254,22 @@ function writeCachedPlan(fingerprint: string, plan: PlanDocument, persisted: boo
 
 function useGeneratedPlan(profile: SpaceProfile, hasStored: boolean): PlanState {
   const fingerprint = React.useMemo(() => planFingerprint(profile), [profile]);
-  const [state, setState] = React.useState<{ plan: PlanDocument; persisted: boolean } | null>(null);
+  const [result, setResult] = React.useState<{ key: string; plan: PlanDocument; persisted: boolean } | null>(null);
   const [loading, setLoading] = React.useState(false);
-  const [error, setError] = React.useState<string | null>(null);
+  const [failure, setFailure] = React.useState<{ key: string; message: string } | null>(null);
 
   React.useEffect(() => {
-    if (!hasStored) {
-      setState(null);
-      return;
-    }
-    const cached = readCachedPlan(fingerprint);
-    setState(cached);
+    if (!hasStored) return;
     let cancelled = false;
     void (async () => {
+      const cached = readCachedPlan(fingerprint);
+      if (!cancelled && cached) setResult({ key: fingerprint, plan: cached.plan, persisted: cached.persisted });
       try {
         const response = await fetch(`/api/plans/latest?fingerprint=${encodeURIComponent(fingerprint)}`);
         if (!response.ok) return;
         const data = (await response.json()) as { plan?: PlanDocument | null; persisted?: boolean };
         if (cancelled || !data.plan) return;
-        setState({ plan: data.plan, persisted: Boolean(data.persisted) });
+        setResult({ key: fingerprint, plan: data.plan, persisted: Boolean(data.persisted) });
         writeCachedPlan(fingerprint, data.plan, Boolean(data.persisted));
       } catch {
         // 读取失败时保留本机缓存，不影响生成入口。
@@ -279,7 +281,7 @@ function useGeneratedPlan(profile: SpaceProfile, hasStored: boolean): PlanState 
   const generate = React.useCallback(async () => {
     if (!hasStored || loading) return;
     setLoading(true);
-    setError(null);
+    setFailure(null);
     try {
       const response = await fetch("/api/plans/generate", {
         method: "POST",
@@ -288,16 +290,23 @@ function useGeneratedPlan(profile: SpaceProfile, hasStored: boolean): PlanState 
       });
       const data = (await response.json().catch(() => null)) as { plan?: PlanDocument; persisted?: boolean; message?: string } | null;
       if (!response.ok || !data?.plan) throw new Error(data?.message ?? "计划生成失败，请稍后重试。");
-      setState({ plan: data.plan, persisted: Boolean(data.persisted) });
+      setResult({ key: fingerprint, plan: data.plan, persisted: Boolean(data.persisted) });
       writeCachedPlan(fingerprint, data.plan, Boolean(data.persisted));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "计划生成失败，请稍后重试。");
+      setFailure({ key: fingerprint, message: err instanceof Error ? err.message : "计划生成失败，请稍后重试。" });
     } finally {
       setLoading(false);
     }
   }, [fingerprint, hasStored, loading, profile]);
 
-  return { plan: state?.plan ?? null, persisted: state?.persisted ?? false, loading, error, generate };
+  const current = result && result.key === fingerprint && hasStored ? result : null;
+  return {
+    plan: current?.plan ?? null,
+    persisted: current?.persisted ?? false,
+    loading,
+    error: failure && failure.key === fingerprint ? failure.message : null,
+    generate,
+  };
 }
 
 function useTilt(ref: React.RefObject<HTMLDivElement | null>) {
@@ -506,7 +515,7 @@ function PlateInstrument() {
   );
 }
 
-function WeekInstrument() {
+function WeekInstrument({ plan }: { plan?: PlanDocument | null }) {
   const [today, setToday] = React.useState(-1);
   const sceneRef = React.useRef<HTMLDivElement>(null);
   const tilt = useTilt(sceneRef);
@@ -516,19 +525,30 @@ function WeekInstrument() {
     return () => cancelAnimationFrame(frame);
   }, []);
 
+  const days = plan
+    ? plan.movement.week.map((day) => ({
+        label: day.label,
+        short: day.short,
+        title: day.session?.title ?? "休息",
+        minutes: day.session?.minutes ?? 0,
+        tone: day.session ? "session" : "rest",
+      }))
+    : weekPlan.map((day) => ({ label: day.label, short: day.short, title: day.title, minutes: day.minutes, tone: day.tone }));
+  const spoken = days.filter((day) => day.minutes > 0).map((day) => `${day.label}${day.title}${day.minutes}分钟`).join("，");
+
   return (
     <div className="pp-instrument-float">
       <div className="pp-week-scene" ref={sceneRef} {...tilt}>
         <div className="pp-week-card">
           <span className="pp-plate-glass" aria-hidden="true" />
           <div className="pp-week-body">
-            <div className="pp-instrument-head"><span>本周节奏</span><span className="pp-mini-tag">示例</span></div>
+            <div className="pp-instrument-head"><span>本周节奏</span><span className="pp-mini-tag">{plan ? "按资料生成" : "示例"}</span></div>
             <div
               className="pp-week-mini"
               role="img"
-              aria-label="示例周节奏：周二力量二十五分钟，周四快走与活动度二十分钟，周六力量二十五分钟。"
+              aria-label={plan ? `按资料生成的周节奏：${spoken}。` : "示例周节奏：周二力量二十五分钟，周四快走与活动度二十分钟，周六力量二十五分钟。"}
             >
-              {weekPlan.map((day, index) => (
+              {days.map((day, index) => (
                 <div key={day.label} className={`pp-week-mini-day ${day.tone === "session" ? "has-session" : ""} ${index === today ? "is-today" : ""}`} aria-hidden="true">
                   <span>{day.short}</span>
                   <i />
@@ -536,7 +556,7 @@ function WeekInstrument() {
                 </div>
               ))}
             </div>
-            <div className="pp-week-mini-foot"><Footprints size={13} aria-hidden="true" /> 3 次活动 · 约 70 分钟 · {todayLabel(today)}</div>
+            <div className="pp-week-mini-foot"><Footprints size={13} aria-hidden="true" /> {plan ? `${plan.movement.sessionCount} 次活动 · 约 ${plan.movement.totalMinutes} 分钟` : "3 次活动 · 约 70 分钟"} · {todayLabel(today)}</div>
           </div>
         </div>
       </div>
@@ -636,7 +656,7 @@ function PlanHero({ kind, data, plan, hasStored }: { kind: PlanKind; data?: Dash
           animate={{ opacity: 1, y: 0, scale: 1 }}
           transition={{ duration: reduce ? 0 : 0.85, delay: reduce ? 0 : 0.14, ease }}
         >
-          {diet ? <PlateInstrument /> : <WeekInstrument />}
+          {diet ? <PlateInstrument /> : <WeekInstrument plan={plan} />}
         </motion.div>
       </div>
       <p className="pp-hero-credit">
@@ -860,22 +880,34 @@ function MealCard({ meal }: { meal: (typeof planMeals)[number] }) {
   return (
     <button
       type="button"
-      className={`pp-meal ${flipped ? "flipped" : ""}`}
+      className={`pp-meal tone-${meal.tone} ${flipped ? "flipped" : ""}`}
       aria-expanded={flipped}
-      onClick={() => setFlipped((value) => !value)}
+      onClick={(event) => {
+        if (event.detail > 0 && window.matchMedia("(hover: hover) and (pointer: fine)").matches) return;
+        setFlipped((value) => !value);
+      }}
     >
+      <span className="pp-meal-sheet pp-meal-sheet-back" aria-hidden="true" />
+      <span className="pp-meal-sheet pp-meal-sheet-mid" aria-hidden="true" />
       <span className="pp-meal-inner">
         <span className="pp-meal-face pp-meal-front" aria-hidden={flipped}>
           <span className="pp-meal-top"><span className="pp-meal-time">{meal.time}</span><span className="pp-meal-badge">示例</span></span>
           <span className="pp-meal-kicker">{meal.label}</span>
           <strong>{meal.title}</strong>
           <span className="pp-meal-tags">{meal.tags.map((tag) => <span key={tag}>{tag}</span>)}</span>
-          <span className="pp-meal-hint">翻看替换思路 <RotateCw size={12} aria-hidden="true" /></span>
+          <span className="pp-meal-hint">
+            <span className="pp-meal-hint-hover">悬停翻看替换思路</span>
+            <span className="pp-meal-hint-touch">点按翻看替换思路</span>
+            <RotateCw size={12} aria-hidden="true" />
+          </span>
         </span>
         <span className="pp-meal-face pp-meal-back" aria-hidden={!flipped}>
           <span className="pp-meal-back-top"><span>替换思路 · 示例</span><RotateCw size={12} aria-hidden="true" /></span>
           <span className="pp-meal-swap">{meal.swap}</span>
-          <span className="pp-meal-hint">再点一下翻回来</span>
+          <span className="pp-meal-hint">
+            <span className="pp-meal-hint-hover">移开鼠标翻回</span>
+            <span className="pp-meal-hint-touch">再点一下翻回来</span>
+          </span>
         </span>
       </span>
     </button>
@@ -1002,6 +1034,7 @@ export function DietPlan({ data, loading, profile, hasStored }: { data?: Dashboa
       <GeneratedPlanPanel kind="diet" profile={profile} hasStored={hasStored} planState={planState} />
       {!hasStored && <DietTargets data={data} loading={loading} />}
       {planState.plan && <ExampleDivider kind="diet" />}
+      <FoodGuide />
       <DietPlanMeals />
       <DietFlex />
       <HonestyPanel generated={Boolean(planState.plan)} hasStored={hasStored} />

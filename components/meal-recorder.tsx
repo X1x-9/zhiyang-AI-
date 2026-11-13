@@ -72,6 +72,16 @@ function sourceMeta(item: AnalysisItem) {
   return { label: "来源待核对", tone: "unknown" };
 }
 
+function recordSourceMeta(items: MealRecord["items"]) {
+  const sources = new Set(items.map((item) => item.dataSource).filter(Boolean));
+  if (sources.size !== 1) return sources.size > 1 ? { label: "营养来源混合", tone: "unknown" } : null;
+  const [only] = sources;
+  if (only === "food_table") return { label: "营养按食物参考库换算", tone: "table" };
+  if (only === "model_estimate") return { label: "营养为 AI 估算", tone: "model" };
+  if (only === "manual") return { label: "热量为手动填写", tone: "manual" };
+  return null;
+}
+
 function SectionTitle({ title }: { title: string }) {
   return <div className="section-title"><h2>{title}</h2></div>;
 }
@@ -231,6 +241,8 @@ function SameDayRecords() {
       {meals.length === 0 && <p className="text-sm text-[#58685d]">今天还没有记录，拍一张照片或手动添加一餐吧。</p>}
       {meals.map((meal) => {
         const editing = editingId === meal.id;
+        const recordSource = recordSourceMeta(meal.items);
+        const matchedNames = meal.items.filter((item) => item.dataSource === "food_table" && item.matchedName).map((item) => item.matchedName);
         return (
           <div className="border-b border-[#e8ece5] py-3 last:border-b-0" key={meal.id}>
             {editing ? (
@@ -295,6 +307,12 @@ function SameDayRecords() {
                   {new Date(meal.eatenAt).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}
                   {meal.items.length > 0 ? ` · ${meal.items.map((item) => `${item.name}${item.amountGrams ? ` ${item.amountGrams}g` : ""}`).join(" · ")}` : ""}
                 </p>
+                {recordSource && (
+                  <p className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-[#84908a]">
+                    <span className={`food-source-badge is-${recordSource.tone}`}>{recordSource.label}</span>
+                    {matchedNames.length > 0 && <span>{matchedNames.join("、")}</span>}
+                  </p>
+                )}
                 {remove.isError && <p className="mt-1 text-xs text-red-800" role="alert">{remove.error.message}</p>}
               </>
             )}
@@ -441,6 +459,7 @@ export function MealRecorder() {
   const queryClient = useQueryClient();
 
   const [preview, setPreview] = React.useState<string | null>(null);
+  const [filmKey, setFilmKey] = React.useState(0);
   const [analysis, setAnalysis] = React.useState<Analysis | null>(null);
   const [mealType, setMealType] = React.useState(guessMealType);
   const [eatenAt, setEatenAt] = React.useState(() => { const now = new Date(); now.setMinutes(now.getMinutes() - now.getTimezoneOffset()); return now.toISOString().slice(0, 16); });
@@ -524,6 +543,7 @@ export function MealRecorder() {
     try {
       const dataUrl = await prepareImage(file);
       setPreview(dataUrl);
+      setFilmKey((value) => value + 1);
       analyze.mutate({ image: dataUrl, note });
     } catch (err) {
       setError(err instanceof Error ? err.message : "处理图片失败，请重试。");
@@ -637,57 +657,93 @@ export function MealRecorder() {
     save.reset();
   }
 
+  const cameraBusy = preparing || analyze.isPending || save.isPending;
+
   return (
     <div className="food-layout">
+      <div className="food-main">
         <section className="surface meal-card food-upload">
           <SectionTitle title="拍照记录" />
           <div
-            className={`upload-zone ${dragging ? "dragging" : ""}`}
-            role="button"
+            className={`meal-cam-stage ${dragging ? "is-dragging" : ""} ${preview ? "has-film" : ""}`}
+            role="group"
+            aria-label="餐食照片取景区，可拖入或粘贴照片"
             tabIndex={0}
-            aria-label="选择、拍摄或拖放餐食照片"
-            onClick={() => { if (!preparing && !analyze.isPending && !save.isPending) fileInput.current?.click(); }}
-            onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); if (!preparing && !analyze.isPending && !save.isPending) fileInput.current?.click(); } }}
             onDragOver={(event) => { event.preventDefault(); setDragging(true); }}
             onDragLeave={() => setDragging(false)}
             onDrop={handleDrop}
             onPaste={handlePaste}
           >
-            {preview ? (
-              <span className="block">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={preview} alt="已选择的餐食照片预览" className="mx-auto max-h-52 w-full rounded-xl object-contain" />
-                <span className="mt-3 block text-sm text-[#718075]">点击图片或“更换照片”，可以换一张重新识别。</span>
-                <span className="upload-buttons mt-3 inline-flex">
-                  <button
-                    type="button"
-                    className="subtle-button inline-flex items-center gap-2"
-                    disabled={preparing || analyze.isPending || save.isPending}
-                    onClick={(event) => { event.stopPropagation(); fileInput.current?.click(); }}
-                  >
-                    <Camera size={15} />{preparing || analyze.isPending ? "正在识别…" : "更换照片"}
-                  </button>
-                  <button
-                    type="button"
-                    className="subtle-button inline-flex items-center gap-2"
-                    disabled={preparing || analyze.isPending || save.isPending}
-                    onClick={(event) => { event.stopPropagation(); clearPhoto(); }}
-                  >
-                    移除照片
-                  </button>
+            <div className="meal-cam">
+              <button
+                type="button"
+                className="meal-cam-body"
+                onClick={() => fileInput.current?.click()}
+                disabled={cameraBusy}
+                aria-label="点击相机，选择餐食照片"
+              >
+                <span className="meal-cam-stripe" aria-hidden="true" />
+                <span className="meal-cam-viewfinder" aria-hidden="true" />
+                <span className="meal-cam-flash" aria-hidden="true" />
+                <span className={`meal-cam-led ${cameraBusy ? "is-busy" : preview ? "is-ready" : ""}`} aria-hidden="true" />
+                <span className="meal-cam-lens" aria-hidden="true">
+                  <span className="meal-cam-blades">
+                    {Array.from({ length: 8 }, (_, index) => (
+                      <i key={index} style={{ "--blade-i": index } as React.CSSProperties} />
+                    ))}
+                  </span>
+                  <span className="meal-cam-text">拍</span>
+                  <span className="meal-cam-glass" />
+                  <span className="meal-cam-focus" />
+                  <span className="meal-cam-ring" />
                 </span>
-              </span>
-            ) : (
-              <span>
-                <Camera size={25} />
-                <strong className="mt-3 block">拍一张，或把照片拖到这里</strong>
-                <span className="mt-2 block text-sm text-[#718075]">也可以点击选择图片或粘贴截图，AI 会分析食物与营养</span>
-                <span className="upload-buttons mt-4 inline-flex">
-                  <button type="button" className="subtle-button inline-flex items-center gap-2" onClick={(event) => { event.stopPropagation(); cameraInput.current?.click(); }}><Camera size={15} />打开相机拍摄</button>
-                  <button type="button" className="subtle-button inline-flex items-center gap-2" onClick={(event) => { event.stopPropagation(); fileInput.current?.click(); }}>选择照片</button>
-                </span>
-              </span>
-            )}
+                <span className="meal-cam-brand" aria-hidden="true">智养 · 35mm</span>
+                <span className="meal-cam-lip" aria-hidden="true" />
+              </button>
+              <span className="meal-cam-caption" aria-hidden="true">轻按相机 · 选照片</span>
+            </div>
+
+            <div className="meal-cam-side">
+              {preview ? (
+                <>
+                  <figure className="meal-cam-film" key={filmKey}>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={preview} alt="已选择的餐食照片预览" />
+                    {(preparing || analyze.isPending) && <span className="meal-cam-scan" aria-hidden="true" />}
+                    <figcaption aria-live="polite">
+                      {preparing ? "正在处理照片…" : analyze.isPending ? "正在识别这一餐…" : "底片已显影"}
+                      <small>35mm</small>
+                    </figcaption>
+                  </figure>
+                  <div className="meal-cam-actions">
+                    <button type="button" className="meal-cam-action" disabled={cameraBusy} onClick={() => cameraInput.current?.click()}>
+                      <Camera size={14} />重新拍摄
+                    </button>
+                    <button type="button" className="meal-cam-action" disabled={cameraBusy} onClick={() => fileInput.current?.click()}>
+                      从相册更换
+                    </button>
+                    <button type="button" className="meal-cam-remove" disabled={cameraBusy} onClick={clearPhoto}>
+                      <X size={13} />移除
+                    </button>
+                  </div>
+                  <span className="meal-cam-hint">换一张会重新识别 · 支持 JPG / PNG / WebP</span>
+                </>
+              ) : (
+                <>
+                  <strong className="meal-cam-title">镜头就是快门</strong>
+                  <p className="meal-cam-copy">点一下相机选照片；也可以直接拍一张，或把照片拖进来、粘贴截图。</p>
+                  <div className="meal-cam-actions">
+                    <button type="button" className="meal-cam-action is-primary" disabled={cameraBusy} onClick={() => cameraInput.current?.click()}>
+                      <Camera size={14} />打开相机拍摄
+                    </button>
+                    <button type="button" className="meal-cam-action" disabled={cameraBusy} onClick={() => fileInput.current?.click()}>
+                      从相册选择
+                    </button>
+                  </div>
+                  <span className="meal-cam-hint">支持 JPG / PNG / WebP · 单张不超过 30MB</span>
+                </>
+              )}
+            </div>
           </div>
           <input ref={fileInput} className="sr-only" type="file" accept="image/*" aria-label="选择餐食照片" onChange={(event) => { void handleFile(event.target.files?.[0]); event.target.value = ""; }} />
           <input ref={cameraInput} className="sr-only" type="file" accept="image/*" capture="environment" aria-label="拍摄餐食照片" onChange={(event) => { void handleFile(event.target.files?.[0]); event.target.value = ""; }} />
@@ -705,6 +761,7 @@ export function MealRecorder() {
           <SectionTitle title="今日记录" />
           <SameDayRecords />
         </section>
+      </div>
 
       <div className="right-stack">
         <section className="surface food-result">

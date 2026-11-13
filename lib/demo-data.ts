@@ -1,4 +1,4 @@
-import type { DashboardData, WeightPoint } from "./dashboard";
+import type { DashboardData, WeekDaySummary, WeightPoint } from "./dashboard";
 
 export type DemoMealType = "BREAKFAST" | "LUNCH" | "DINNER" | "SNACK" | "OTHER";
 export type DemoMealStatus = "PENDING" | "CONFIRMED" | "REJECTED";
@@ -99,6 +99,35 @@ function todayAt(hour: number, minute: number) {
 }
 
 const demoWeightValues = [64.0, 63.9, 63.8, 64.1, 63.7, 63.5, 63.4];
+const demoWeekdays = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
+const demoPriorMeals = [2, 2, 1];
+const demoPriorCalories = [690, 760, 420];
+
+function buildDemoWeekDays(todayMeals: number, todayCalories: number): WeekDaySummary[] {
+  const todayKey = chinaDateKey();
+  const start = chinaWeekStart();
+  const todayIndex = Math.round(
+    (new Date(`${todayKey}T12:00:00+08:00`).getTime() - new Date(`${chinaDateKey(start)}T12:00:00+08:00`).getTime()) / 86_400_000,
+  );
+  const recordedPrior = Array.from({ length: todayIndex }, (_, index) => index).slice(-3);
+  const workoutDays = new Set(recordedPrior.slice(-2));
+  return demoWeekdays.map((label, index) => {
+    const key = chinaDateKey(new Date(start.getTime() + index * 86_400_000));
+    const [, month, day] = key.split("-");
+    const recordedIndex = recordedPrior.indexOf(index);
+    const isToday = index === todayIndex;
+    return {
+      key,
+      label,
+      dateLabel: `${Number(month)}/${Number(day)}`,
+      isToday,
+      isFuture: index > todayIndex,
+      meals: isToday ? todayMeals : recordedIndex >= 0 ? demoPriorMeals[recordedIndex] : 0,
+      calories: isToday ? todayCalories : recordedIndex >= 0 ? demoPriorCalories[recordedIndex] : 0,
+      workoutMinutes: workoutDays.has(index) ? 25 : null,
+    };
+  });
+}
 
 export function createDemoDashboard(notice?: string): DashboardData {
   const labels = lastSevenDayLabels();
@@ -106,6 +135,16 @@ export function createDemoDashboard(notice?: string): DashboardData {
   const todayAll = listDemoMeals();
   const todayMeals = todayAll.filter((meal) => meal.status === "CONFIRMED");
   const calories = todayMeals.reduce((sum, meal) => sum + meal.estimatedKcal, 0);
+  const weekDays = buildDemoWeekDays(todayMeals.length, calories);
+  const recordedDays = weekDays.filter((day) => day.meals > 0).length;
+  const weekMeals = weekDays.reduce((sum, day) => sum + day.meals, 0);
+  const weekWorkouts = weekDays.filter((day) => day.workoutMinutes !== null).length;
+  const missingDays = weekDays.filter((day) => !day.isFuture && !day.isToday && day.meals === 0).length;
+  const upcomingDays = weekDays.filter((day) => day.isFuture).length;
+  const missingNote = [
+    missingDays > 0 ? `${missingDays} 天没有记录` : "",
+    upcomingDays > 0 ? `${upcomingDays} 天还没到` : "",
+  ].filter(Boolean).join("，");
   return {
     demo: true,
     ...(notice ? { notice } : {}),
@@ -135,11 +174,15 @@ export function createDemoDashboard(notice?: string): DashboardData {
       exercises: ["深蹲", "臀桥", "墙面俯卧撑"],
     },
     week: {
-      recordedDays: 4,
-      meals: 9,
-      workouts: 2,
+      recordedDays,
+      meals: weekMeals,
+      workouts: weekWorkouts,
       weightEntries: 7,
-      note: "本周有 3 天没有记录，复盘只按已有记录呈现，不补推缺失数据。",
+      note:
+        recordedDays >= 4
+          ? `本周已有 ${recordedDays} 天记录${missingNote ? `，${missingNote}` : ""}；复盘只按已有记录呈现，不补推缺失数据。`
+          : `本周只有 ${recordedDays} 天饮食记录，暂不对执行情况做评价。`,
+      days: weekDays,
     },
   };
 }

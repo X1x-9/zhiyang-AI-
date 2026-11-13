@@ -12,9 +12,9 @@ import {
   Flame,
   LayoutGrid,
   Leaf,
-  Moon,
   Nut,
   Scale,
+  UserRound,
   UtensilsCrossed,
   Wheat,
   type LucideIcon,
@@ -22,7 +22,7 @@ import {
 import { GlitchButton } from "@/components/glitch-button";
 import type { DashboardData } from "@/lib/dashboard";
 
-type SliceTarget = "food" | "plans" | "exercise" | "review" | "hydration";
+type SliceTarget = "food" | "plans" | "exercise" | "review" | "profile" | "hydration";
 
 type DashboardHeroProps = {
   data: DashboardData;
@@ -30,7 +30,7 @@ type DashboardHeroProps = {
   percent: number;
   onRecord: () => void;
   onProfile: () => void;
-  onNavigate: (page: "food" | "plans" | "exercise" | "review") => void;
+  onNavigate: (page: "food" | "plans" | "exercise" | "review" | "profile") => void;
   onHydration: () => void;
 };
 
@@ -53,7 +53,7 @@ function buildSlices(data: DashboardData, water: number, percent: number): Slice
     { key: "protein", icon: Beef, label: "蛋白质", value: macros ? `${macros.protein.consumed} g` : "未接入", empty: !macros, target: "plans", targetLabel: "饮食计划" },
     { key: "water", icon: Droplets, label: "饮水", value: `${water.toLocaleString("zh-CN")} ml`, empty: false, target: "hydration", targetLabel: "今日饮水记录" },
     { key: "calories", icon: Flame, label: "热量进度", value: `${percent}%`, empty: false, target: "plans", targetLabel: "饮食计划" },
-    { key: "sleep", icon: Moon, label: "睡眠", value: "未接入", empty: true, target: "review", targetLabel: "每周复盘" },
+    { key: "space", icon: UserRound, label: "我的空间", value: "健康画像", empty: false, target: "profile", targetLabel: "我的空间" },
     { key: "workout", icon: Dumbbell, label: "训练安排", value: data.workout ? `${data.workout.durationMinutes} 分钟` : "未安排", empty: !data.workout, target: "exercise", targetLabel: "运动计划" },
     { key: "carbs", icon: Wheat, label: "碳水", value: macros ? `${macros.carbs.consumed} g` : "未接入", empty: !macros, target: "plans", targetLabel: "饮食计划" },
     { key: "fat", icon: Nut, label: "脂肪", value: macros ? `${macros.fat.consumed} g` : "未接入", empty: !macros, target: "plans", targetLabel: "饮食计划" },

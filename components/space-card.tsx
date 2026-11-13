@@ -1,7 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { ArrowRight, ChevronRight } from "lucide-react";
+import { ArrowRight, ChevronRight, type LucideIcon } from "lucide-react";
+import type { Page } from "@/stores/health-store";
 import {
   environmentLabels,
   goalLabels,
@@ -9,15 +10,26 @@ import {
   type SpaceProfile,
 } from "@/lib/space";
 
+type SpaceShortcut = {
+  id: Page;
+  label: string;
+  icon: LucideIcon;
+};
+
 type SpaceCardProps = {
   profile: SpaceProfile;
   saved: boolean;
   demo: boolean;
   active: boolean;
+  shortcuts: readonly SpaceShortcut[];
   onOpen: () => void;
+  onNavigate: (page: Page) => void;
 };
 
-export function SpaceCard({ profile, saved, demo, active, onOpen }: SpaceCardProps) {
+export function SpaceCard({ profile, saved, demo, active, shortcuts, onOpen, onNavigate }: SpaceCardProps) {
+  const [hubOpen, setHubOpen] = React.useState(false);
+  const hubTriggerRef = React.useRef<HTMLButtonElement>(null);
+  const hoverBlockedRef = React.useRef(false);
   const completeness = spaceCompleteness(profile);
   const name = profile.name.trim();
   const initial = name.slice(0, 1) || "你";
@@ -30,7 +42,22 @@ export function SpaceCard({ profile, saved, demo, active, onOpen }: SpaceCardPro
 
   return (
     <div className="space-dock">
-      <div className="space-card">
+      <div
+        className={`space-card${hubOpen ? " is-hub-open" : ""}`}
+        onPointerLeave={(event) => {
+          if (event.pointerType === "mouse") setHubOpen(false);
+        }}
+        onBlur={(event) => {
+          if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setHubOpen(false);
+        }}
+        onKeyDown={(event) => {
+          if (event.key !== "Escape" || !hubOpen) return;
+          event.stopPropagation();
+          hoverBlockedRef.current = true;
+          setHubOpen(false);
+          hubTriggerRef.current?.focus();
+        }}
+      >
         <button
           type="button"
           className="space-card-bar"
@@ -48,7 +75,30 @@ export function SpaceCard({ profile, saved, demo, active, onOpen }: SpaceCardPro
 
         <div className="space-card-panel">
           <div className="space-card-face">
-            <span className="space-card-avatar space-card-avatar-lg" aria-hidden="true">{initial}</span>
+            <button
+              type="button"
+              ref={hubTriggerRef}
+              className="space-card-avatar space-card-avatar-lg space-card-avatar-btn"
+              aria-expanded={hubOpen}
+              aria-controls="space-hub-menu"
+              aria-label={`打开模块快捷入口。${name || "尚未填写称呼"}`}
+              onPointerEnter={(event) => {
+                if (event.pointerType === "mouse" && !hoverBlockedRef.current) setHubOpen(true);
+              }}
+              onPointerLeave={() => {
+                hoverBlockedRef.current = false;
+              }}
+              onClick={() => {
+                if (hubOpen) {
+                  hoverBlockedRef.current = true;
+                  setHubOpen(false);
+                } else {
+                  setHubOpen(true);
+                }
+              }}
+            >
+              {initial}
+            </button>
             <span>
               <strong>{name || "还没有称呼"}</strong>
               <small>{source}</small>
@@ -71,9 +121,48 @@ export function SpaceCard({ profile, saved, demo, active, onOpen }: SpaceCardPro
             </span>
           </div>
           <p className="space-card-missing">{missingText}</p>
-          <button type="button" className="space-card-enter" onClick={onOpen}>
+          <button type="button" className="space-card-enter" tabIndex={hubOpen ? -1 : undefined} onClick={onOpen}>
             进入我的空间 <ArrowRight size={13} aria-hidden="true" />
           </button>
+        </div>
+
+        <div
+          id="space-hub-menu"
+          className={`space-hub${hubOpen ? " is-open" : ""}`}
+          role="group"
+          aria-label="模块快捷入口"
+        >
+          <div className="space-hub-wheel">
+            <button
+              type="button"
+              className="space-hub-core"
+              aria-label={`进入我的空间。${name || "尚未填写称呼"}`}
+              onClick={() => {
+                setHubOpen(false);
+                onOpen();
+              }}
+            >
+              <span aria-hidden="true">{initial}</span>
+              <small aria-hidden="true">我的空间</small>
+            </button>
+            {shortcuts.map(({ id, label, icon: Icon }, index) => (
+              <button
+                key={id}
+                type="button"
+                className={`space-hub-item pos-${index}`}
+                style={{ "--hub-i": index } as React.CSSProperties}
+                aria-label={`前往${label}`}
+                onClick={() => {
+                  setHubOpen(false);
+                  onNavigate(id);
+                }}
+              >
+                <Icon size={16} aria-hidden="true" />
+                <span className="space-hub-tip" aria-hidden="true">{label}</span>
+              </button>
+            ))}
+          </div>
+          <p className="space-hub-hint" aria-hidden="true">选择模块，前往对应页面</p>
         </div>
       </div>
     </div>

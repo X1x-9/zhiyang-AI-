@@ -46,12 +46,29 @@ export async function GET() {
       prisma.mealRecord.count({ where: { profileId: profile.id, status: "PENDING", eatenAt: { gte: start, lt: end } } }),
       prisma.mealRecord.findMany({
         where: { profileId: profile.id, status: "CONFIRMED", eatenAt: { gte: weekStart, lt: end } },
-        select: { eatenAt: true },
+        select: { eatenAt: true, estimatedKcal: true },
       }),
     ]);
 
     const calories = todayMeals.reduce((sum, meal) => sum + (meal.estimatedKcal ?? 0), 0);
-    const recordedDays = new Set(weekMeals.map((meal) => chinaDateKey(meal.eatenAt))).size;
+    const todayKey = chinaDateKey();
+    const weekdays = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
+    const weekDays = weekdays.map((label, index) => {
+      const key = chinaDateKey(new Date(weekStart.getTime() + index * 86_400_000));
+      const [, month, day] = key.split("-");
+      const dayMeals = weekMeals.filter((meal) => chinaDateKey(meal.eatenAt) === key);
+      return {
+        key,
+        label,
+        dateLabel: `${Number(month)}/${Number(day)}`,
+        isToday: key === todayKey,
+        isFuture: key > todayKey,
+        meals: dayMeals.length,
+        calories: dayMeals.reduce((sum, meal) => sum + (meal.estimatedKcal ?? 0), 0),
+        workoutMinutes: null,
+      };
+    });
+    const recordedDays = weekDays.filter((day) => day.meals > 0).length;
     const week: WeekSummary = {
       recordedDays,
       meals: weekMeals.length,
@@ -60,7 +77,8 @@ export async function GET() {
       note:
         recordedDays >= 4
           ? "训练和体重记录尚未接入，本次复盘只展示饮食记录。"
-          : `本周只有 ${recordedDays} 天饮食记录，暂不对执行情况做评价。`,
+          : `本周只有 ${recordedDays} 天饮食记录，暂不对执行情况作评价。`,
+      days: weekDays,
     };
 
     return NextResponse.json({

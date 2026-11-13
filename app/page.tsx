@@ -1,9 +1,9 @@
 "use client";
 
 import * as React from "react";
-import { AnimatePresence, motion } from "framer-motion";
+import { motion } from "framer-motion";
 import { useQuery } from "@tanstack/react-query";
-import { Camera, ChartNoAxesCombined, ChevronRight, CircleHelp, Droplets, Dumbbell, LayoutDashboard, Leaf, Loader2, MessageCircle, Plus, Salad, UserRound, Utensils } from "lucide-react";
+import { Camera, ChartNoAxesCombined, ChevronRight, CircleHelp, Droplets, Dumbbell, LayoutDashboard, Leaf, Loader2, MessageCircle, Plus, Salad, Trash2, UserRound, Utensils, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DashboardHero } from "@/components/dashboard-hero";
 import { BackToTop, FloatingCompanion, GrowingLoader, HamsterLoader, HealthTipsCarousel, Reveal, ScrollProgress } from "@/components/experience";
@@ -11,9 +11,11 @@ import { MealRecorder } from "@/components/meal-recorder";
 import { MySpace } from "@/components/my-space";
 import { DietPlan, ExercisePlan, PlanSwitcher } from "@/components/plan-experience";
 import { SpaceCard } from "@/components/space-card";
-import { getDashboard, type DashboardData, type WeightPoint } from "@/lib/dashboard";
+import { getDashboard, type DashboardData, type WeekSummary, type WeightPoint } from "@/lib/dashboard";
 import { createDemoSpaceProfile, createEmptySpaceProfile, type SpaceProfile } from "@/lib/space";
-import { useHealthStore } from "@/stores/health-store";
+import { useHealthStore, type Page } from "@/stores/health-store";
+
+const useIsomorphicLayoutEffect = typeof window === "undefined" ? React.useEffect : React.useLayoutEffect;
 
 const navigation = [
   { id: "dashboard", label: "今日概览", short: "今天", icon: LayoutDashboard },
@@ -271,29 +273,89 @@ function Dashboard() {
   </div>;
 }
 
+function WeekTrail({ week }: { week: WeekSummary }) {
+  if (!week.days?.length) return null;
+  const first = week.days[0];
+  const last = week.days[week.days.length - 1];
+  return (
+    <section className="review-trail" aria-labelledby="review-trail-title">
+      <div className="review-trail-head">
+        <div>
+          <span className="review-trail-tag">本周七帧</span>
+          <h2 id="review-trail-title">一天一帧，按记录往前走。</h2>
+        </div>
+        <span className="review-trail-range">{first.dateLabel} — {last.dateLabel}</span>
+      </div>
+      <div className="review-trail-track" role="list">
+        {week.days.map((day, index) => {
+          const recorded = day.meals > 0;
+          const state = day.isFuture ? "future" : recorded ? "recorded" : "blank";
+          const summary = day.isFuture
+            ? "还没到"
+            : recorded
+              ? `${day.meals} 餐，约 ${day.calories.toLocaleString("zh-CN")} 千卡`
+              : "没有记录";
+          return (
+            <article
+              key={day.key}
+              role="listitem"
+              className={`review-frame is-${state}${day.isToday ? " is-today" : ""}`}
+              style={{
+                "--frame-index": index,
+                "--frame-tilt": `${((index % 3) - 1) * 0.8}deg`,
+                "--frame-lift": `${index % 2 === 0 ? 0 : 5}px`,
+              } as React.CSSProperties}
+              aria-label={`${day.label} ${day.dateLabel}，${summary}${day.workoutMinutes === null ? "" : `，训练 ${day.workoutMinutes} 分钟`}`}
+            >
+              <header className="review-frame-head">
+                <span>{day.label}</span>
+                <small>{day.isToday ? "今天" : day.dateLabel}</small>
+              </header>
+              <span className="review-frame-orb" aria-hidden="true"><i /></span>
+              <div className="review-frame-body">
+                <strong>{day.isFuture ? "未到" : recorded ? `${day.meals} 餐` : "未记录"}</strong>
+                <small>{day.isFuture ? "还在路上" : recorded ? `${day.calories.toLocaleString("zh-CN")} kcal` : "保持空白"}</small>
+              </div>
+              {day.workoutMinutes !== null && <span className="review-frame-stamp">训练 {day.workoutMinutes} 分钟</span>}
+            </article>
+          );
+        })}
+      </div>
+      <p className="review-trail-note">
+        {week.workouts === null
+          ? "训练与体重数据尚未接入，七帧只按饮食记录呈现；空白的天保持空白。"
+          : "只按已有记录呈现；空白的天不补推，也不合成执行分数。"}
+      </p>
+    </section>
+  );
+}
+
 function ReviewPanel({ data, loading }: { data?: DashboardData; loading: boolean }) {
   if (loading) return <GrowingLoader label="正在整理本周记录…" />;
   if (!data) return <div className="empty-note" role="alert">暂时无法载入复盘数据。</div>;
   const { week } = data;
-  return <div className="review-layout">
-    <section className="surface review-score">
-      <SectionTitle title="本周执行情况" action={<span className="goal-tag">只按已有记录</span>} />
-      <div className="review-stat-grid">
-        <div className="review-stat"><small>有记录的天数</small><strong>{week.recordedDays}<span>/ 7 天</span></strong></div>
-        <div className="review-stat"><small>饮食记录</small><strong>{week.meals}<span>餐</span></strong></div>
-        <div className="review-stat"><small>训练次数</small><strong>{week.workouts === null ? "未接入" : `${week.workouts} 次`}</strong></div>
-        <div className="review-stat"><small>体重记录</small><strong>{week.weightEntries === null ? "未接入" : `${week.weightEntries} 次`}</strong></div>
-      </div>
-      <p className="review-note">{week.note}</p>
-      <p className="range-note">缺失的数据保持“未记录”，不补推、不猜测，也不合成一个执行分数。</p>
-      {data.demo && <p className="chart-note">以上为演示数据，仅用于展示复盘结构。</p>}
-    </section>
-    <section className="assistant-card">
-      <div className="assistant-head"><span className="assistant-spark"><Leaf size={17} /></span><strong>下周想调整什么？</strong><small>一起商量</small></div>
-      <p>记录少的时候，先理解这一周发生了什么，不急着改目标。需要时可以和健康搭子聊聊。</p>
-      <Button className="mt-2 w-full" variant="secondary" onClick={() => useHealthStore.getState().setPage("coach")}>去聊聊 <ChevronRight size={15} /></Button>
-    </section>
-  </div>;
+  return <>
+    <WeekTrail week={week} />
+    <div className="review-layout">
+      <section className="surface review-score">
+        <SectionTitle title="本周执行情况" action={<span className="goal-tag">只按已有记录</span>} />
+        <div className="review-stat-grid">
+          <div className="review-stat"><small>有记录的天数</small><strong>{week.recordedDays}<span>/ 7 天</span></strong></div>
+          <div className="review-stat"><small>饮食记录</small><strong>{week.meals}<span>餐</span></strong></div>
+          <div className="review-stat"><small>训练次数</small><strong>{week.workouts === null ? "未接入" : `${week.workouts} 次`}</strong></div>
+          <div className="review-stat"><small>体重记录</small><strong>{week.weightEntries === null ? "未接入" : `${week.weightEntries} 次`}</strong></div>
+        </div>
+        <p className="review-note">{week.note}</p>
+        <p className="range-note">缺失的数据保持“未记录”，不补推、不猜测，也不合成一个执行分数。</p>
+        {data.demo && <p className="chart-note">以上为演示数据，仅用于展示复盘结构。</p>}
+      </section>
+      <section className="assistant-card">
+        <div className="assistant-head"><span className="assistant-spark"><Leaf size={17} /></span><strong>下周想调整什么？</strong><small>一起商量</small></div>
+        <p>记录少的时候，先理解这一周发生了什么，不急着改目标。需要时可以和健康搭子聊聊。</p>
+        <Button className="mt-2 w-full" variant="secondary" onClick={() => useHealthStore.getState().setPage("coach")}>去聊聊 <ChevronRight size={15} /></Button>
+      </section>
+    </div>
+  </>;
 }
 
 type ChatMessage = {
@@ -303,6 +365,14 @@ type ChatMessage = {
   failed?: boolean;
   retry?: string;
   reaction?: ChatReactionId;
+};
+
+type ChatThread = {
+  id: string;
+  title: string;
+  createdAt: number;
+  updatedAt: number;
+  messages: ChatMessage[];
 };
 
 const chatReactions = [
@@ -315,27 +385,235 @@ const chatReactions = [
 
 type ChatReactionId = (typeof chatReactions)[number]["id"];
 
+type KnowledgeSource = {
+  key: string;
+  url: string;
+  title: string;
+  meta: string;
+  index: number;
+};
+
+const knownSources = [
+  { title: "中国居民膳食指南（2022）", meta: "中国营养学会 · 2022", url: "https://www.quanjiao.gov.cn/public/161055045/1112918720.html" },
+  { title: "中国人群身体活动指南（2021）", meta: "国家卫健委专家解读", url: "http://wsjkw.shandong.gov.cn/hdjl/zxft/202201/t20220117_3840701.html" },
+  { title: "睡眠健康核心信息及释义", meta: "全国爱卫办 · 2025", url: "https://www.nhc.gov.cn/guihuaxxs/c100133/202503/70d5836afe804a858b899ee951a24a13.shtml" },
+  { title: "2025 美国膳食指南咨询委员会报告", meta: "USDA / HHS · 2024", url: "https://www.dietaryguidelines.gov/sites/default/files/2024-12/Part%20D_Ch%202_Dietary%20Patterns_FINAL_508.pdf" },
+  { title: "体力活动与焦虑风险", meta: "eClinicalMedicine · 2025", url: "https://doi.org/10.1016/j.eclinm.2025.103285" },
+  { title: "体力活动与心血管健康公平", meta: "AHA 科学声明 · 2023", url: "https://doi.org/10.1161/CIR.0000000000001148" },
+] as const;
+
+const CHAT_INTRO = "你好，我是你的健康搭子。可以问我饮食搭配、训练安排，或怎么记录更准确。营养数字都是估算，身体不适请优先咨询医生。";
+const CHAT_THREADS_KEY = "zhiyang-chat-threads-v1";
+const CHAT_THREAD_LIMIT = 30;
+const EMPTY_CHAT_MESSAGES: ChatMessage[] = [];
+
+function chatMessageId(prefix: string) {
+  return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function chatIntroMessage(): ChatMessage {
+  return { id: "intro", role: "assistant", content: CHAT_INTRO };
+}
+
+function chatThreadTitle(messages: ChatMessage[]) {
+  const first = messages.find((message) => message.role === "user" && message.content.trim());
+  if (!first) return "新的对话";
+  const text = first.content.replace(/\s+/g, " ").trim();
+  return text.length > 22 ? `${text.slice(0, 22)}…` : text;
+}
+
+function createChatThread(): ChatThread {
+  const now = Date.now();
+  return {
+    id: chatMessageId("thread"),
+    title: "新的对话",
+    createdAt: now,
+    updatedAt: now,
+    messages: [chatIntroMessage()],
+  };
+}
+
+function loadChatThreads(): ChatThread[] {
+  if (typeof window === "undefined") return [createChatThread()];
+  try {
+    const raw = window.localStorage.getItem(CHAT_THREADS_KEY);
+    if (!raw) return [createChatThread()];
+    const stored = JSON.parse(raw) as unknown;
+    if (!Array.isArray(stored)) return [createChatThread()];
+    const threads: ChatThread[] = [];
+    for (const item of stored) {
+      if (!item || typeof item !== "object") continue;
+      const record = item as Record<string, unknown>;
+      if (typeof record.id !== "string" || !Array.isArray(record.messages)) continue;
+      const messages: ChatMessage[] = [];
+      for (const rawMessage of record.messages) {
+        if (!rawMessage || typeof rawMessage !== "object") continue;
+        const message = rawMessage as Record<string, unknown>;
+        if (typeof message.id !== "string" || typeof message.content !== "string") continue;
+        if (message.role !== "user" && message.role !== "assistant") continue;
+        if (message.role === "assistant" && !message.content.trim() && message.failed !== true) continue;
+        const reaction = typeof message.reaction === "string" && chatReactions.some((entry) => entry.id === message.reaction)
+          ? message.reaction as ChatReactionId
+          : undefined;
+        messages.push({
+          id: message.id,
+          role: message.role,
+          content: message.content,
+          ...(message.failed === true ? { failed: true } : {}),
+          ...(typeof message.retry === "string" ? { retry: message.retry } : {}),
+          ...(reaction ? { reaction } : {}),
+        });
+      }
+      if (!messages.some((message) => message.id === "intro")) messages.unshift(chatIntroMessage());
+      threads.push({
+        id: record.id,
+        title: typeof record.title === "string" && record.title.trim() ? record.title : chatThreadTitle(messages),
+        createdAt: typeof record.createdAt === "number" ? record.createdAt : Date.now(),
+        updatedAt: typeof record.updatedAt === "number" ? record.updatedAt : Date.now(),
+        messages,
+      });
+    }
+    return threads.sort((a, b) => b.updatedAt - a.updatedAt).slice(0, CHAT_THREAD_LIMIT);
+  } catch {
+    return [createChatThread()];
+  }
+}
+
+function formatChatTime(timestamp: number) {
+  const date = new Date(timestamp);
+  const sameDay = date.toDateString() === new Date().toDateString();
+  return new Intl.DateTimeFormat("zh-CN", sameDay
+    ? { hour: "2-digit", minute: "2-digit", hour12: false }
+    : { month: "numeric", day: "numeric" }).format(date);
+}
+
+const urlPattern = /https?:\/\/[^\s<>"'“”‘’）)\]】]+/g;
+const sourceLabelPattern = /^(?:[-*•·–—>\s]*)(?:来源|参考来源|参考资料|参考文献|引用来源)[ \t]*[:：]?/;
+
+function sourceHost(url: string) {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return "来源链接";
+  }
+}
+
+function canonicalSourceUrl(value: string) {
+  const trimmed = value.replace(/[，。；：！？、,.!?;:）)\]】》"']+$/g, "");
+  try {
+    const parsed = new URL(trimmed);
+    parsed.hash = "";
+    return parsed.toString().replace(/\/$/, "");
+  } catch {
+    return trimmed;
+  }
+}
+
+function extractSourceUrls(content: string) {
+  const urls: string[] = [];
+  for (const match of content.matchAll(urlPattern)) {
+    const url = canonicalSourceUrl(match[0]);
+    if (url && !urls.includes(url)) urls.push(url);
+  }
+  return urls;
+}
+
+function sourceTitleFromContent(content: string, url: string) {
+  const line = content.split(/\r?\n/).find((item) => extractSourceUrls(item).includes(url)) ?? "";
+  const cleaned = line
+    .replace(urlPattern, "")
+    .replace(/^\s*(?:[-*•·–—]|\d+[.)、])\s*/, "")
+    .replace(/(?:参考来源|参考资料|参考文献|引用来源|来源)\s*[:：]?/g, "")
+    .replace(/[（(]\s*[)）]/g, "")
+    .replace(/[·|,，;；:：\-–—\s]+$/g, "")
+    .trim();
+  if (cleaned.length >= 3) return cleaned.length > 46 ? `${cleaned.slice(0, 46)}…` : cleaned;
+  return sourceHost(url);
+}
+
+function splitAnswer(content: string) {
+  const urls = extractSourceUrls(content);
+  if (!urls.length) return { body: content, urls };
+  const lines = content.split(/\r?\n/);
+  let start = lines.length;
+  let sawUrl = false;
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    const line = lines[index].trim();
+    if (!line) {
+      start = index;
+      continue;
+    }
+    const hasUrl = extractSourceUrls(line).length > 0;
+    if (!hasUrl && !sourceLabelPattern.test(line)) break;
+    start = index;
+    if (hasUrl) sawUrl = true;
+  }
+  if (!sawUrl || start >= lines.length || lines.length - start > 12) return { body: content, urls };
+  const body = lines.slice(0, start).join("\n").trimEnd();
+  if (body.length < 20) return { body: content, urls };
+  return { body, urls };
+}
+
 function ChatPanel() {
-  const [messages, setMessages] = React.useState<ChatMessage[]>([{
-    id: "intro",
-    role: "assistant",
-    content: "你好，我是你的健康搭子。可以问我饮食搭配、训练安排，或怎么记录更准确。营养数字都是估算，身体不适请优先咨询医生。",
-  }]);
+  const [threads, setThreads] = React.useState<ChatThread[]>(loadChatThreads);
+  const [activeThreadId, setActiveThreadId] = React.useState(() => threads[0]?.id ?? "");
   const [question, setQuestion] = React.useState("");
   const [pending, setPending] = React.useState(false);
   const [reaction, setReaction] = React.useState<ChatReactionId | null>(null);
+  const [historyOpen, setHistoryOpen] = React.useState(() => typeof window === "undefined" || !window.matchMedia("(max-width: 640px)").matches);
   const scrollRef = React.useRef<HTMLDivElement>(null);
-  const idRef = React.useRef(0);
+
+  const orderedThreads = React.useMemo(() => [...threads].sort((a, b) => b.updatedAt - a.updatedAt), [threads]);
+  const activeThread = threads.find((thread) => thread.id === activeThreadId) ?? threads[0] ?? null;
+  const messages = activeThread?.messages ?? EMPTY_CHAT_MESSAGES;
+
+  React.useEffect(() => {
+    const timer = window.setTimeout(() => {
+      try {
+        window.localStorage.setItem(CHAT_THREADS_KEY, JSON.stringify(threads));
+      } catch {
+        // 存储不可用或已满时，当前会话仍可继续使用。
+      }
+    }, 400);
+    return () => window.clearTimeout(timer);
+  }, [threads]);
 
   React.useEffect(() => {
     if (messages.length < 2) return;
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages]);
 
+  const sources = React.useMemo(() => {
+    const entries = new Map<string, Omit<KnowledgeSource, "index">>();
+    const order: string[] = [];
+    for (const message of messages) {
+      if (message.role !== "assistant" || message.failed || message.id === "intro") continue;
+      for (const key of extractSourceUrls(message.content)) {
+        if (entries.has(key)) continue;
+        const known = knownSources.find((source) => canonicalSourceUrl(source.url) === key);
+        entries.set(key, {
+          key,
+          url: known?.url ?? key,
+          title: known?.title ?? sourceTitleFromContent(message.content, key),
+          meta: known?.meta ?? sourceHost(key),
+        });
+        order.push(key);
+      }
+    }
+    return order.map((key, position) => ({ ...entries.get(key)!, index: position + 1 }));
+  }, [messages]);
+
+  function citationsFor(content: string) {
+    return extractSourceUrls(content)
+      .map((url) => sources.find((source) => source.key === url))
+      .filter((source): source is KnowledgeSource => Boolean(source));
+  }
+
   async function send(value: string, options: { appendUser?: boolean; reaction?: ChatReactionId } = {}) {
     const { appendUser = true, reaction: reactionId } = options;
     const text = value.trim();
-    if (pending || (!text && !reactionId)) return;
+    if (!activeThread || pending || (!text && !reactionId)) return;
+    const threadId = activeThread.id;
     const history = messages
       .filter((message) => message.id !== "intro" && !message.failed && message.content.trim())
       .map(({ role, content }) => ({ role, content }))
@@ -345,13 +623,24 @@ function ChatPanel() {
       history.push({ role: "user", content: text });
       setReaction(null);
     }
-    idRef.current += 1;
-    const messageId = idRef.current;
-    const assistantId = `assistant-${messageId}`;
-    setMessages((current) => [
-      ...(appendUser ? [...current, { id: `user-${messageId}`, role: "user" as const, content: text }] : current),
-      { id: assistantId, role: "assistant", content: "" },
-    ]);
+    const userMessage: ChatMessage | null = appendUser
+      ? { id: chatMessageId("user"), role: "user", content: text }
+      : null;
+    const assistantId = chatMessageId("assistant");
+    setThreads((current) => current.map((thread) => {
+      if (thread.id !== threadId) return thread;
+      const nextMessages: ChatMessage[] = [
+        ...thread.messages,
+        ...(userMessage ? [userMessage] : []),
+        { id: assistantId, role: "assistant", content: "" },
+      ];
+      return {
+        ...thread,
+        messages: nextMessages,
+        title: thread.title === "新的对话" ? chatThreadTitle(nextMessages) : thread.title,
+        updatedAt: Date.now(),
+      };
+    }));
     setQuestion("");
     setPending(true);
     try {
@@ -376,12 +665,23 @@ function ChatPanel() {
         if (done) break;
         // eslint-disable-next-line react-hooks/immutability -- accumulate the streamed response locally
         answer += decoder.decode(chunk, { stream: true });
-        setMessages((current) => current.map((message) => message.id === assistantId ? { ...message, content: answer } : message));
+        setThreads((current) => current.map((thread) => thread.id === threadId
+          ? { ...thread, messages: thread.messages.map((message) => message.id === assistantId ? { ...message, content: answer } : message) }
+          : thread));
       }
       if (!answer.trim()) throw new Error("这次没有收到回答，请再试一次。");
+      setThreads((current) => current.map((thread) => thread.id === threadId ? { ...thread, updatedAt: Date.now() } : thread));
     } catch (error) {
       const message = error instanceof Error ? error.message : "请求失败，请稍后重试。";
-      setMessages((current) => current.map((item) => item.id === assistantId ? { ...item, content: message, failed: true, retry: text, reaction: reactionId } : item));
+      setThreads((current) => current.map((thread) => thread.id === threadId
+        ? {
+            ...thread,
+            updatedAt: Date.now(),
+            messages: thread.messages.map((item) => item.id === assistantId
+              ? { ...item, content: message, failed: true, retry: text, reaction: reactionId }
+              : item),
+          }
+        : thread));
     } finally {
       setPending(false);
     }
@@ -402,59 +702,165 @@ function ChatPanel() {
     void send("", { appendUser: false, reaction: id });
   }
 
+  function startNewChat() {
+    if (pending) return;
+    const thread = createChatThread();
+    setThreads((current) => [thread, ...current].slice(0, CHAT_THREAD_LIMIT));
+    setActiveThreadId(thread.id);
+    setQuestion("");
+    setReaction(null);
+    setHistoryOpen(false);
+  }
+
+  function selectThread(id: string) {
+    if (id !== activeThread?.id) {
+      setActiveThreadId(id);
+      setQuestion("");
+      setReaction(null);
+    }
+    setHistoryOpen(false);
+  }
+
+  function deleteThread(id: string) {
+    if (pending) return;
+    const remaining = orderedThreads.filter((thread) => thread.id !== id);
+    setThreads((current) => current.filter((thread) => thread.id !== id));
+    if (id === activeThread?.id) {
+      setActiveThreadId(remaining[0]?.id ?? "");
+      setQuestion("");
+      setReaction(null);
+    }
+  }
+
   const hasUserMessage = messages.some((message) => message.role === "user");
   const hasAnswer = messages.some((message) => message.id !== "intro" && message.role === "assistant" && !message.failed && message.content.trim());
+  const canChat = Boolean(activeThread);
   const suggestions = ["晚餐怎么搭配更合适？", "今天适合做什么训练？", "怎么记录才算准确？"];
   const activeReaction = chatReactions.find((item) => item.id === reaction);
 
   return <div className="coach-layout">
     <section className="surface chat-panel">
       <span className="chat-flag" aria-hidden="true">AI 健康搭子</span>
-      <div className="chat-head">
-        <span className="coach-avatar"><MessageCircle size={17} /></span>
-        <div><strong>你的健康搭子</strong><small>基于个人计划提供日常建议</small></div>
-      </div>
-      <div className="chat-messages" ref={scrollRef} aria-live="polite" aria-busy={pending}>
-        {messages.map((message) => (
-          <div className={`message ${message.role === "user" ? "user" : "bot"}${message.failed ? " failed" : ""}`} key={message.id}>
-            {message.content || (pending ? <HamsterLoader size="mini" label="正在思考…" /> : null)}
-            {message.failed && (message.retry || message.reaction) && (
-              <button type="button" className="chat-retry" onClick={() => void send(message.retry ?? "", { appendUser: false, reaction: message.reaction })} disabled={pending}>重新发送</button>
-            )}
+      <div className="chat-shell">
+        <aside id="chat-history" className={`chat-history${historyOpen ? " is-open" : ""}`} aria-label="对话记录">
+          <div className="chat-history-head">
+            <span className="chat-history-title"><MessageCircle size={12} aria-hidden="true" /> 对话记录</span>
+            <span className="chat-history-count">{threads.length}</span>
+            <button type="button" className="chat-history-close" aria-label="收起对话记录" onClick={() => setHistoryOpen(false)}><X size={13} /></button>
           </div>
-        ))}
-        <cite className="chat-cite">健康建议仅供日常参考，不替代医生诊断或治疗。</cite>
-      </div>
-      {!hasUserMessage && (
-        <div className="chat-suggestions">
-          {suggestions.map((item) => <button type="button" className="suggestion" key={item} onClick={() => void send(item)} disabled={pending}>{item}</button>)}
-        </div>
-      )}
-      <div className="chat-reactions">
-        <span className="chat-reactions-label" aria-live="polite">{activeReaction ? `已选：${activeReaction.label}` : hasAnswer ? "快捷评价" : "先提问，再评价回答"}</span>
-        <div className="chat-reaction-list" role="group" aria-label="快捷评价">
-          {chatReactions.map(({ id, label, emoji }) => (
+          <button type="button" className="chat-new" onClick={startNewChat} disabled={pending}>
+            <Plus size={12} aria-hidden="true" /> 新建对话
+          </button>
+          <div className="chat-thread-list">
+            {orderedThreads.map((thread) => (
+              <div className={`chat-thread${thread.id === activeThread?.id ? " is-active" : ""}`} key={thread.id}>
+                <button
+                  type="button"
+                  className="chat-thread-main"
+                  onClick={() => selectThread(thread.id)}
+                  aria-current={thread.id === activeThread?.id ? "true" : undefined}
+                  title={thread.title}
+                >
+                  <span className="chat-thread-title">{thread.title}</span>
+                  <span className="chat-thread-time">{formatChatTime(thread.updatedAt)}</span>
+                </button>
+                <button
+                  type="button"
+                  className="chat-thread-delete"
+                  aria-label={`删除对话：${thread.title}`}
+                  title="删除对话"
+                  onClick={() => deleteThread(thread.id)}
+                  disabled={pending}
+                >
+                  <Trash2 size={11} aria-hidden="true" />
+                </button>
+              </div>
+            ))}
+          </div>
+          <p className="chat-history-note">对话只保存在本机浏览器；清除站点数据后会消失。</p>
+        </aside>
+        <div className="chat-main">
+          <div className="chat-head">
+            <span className="coach-avatar"><MessageCircle size={17} /></span>
+            <div className="chat-head-copy"><strong>你的健康搭子</strong><small>基于个人计划提供日常建议</small></div>
             <button
               type="button"
-              key={id}
-              className={`chat-reaction${reaction === id ? " is-selected" : ""}`}
-              aria-label={label}
-              aria-pressed={reaction === id}
-              disabled={!hasAnswer || pending}
-              onClick={() => react(id)}
+              className="chat-history-toggle"
+              aria-expanded={historyOpen}
+              aria-controls="chat-history"
+              onClick={() => setHistoryOpen((open) => !open)}
             >
-              <span className="chat-reaction-emoji" aria-hidden="true">{emoji}</span>
-              <span className="chat-reaction-tip" aria-hidden="true">{label}</span>
+              <MessageCircle size={11} aria-hidden="true" />
+              <span>{threads.length} 条对话</span>
             </button>
-          ))}
+          </div>
+          <div className={`chat-messages${activeThread ? "" : " is-empty"}`} ref={scrollRef} aria-live="polite" aria-busy={pending}>
+            {!activeThread && (
+              <div className="chat-empty">
+                <span className="chat-empty-icon" aria-hidden="true"><MessageCircle size={20} /></span>
+                <strong>还没有对话</strong>
+                <p>新建一个对话，问问饮食、训练或记录上的问题。</p>
+                <button type="button" className="chat-empty-new" onClick={startNewChat}>
+                  <Plus size={12} aria-hidden="true" /> 新建对话
+                </button>
+              </div>
+            )}
+            {activeThread && messages.map((message) => {
+              const parsed = message.role === "assistant" && !message.failed ? splitAnswer(message.content) : { body: message.content, urls: [] as string[] };
+              const citations = message.role === "assistant" && !message.failed ? citationsFor(message.content) : [];
+              return (
+                <div className={`message ${message.role === "user" ? "user" : "bot"}${message.failed ? " failed" : ""}`} key={message.id}>
+                  {parsed.body || (pending ? <HamsterLoader size="mini" label="正在思考…" /> : null)}
+                  {citations.length > 0 && (
+                    <div className="message-sources" aria-label="本条回答引用的来源">
+                      {citations.map((source) => (
+                        <a className="message-source" href={source.url} target="_blank" rel="noreferrer" key={source.key} title={source.title}>
+                          <b aria-hidden="true">{source.index}</b>
+                          <span>{source.title}</span>
+                        </a>
+                      ))}
+                    </div>
+                  )}
+                  {message.failed && (message.retry || message.reaction) && (
+                    <button type="button" className="chat-retry" onClick={() => void send(message.retry ?? "", { appendUser: false, reaction: message.reaction })} disabled={pending}>重新发送</button>
+                  )}
+                </div>
+              );
+            })}
+            {activeThread && <cite className="chat-cite">健康建议仅供日常参考，不替代医生诊断或治疗。</cite>}
+          </div>
+          {activeThread && !hasUserMessage && (
+            <div className="chat-suggestions">
+              {suggestions.map((item) => <button type="button" className="suggestion" key={item} onClick={() => void send(item)} disabled={pending}>{item}</button>)}
+            </div>
+          )}
+          <div className="chat-reactions">
+            <span className="chat-reactions-label" aria-live="polite">{activeReaction ? `已选：${activeReaction.label}` : hasAnswer ? "快捷评价" : "先提问，再评价回答"}</span>
+            <div className="chat-reaction-list" role="group" aria-label="快捷评价">
+              {chatReactions.map(({ id, label, emoji }) => (
+                <button
+                  type="button"
+                  key={id}
+                  className={`chat-reaction${reaction === id ? " is-selected" : ""}`}
+                  aria-label={label}
+                  aria-pressed={reaction === id}
+                  disabled={!hasAnswer || pending}
+                  onClick={() => react(id)}
+                >
+                  <span className="chat-reaction-emoji" aria-hidden="true">{emoji}</span>
+                  <span className="chat-reaction-tip" aria-hidden="true">{label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+          <form className="chat-input" onSubmit={submit}>
+            <span className="chat-input-tag" aria-hidden="true">你的问题 →</span>
+            <label className="sr-only" htmlFor="coach-question">输入你的问题</label>
+            <input id="coach-question" value={question} onChange={(event) => setQuestion(event.target.value)} placeholder={canChat ? "问问你的健康搭子…" : "先新建一个对话"} maxLength={1000} disabled={!canChat} />
+            <Button aria-label="发送问题" disabled={!canChat || !question.trim() || pending}>{pending ? <Loader2 size={17} className="animate-spin" /> : <ChevronRight size={17} />}</Button>
+          </form>
         </div>
       </div>
-      <form className="chat-input" onSubmit={submit}>
-        <span className="chat-input-tag" aria-hidden="true">你的问题 →</span>
-        <label className="sr-only" htmlFor="coach-question">输入你的问题</label>
-        <input id="coach-question" value={question} onChange={(event) => setQuestion(event.target.value)} placeholder="问问你的健康搭子…" maxLength={1000} />
-        <Button aria-label="发送问题" disabled={!question.trim() || pending}>{pending ? <Loader2 size={17} className="animate-spin" /> : <ChevronRight size={17} />}</Button>
-      </form>
     </section>
     <aside className="chat-aside">
       <section className="info-panel">
@@ -465,8 +871,89 @@ function ChatPanel() {
         <h3>什么时候该找医生</h3>
         <p>持续疼痛、明显不适、进食障碍风险、孕期或慢性病用药调整，请优先咨询医生或营养师。</p>
       </section>
+      <CoachLaptopIllustration />
     </aside>
   </div>;
+}
+
+function CoachLaptopIllustration() {
+  return <section className="info-panel chat-laptop-panel">
+    <div className="chat-laptop-head">
+      <h3>健康搭子在线</h3>
+    </div>
+    <div className="laptop-loader" aria-hidden="true">
+      <span className="lp-aura" />
+      <div className="lp-particles">
+        <span className="lp-particle" />
+        <span className="lp-particle" />
+        <span className="lp-particle" />
+        <span className="lp-particle" />
+        <span className="lp-particle" />
+        <span className="lp-particle" />
+      </div>
+      <span className="lp-shadow" />
+      <div className="lp-scene">
+        <div className="lp-laptop">
+          <div className="lp-screen">
+            <div className="lp-bezel">
+              <span className="lp-cam" />
+              <div className="lp-display">
+                <div className="lp-app">
+                  <div className="lp-bar">
+                    <span className="lp-avatar" />
+                    <span className="lp-barlines"><i /><i /></span>
+                    <span className="lp-menudots"><i /><i /><i /></span>
+                  </div>
+                  <div className="lp-chat">
+                    <div className="lp-msg lp-msg--in lp-msg--1"><span className="lp-msgtext">今晚吃啥？</span></div>
+                    <div className="lp-msg lp-msg--out lp-msg--2"><span className="lp-msgtext">按记录配一份</span></div>
+                    <div className="lp-msg lp-msg--in lp-msg--3"><span className="lp-msgtext">少油多蔬菜</span></div>
+                    <div className="lp-typing"><i /><i /><i /></div>
+                  </div>
+                  <div className="lp-progress"><i /></div>
+                  <div className="lp-input">
+                    <span className="lp-field">
+                      <span className="lp-typed">今晚吃啥</span>
+                      <span className="lp-caret" />
+                    </span>
+                    <span className="lp-send" />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div className="lp-hinge" />
+          <div className="lp-deck">
+            <div className="lp-base" />
+            <div className="lp-keys">
+              <div className="lp-row">
+                <span className="lp-key" /><span className="lp-key" /><span className="lp-key" />
+                <span className="lp-key lp-hit lp-k1" /><span className="lp-key" /><span className="lp-key" />
+                <span className="lp-key" /><span className="lp-key" /><span className="lp-key" /><span className="lp-key" />
+              </div>
+              <div className="lp-row">
+                <span className="lp-key lp-hit lp-k5" /><span className="lp-key" /><span className="lp-key" />
+                <span className="lp-key" /><span className="lp-key" /><span className="lp-key lp-hit lp-k2" />
+                <span className="lp-key" /><span className="lp-key" /><span className="lp-key" /><span className="lp-key" />
+              </div>
+              <div className="lp-row">
+                <span className="lp-key" /><span className="lp-key lp-hit lp-k3" /><span className="lp-key" />
+                <span className="lp-key" /><span className="lp-key" /><span className="lp-key" />
+                <span className="lp-key lp-hit lp-k4" /><span className="lp-key" /><span className="lp-key" /><span className="lp-key" />
+              </div>
+              <div className="lp-row">
+                <span className="lp-key lp-key--shift lp-shift lp-k6" /><span className="lp-key" /><span className="lp-key" />
+                <span className="lp-key" /><span className="lp-key" /><span className="lp-key" />
+                <span className="lp-key lp-key--space" /><span className="lp-key lp-key--enter" />
+              </div>
+            </div>
+            <span className="lp-pad" />
+          </div>
+          <div className="lp-front" />
+        </div>
+      </div>
+    </div>
+  </section>;
 }
 
 function CoachOrbitVisual() {
@@ -553,20 +1040,32 @@ function OtherPage({ page, spaceProfile, hasStored }: { page: string; spaceProfi
         : <ExercisePlan data={dashboardQuery.data} profile={spaceProfile} hasStored={hasStored} />}
     </div>;
   }
-  const content: Record<string, { eyebrow: string; title: string; intro: string }> = {
+  const content: Record<string, { eyebrow: string; title: React.ReactNode; intro: string }> = {
     food: { eyebrow: "多模态餐食记录", title: "一张照片，轻松记下一餐。", intro: "AI 先帮你看一眼；哪里不准，你来修正。确认之前不会计入营养统计。" },
     coach: { eyebrow: "不确定的时候，随时聊聊", title: "你好，我在听。", intro: "回答基于你愿意分享的信息；不确定的地方会说清楚，也不替代医生。" },
-    review: { eyebrow: "看见过程，而不只是结果", title: "这一周，只按已有记录复盘。", intro: "记录有限时，我们先理解情况，不急着调整目标，也不合成执行分数。" },
+    review: { eyebrow: "看见过程，而不只是结果", title: <><span>这一周，</span><span className="review-title-second">只按已有记录复盘。</span></>, intro: "记录有限时，我们先理解情况，不急着调整目标，也不合成执行分数。" },
   };
   const item = content[page] ?? content.food;
   return <div className="app-content">
-    <div className={`page-heading${page === "coach" ? " page-heading--coach" : ""}`}>
+    <div className={`page-heading${page === "coach" ? " page-heading--coach" : ""}${page === "review" ? " page-heading--review" : ""}`}>
       <div className="page-heading-copy">
         <div className="eyebrow">{item.eyebrow}</div>
         <h1>{item.title}</h1>
         <p>{item.intro}</p>
       </div>
       {page === "coach" && <CoachCubes />}
+      {page === "review" && (
+        <div className="review-cosmos" aria-hidden="true">
+          <span className="review-orbit-ring" />
+          <span className="review-earth" />
+          <i className="review-star review-star--1" />
+          <i className="review-star review-star--2" />
+          <i className="review-star review-star--3" />
+          <i className="review-star review-star--4" />
+          <i className="review-star review-star--5" />
+          <i className="review-star review-star--6" />
+        </div>
+      )}
     </div>
     {page === "food" && <MealRecorder />}
     {page === "coach" && <ChatPanel />}
@@ -576,10 +1075,15 @@ function OtherPage({ page, spaceProfile, hasStored }: { page: string; spaceProfi
 
 export default function HomePage() {
   const page = useHealthStore((state) => state.page);
+  const visitedPages = useHealthStore((state) => state.visitedPages);
   const setPage = useHealthStore((state) => state.setPage);
   const storedSpaceProfile = useHealthStore((state) => state.spaceProfile);
   const hydrateSpaceProfile = useHealthStore((state) => state.hydrateSpaceProfile);
   const dashboardQuery = useQuery({ queryKey: ["dashboard"], queryFn: getDashboard });
+  const scrollPositions = React.useRef<Record<string, number>>({});
+  const activePageRef = React.useRef<Page>(page);
+  const previousPageRef = React.useRef<Page>(page);
+  const renderedPages = visitedPages.includes(page) ? visitedPages : [...visitedPages, page];
   const dashboard = dashboardQuery.data;
   const profilePage = page === "profile";
   const displayName = dashboard?.displayName ?? "你";
@@ -597,7 +1101,18 @@ export default function HomePage() {
   }, [hydrateSpaceProfile]);
 
   React.useEffect(() => {
-    window.scrollTo({ top: 0, behavior: "auto" });
+    const rememberScroll = () => {
+      scrollPositions.current[activePageRef.current] = window.scrollY;
+    };
+    window.addEventListener("scroll", rememberScroll, { passive: true });
+    return () => window.removeEventListener("scroll", rememberScroll);
+  }, []);
+
+  useIsomorphicLayoutEffect(() => {
+    activePageRef.current = page;
+    if (previousPageRef.current === page) return;
+    previousPageRef.current = page;
+    window.scrollTo({ top: scrollPositions.current[page] ?? 0, behavior: "auto" });
   }, [page]);
 
   return <div className="app-shell">
@@ -629,7 +1144,9 @@ export default function HomePage() {
           saved={hasStoredSpace}
           demo={!hasStoredSpace && Boolean(dashboard?.demo)}
           active={profilePage}
+          shortcuts={navigation.filter((item) => item.id !== "profile")}
           onOpen={() => setPage("profile")}
+          onNavigate={setPage}
         />
       </div>
     </aside>
@@ -648,18 +1165,13 @@ export default function HomePage() {
       </header>
       <div className="mobile-brand"><span className="brand-mark"><Leaf size={19} /></span><b>智养 AI</b>{dashboard?.demo && <span className="demo-chip">演示</span>}</div>
       <section className="page-content">
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={page}
-            initial={{ opacity: 0, y: 14, scale: 0.997 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -7, scale: 0.999 }}
-            transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
-            className="min-w-0"
-          >
-            {page === "dashboard" ? <Dashboard /> : <OtherPage page={page} spaceProfile={spaceProfile} hasStored={hasStoredSpace} />}
-          </motion.div>
-        </AnimatePresence>
+        {renderedPages.map((visitedPage) => (
+          <React.Activity key={visitedPage} mode={visitedPage === page ? "visible" : "hidden"}>
+            <div className={`page-panel min-w-0${visitedPage === page ? " is-active" : ""}`}>
+              {visitedPage === "dashboard" ? <Dashboard /> : <OtherPage page={visitedPage} spaceProfile={spaceProfile} hasStored={hasStoredSpace} />}
+            </div>
+          </React.Activity>
+        ))}
       </section>
       <footer className="footer-note"><span>智养 AI 仅提供日常健康管理建议，不替代专业医疗意见。</span><span>把身体的声音，放回生活里。</span></footer>
     </main>
