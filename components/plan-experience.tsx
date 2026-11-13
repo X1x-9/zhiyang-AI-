@@ -1,14 +1,12 @@
 "use client";
 
 import * as React from "react";
+import { createPortal } from "react-dom";
 import Image from "next/image";
 import { AnimatePresence, motion, useInView, useReducedMotion } from "framer-motion";
 import {
   ArrowRight,
-  BookOpen,
   Check,
-  ChevronDown,
-  CircleAlert,
   Clock3,
   Dumbbell,
   Footprints,
@@ -16,63 +14,33 @@ import {
   History,
   Info,
   Leaf,
-  ListChecks,
   Loader2,
+  MessageCircle,
   RotateCw,
   Salad,
+  Send,
+  Settings2,
   ShieldCheck,
   Sparkles,
   Sun,
   Timer,
+  Trash2,
   Utensils,
   Wind,
+  X,
 } from "lucide-react";
 import { FoodGuide } from "@/components/food-guide";
 import { Reveal } from "@/components/experience";
 import { GlitchButton } from "@/components/glitch-button";
 import type { DashboardData } from "@/lib/dashboard";
-import type { PlanDocument, PlanRagStatus, PlanVersionSummary } from "@/lib/plan-engine";
-import { createEmptySpaceProfile, spaceCompleteness, type SpaceProfile } from "@/lib/space";
+import type { DynamicPlanAdjustment } from "@/lib/plan-adjustment";
+import type { PlanDocument, PlanVersionSummary } from "@/lib/plan-engine";
+import { createEmptySpaceProfile, dietLabels, spaceCompleteness, type SpaceProfile } from "@/lib/space";
 import { useHealthStore } from "@/stores/health-store";
 
 const ease = [0.22, 1, 0.36, 1] as const;
 
 type PlanKind = "diet" | "exercise";
-
-const planMeals = [
-  {
-    time: "08:00",
-    label: "早餐",
-    title: "燕麦酸奶碗",
-    tags: ["10 分钟", "无需开火"],
-    swap: "无糖酸奶可以换成豆浆，燕麦换成全麦面包；蛋白质和主食都还在。",
-    tone: "amber",
-  },
-  {
-    time: "12:30",
-    label: "午餐",
-    title: "番茄鸡胸杂粮饭",
-    tags: ["外食友好", "少油"],
-    swap: "外食可以选少油盖饭，再加一份青菜；不必追求和示例完全一致。",
-    tone: "sage",
-  },
-  {
-    time: "16:00",
-    label: "加餐",
-    title: "无糖豆浆和坚果",
-    tags: ["一小把", "不饿可省"],
-    swap: "坚果一小把即可；不方便时，用一杯无糖酸奶替换也可以。",
-    tone: "clay",
-  },
-  {
-    time: "19:00",
-    label: "晚餐",
-    title: "虾仁豆腐",
-    tags: ["20 分钟", "清淡"],
-    swap: "虾仁可以换成鱼或鸡蛋，豆腐可以换成其他豆制品。",
-    tone: "forest",
-  },
-] as const;
 
 const flexNotes = [
   {
@@ -227,6 +195,18 @@ export function PlanSwitcher({ page, profile, hasStored }: { page: "plans" | "ex
   );
 }
 
+type PlanGenerateOutcome =
+  | { ok: true; version: number | null; summary: string | null }
+  | { ok: false; message: string };
+
+type PlanChatReply =
+  | { ok: true; reply: string; applied: boolean; version: number | null; summary: string | null }
+  | { ok: false; message: string };
+
+type PlanDeleteOutcome =
+  | { ok: true; deletedCount: number }
+  | { ok: false; message: string };
+
 type PlanState = {
   plan: PlanDocument | null;
   activePlan: PlanDocument | null;
@@ -234,11 +214,18 @@ type PlanState = {
   versions: PlanVersionSummary[];
   versionTotal: number;
   persisted: boolean;
+  adjustment: DynamicPlanAdjustment | null;
   loading: boolean;
+  chatting: boolean;
   activating: number | null;
+  deleting: boolean;
+  restoringAdjustment: boolean;
   error: string | null;
-  generate: () => Promise<void>;
+  generate: (feedback?: string, options?: { silentError?: boolean }) => Promise<PlanGenerateOutcome>;
+  chat: (messages: Array<{ role: "user" | "assistant"; content: string }>, kind: PlanKind) => Promise<PlanChatReply>;
   activate: (version: number) => Promise<void>;
+  remove: (versions: number[]) => Promise<PlanDeleteOutcome>;
+  restoreAdjustment: () => Promise<void>;
 };
 
 type PlanStateResponse = {
@@ -248,7 +235,12 @@ type PlanStateResponse = {
   versions?: PlanVersionSummary[];
   versionTotal?: number;
   persisted?: boolean;
+  adjustment?: DynamicPlanAdjustment | null;
+  generatedVersion?: number;
+  deletedCount?: number;
   message?: string;
+  reply?: string;
+  applied?: boolean;
 };
 
 function useGeneratedPlan(hasStored: boolean): PlanState {
@@ -258,8 +250,12 @@ function useGeneratedPlan(hasStored: boolean): PlanState {
   const [versions, setVersions] = React.useState<PlanVersionSummary[]>([]);
   const [versionTotal, setVersionTotal] = React.useState(0);
   const [persisted, setPersisted] = React.useState(false);
+  const [adjustment, setAdjustment] = React.useState<DynamicPlanAdjustment | null>(null);
   const [loading, setLoading] = React.useState(false);
+  const [chatting, setChatting] = React.useState(false);
   const [activating, setActivating] = React.useState<number | null>(null);
+  const [deleting, setDeleting] = React.useState(false);
+  const [restoringAdjustment, setRestoringAdjustment] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
   const applyState = React.useCallback((data: PlanStateResponse | null) => {
@@ -270,7 +266,18 @@ function useGeneratedPlan(hasStored: boolean): PlanState {
     setVersions(Array.isArray(data.versions) ? data.versions : []);
     setVersionTotal(typeof data.versionTotal === "number" ? data.versionTotal : (data.versions?.length ?? 0));
     setPersisted(Boolean(data.persisted));
+    setAdjustment(data.adjustment ?? null);
   }, []);
+
+  const refresh = React.useCallback(async () => {
+    try {
+      const response = await fetch("/api/plans/latest");
+      if (!response.ok) return;
+      applyState((await response.json()) as PlanStateResponse);
+    } catch {
+      // 读取失败不影响已有计划。
+    }
+  }, [applyState]);
 
   React.useEffect(() => {
     if (!hasStored) return;
@@ -289,24 +296,72 @@ function useGeneratedPlan(hasStored: boolean): PlanState {
     return () => { cancelled = true; };
   }, [hasStored, applyState]);
 
-  const generate = React.useCallback(async () => {
-    if (!hasStored || loading || activating !== null) return;
+  React.useEffect(() => {
+    if (!hasStored) return;
+    const handler = () => { void refresh(); };
+    window.addEventListener("plan-adjustment-changed", handler);
+    return () => window.removeEventListener("plan-adjustment-changed", handler);
+  }, [hasStored, refresh]);
+
+  const generate = React.useCallback(async (feedback?: string, options?: { silentError?: boolean }): Promise<PlanGenerateOutcome> => {
+    if (!hasStored || loading || chatting || activating !== null || deleting) {
+      return { ok: false, message: "正在处理上一个操作，请稍候再试。" };
+    }
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch("/api/plans/generate", { method: "POST" });
+      const response = await fetch("/api/plans/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(feedback?.trim() ? { feedback: feedback.trim() } : {}),
+      });
       const data = (await response.json().catch(() => null)) as PlanStateResponse | null;
       if (!response.ok || !data?.plan) throw new Error(data?.message ?? "计划生成失败，请稍后重试。");
       applyState(data);
+      return {
+        ok: true,
+        version: data.generatedVersion ?? data.plan.version,
+        summary: data.plan.revision?.summary ?? null,
+      };
     } catch (err) {
-      setError(err instanceof Error ? err.message : "计划生成失败，请稍后重试。");
+      const message = err instanceof Error ? err.message : "计划生成失败，请稍后重试。";
+      if (!options?.silentError) setError(message);
+      return { ok: false, message };
     } finally {
       setLoading(false);
     }
-  }, [activating, applyState, hasStored, loading]);
+  }, [activating, applyState, chatting, deleting, hasStored, loading]);
+
+  const chat = React.useCallback(async (messages: Array<{ role: "user" | "assistant"; content: string }>, kind: PlanKind): Promise<PlanChatReply> => {
+    if (!hasStored || loading || chatting || activating !== null || deleting) {
+      return { ok: false, message: "正在处理上一个操作，请稍候再试。" };
+    }
+    setChatting(true);
+    try {
+      const response = await fetch("/api/plans/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages, kind }),
+      });
+      const data = (await response.json().catch(() => null)) as PlanStateResponse | null;
+      if (!response.ok || !data?.reply) throw new Error(data?.message ?? "暂时没能回答，请稍后再试。");
+      if (data.plan) applyState(data);
+      return {
+        ok: true,
+        reply: data.reply,
+        applied: Boolean(data.applied),
+        version: data.generatedVersion ?? data.plan?.version ?? null,
+        summary: data.plan?.revision?.summary ?? null,
+      };
+    } catch (err) {
+      return { ok: false, message: err instanceof Error ? err.message : "暂时没能回答，请稍后再试。" };
+    } finally {
+      setChatting(false);
+    }
+  }, [activating, applyState, chatting, deleting, hasStored, loading]);
 
   const activate = React.useCallback(async (version: number) => {
-    if (!hasStored || activating !== null || loading) return;
+    if (!hasStored || activating !== null || loading || chatting || deleting) return;
     setActivating(version);
     setError(null);
     try {
@@ -323,7 +378,52 @@ function useGeneratedPlan(hasStored: boolean): PlanState {
     } finally {
       setActivating(null);
     }
-  }, [activating, applyState, hasStored, loading]);
+  }, [activating, applyState, chatting, deleting, hasStored, loading]);
+
+  const remove = React.useCallback(async (versions: number[]): Promise<PlanDeleteOutcome> => {
+    if (!hasStored || deleting || loading || chatting || activating !== null) {
+      return { ok: false, message: "正在处理上一个操作，请稍候再试。" };
+    }
+    if (versions.length === 0) {
+      return { ok: false, message: "请先选择要删除的版本。" };
+    }
+    setDeleting(true);
+    try {
+      const response = await fetch("/api/plans/delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ versions }),
+      });
+      const data = (await response.json().catch(() => null)) as PlanStateResponse | null;
+      if (!response.ok || !data) throw new Error(data?.message ?? "删除失败，请稍后重试。");
+      applyState(data);
+      return {
+        ok: true,
+        deletedCount: typeof data.deletedCount === "number" ? data.deletedCount : versions.length,
+      };
+    } catch (err) {
+      return { ok: false, message: err instanceof Error ? err.message : "删除失败，请稍后重试。" };
+    } finally {
+      setDeleting(false);
+    }
+  }, [activating, applyState, chatting, deleting, hasStored, loading]);
+
+  const restoreAdjustment = React.useCallback(async () => {
+    if (!hasStored || restoringAdjustment) return;
+    setRestoringAdjustment(true);
+    setError(null);
+    try {
+      const response = await fetch("/api/plans/adjust/restore", { method: "POST" });
+      const data = (await response.json().catch(() => null)) as { message?: string } | null;
+      if (!response.ok) throw new Error(data?.message ?? "暂时无法恢复正式计划。");
+      setAdjustment(null);
+      window.dispatchEvent(new CustomEvent("plan-adjustment-changed"));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "暂时无法恢复正式计划。");
+    } finally {
+      setRestoringAdjustment(false);
+    }
+  }, [hasStored, restoringAdjustment]);
 
   return {
     plan: hasStored ? plan : null,
@@ -332,11 +432,18 @@ function useGeneratedPlan(hasStored: boolean): PlanState {
     versions: hasStored ? versions : [],
     versionTotal: hasStored ? versionTotal : 0,
     persisted: hasStored ? persisted : false,
+    adjustment: hasStored ? adjustment : null,
     loading,
+    chatting,
     activating,
+    deleting,
+    restoringAdjustment,
     error,
     generate,
+    chat,
     activate,
+    remove,
+    restoreAdjustment,
   };
 }
 
@@ -717,12 +824,13 @@ function SectionHead({ eyebrow, title, copy }: { eyebrow: string; title: string;
 const mealTones = ["amber", "sage", "clay", "forest"] as const;
 
 function GeneratedDiet({ plan }: { plan: PlanDocument }) {
+  const effectiveDiet = plan.revisionState?.diet?.style ? dietLabels[plan.revisionState.diet.style] : plan.profileSnapshot.dietLabel;
   return (
     <div className="pp-generated-block">
       <div className="pp-generated-subhead">
         <strong>一天的吃法</strong>
         <span>
-          {plan.profileSnapshot.dietLabel} · {plan.dataBasis.usesMealRecords ? "资料 + 近 7 天已确认餐食" : "按资料生成"}
+          {effectiveDiet} · {plan.dataBasis.usesMealRecords ? "资料 + 近 7 天已确认餐食" : "按资料生成"}
         </span>
       </div>
       <div className="pp-meal-grid">
@@ -735,7 +843,7 @@ function GeneratedDiet({ plan }: { plan: PlanDocument }) {
               title: meal.title,
               detail: meal.detail,
               swap: meal.swap,
-              tags: [meal.kcalHint, plan.profileSnapshot.dietLabel].filter((tag): tag is string => Boolean(tag)),
+              tags: [meal.kcalHint, effectiveDiet].filter((tag): tag is string => Boolean(tag)),
               tone: mealTones[index % mealTones.length],
               badge: "按资料",
             }}
@@ -747,6 +855,87 @@ function GeneratedDiet({ plan }: { plan: PlanDocument }) {
         <p>{plan.diet.budgetNote}</p>
       </div>
     </div>
+  );
+}
+
+function DynamicAdjustmentBlock({ adjustment, restoring, restore }: {
+  adjustment: DynamicPlanAdjustment;
+  restoring: boolean;
+  restore: () => Promise<void>;
+}) {
+  return (
+    <section className="pp-dynamic" aria-labelledby="pp-dynamic-title">
+      <header className="pp-dynamic-head">
+        <div className="pp-dynamic-copy">
+          <div className="pp-sec-eyebrow">动态饮食调整</div>
+          <h3 id="pp-dynamic-title">{adjustment.title}</h3>
+          <p>{adjustment.summary}</p>
+        </div>
+        <span className="pp-dynamic-badge">基于 v{adjustment.baseVersion} · 不占版本</span>
+      </header>
+
+      <div className={`pp-dynamic-grid${adjustment.remainingToday.length === 0 ? " is-single" : ""}`}>
+        <div className="pp-dynamic-col">
+          <div className="pp-generated-subhead">
+            <strong>今天剩下</strong>
+            <span>{adjustment.remainingToday.length > 0 ? `${adjustment.remainingToday.length} 个餐次` : "已记录完"}</span>
+          </div>
+          {adjustment.remainingToday.length > 0 ? (
+            <ul className="pp-dynamic-meals">
+              {adjustment.remainingToday.map((meal) => (
+                <li key={`${meal.label}-${meal.time}`}>
+                  <span className="pp-dynamic-time">{meal.time}</span>
+                  <div>
+                    <strong>{meal.label} · {meal.title}</strong>
+                    <p>{meal.change}{meal.kcalHint ? ` · ${meal.kcalHint}` : ""}</p>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="pp-dynamic-empty">今天的计划餐次已经记录完，明天按轻一点的安排继续。</p>
+          )}
+        </div>
+
+        <div className="pp-dynamic-col">
+          <div className="pp-generated-subhead">
+            <strong>{adjustment.nextDayLabel}</strong>
+            <span>正常节奏</span>
+          </div>
+          <ul className="pp-dynamic-meals">
+            {adjustment.nextDayMeals.map((meal) => (
+              <li key={`${meal.label}-${meal.time}`}>
+                <span className="pp-dynamic-time">{meal.time}</span>
+                <div>
+                  <strong>{meal.label} · {meal.title}</strong>
+                  <p>{meal.change}{meal.kcalHint ? ` · ${meal.kcalHint}` : ""}</p>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
+
+      <div className="pp-dynamic-evidence">
+        <span>为什么建议调整</span>
+        <ul>
+          {adjustment.evidence.map((item) => <li key={item}>{item}</li>)}
+        </ul>
+      </div>
+
+      <p className="pp-dynamic-next-note">{adjustment.nextDayNote}</p>
+
+      <div className="pp-dynamic-foot">
+        <details className="pp-dynamic-safety">
+          <summary><ShieldCheck size={13} aria-hidden="true" />安全边界</summary>
+          <p>{adjustment.safetyNote}</p>
+        </details>
+        <button type="button" className="pp-dynamic-restore" onClick={() => void restore()} disabled={restoring}>
+          {restoring ? <Loader2 size={14} className="pp-spin" aria-hidden="true" /> : <RotateCw size={14} aria-hidden="true" />}
+          {restoring ? "恢复中…" : "恢复正式计划"}
+        </button>
+      </div>
+    </section>
   );
 }
 
@@ -791,46 +980,17 @@ function formatPlanTime(value: string) {
   }).format(date);
 }
 
-const agentStatusLabels = {
-  OK: "AI 建议已完成",
-  SKIPPED: "本次未运行 AI 建议",
-  FAILED: "AI 建议已回退",
-} as const;
-
 const agentStatusShort = {
   OK: "建议已完成",
   SKIPPED: "未运行",
   FAILED: "已回退",
 } as const;
 
-const ragStatusLabels: Record<PlanRagStatus, string> = {
-  OK: "已引用审核指南",
-  NO_MATCH: "未命中审核指南",
-  NOT_CONFIGURED: "指南检索未配置",
-  RETRIEVAL_FAILED: "指南检索失败",
-  NOT_CALLED: "本次未检索指南",
-};
-
-const ragEmptyCopy: Record<PlanRagStatus, string> = {
-  OK: "检索状态正常，但本次没有保留引用。",
-  NO_MATCH: "知识库里没有足够相似的审核指南，本次不展示来源，也不编造引用。",
-  NOT_CONFIGURED: "当前没有可用的指南检索配置，本次不展示来源。",
-  RETRIEVAL_FAILED: "指南检索暂时失败，本次不展示来源，也不编造引用。",
-  NOT_CALLED: "本次没有检索指南。",
-};
-
-const toolLabels: Record<string, string> = {
-  getRecentMealSummary: "读取餐食汇总",
-  getNutritionTargets: "读取营养目标",
-  searchGuidelines: "检索审核指南",
-  applyFocus: "应用建议重点",
-  addCoachNote: "添加调整说明",
-};
-
-function PlanStatusBanner({ plan, activeVersion, activating, activate }: {
+function PlanStatusBanner({ plan, activeVersion, activating, deleting, activate }: {
   plan: PlanDocument;
   activeVersion: number | null;
   activating: number | null;
+  deleting: boolean;
   activate: (version: number) => Promise<void>;
 }) {
   const active = plan.version === activeVersion;
@@ -850,7 +1010,7 @@ function PlanStatusBanner({ plan, activeVersion, activating, activate }: {
         </p>
       </div>
       {!active && (
-        <button type="button" className="pp-plan-activate" onClick={() => void activate(plan.version)} disabled={activating !== null}>
+        <button type="button" className="pp-plan-activate" onClick={() => void activate(plan.version)} disabled={activating !== null || deleting}>
           {activating === plan.version ? <Loader2 size={15} className="pp-spin" aria-hidden="true" /> : <Check size={15} aria-hidden="true" />}
           {activating === plan.version ? "启用中…" : "启用这个版本"}
         </button>
@@ -869,6 +1029,9 @@ function PlanRevisionBlock({ plan }: { plan: PlanDocument }) {
         <span>{revision.basedOnVersion === null ? "首版" : `对比 v${revision.basedOnVersion}`}</span>
       </div>
       <p className="pp-plan-revision-summary">{revision.summary}</p>
+      {revision.request && (
+        <p className="pp-plan-revision-request"><span>你的意见</span>{revision.request}</p>
+      )}
       {revision.changes.length > 0 && (
         <ul>
           {revision.changes.map((change) => (
@@ -881,143 +1044,127 @@ function PlanRevisionBlock({ plan }: { plan: PlanDocument }) {
           ))}
         </ul>
       )}
-    </div>
-  );
-}
-
-function AgentInsight({ plan }: { plan: PlanDocument }) {
-  const agent = plan.agent;
-  if (!agent) {
-    return (
-      <div className="pp-agent">
-        <div className="pp-agent-head">
-          <div>
-            <div className="pp-sec-eyebrow">AI 建议 · 旧版记录</div>
-            <h3>这一版没有 Agent 记录。</h3>
-          </div>
+      {revision.notes && revision.notes.length > 0 && (
+        <div className="pp-plan-revision-notes">
+          {revision.notes.map((note) => <p key={note}>{note}</p>)}
         </div>
-        <p className="pp-agent-legacy">
-          升级前生成的计划，只保留规则计算与数据依据。
-        </p>
-      </div>
-    );
-  }
-
-  const coaching = plan.coaching;
-  const citations = agent.citations ?? [];
-
-  return (
-    <div className="pp-agent">
-      <div className="pp-agent-head">
-        <div>
-          <div className="pp-sec-eyebrow">建议依据</div>
-          <h3>为什么这样安排。</h3>
-        </div>
-        <span className={`pp-agent-status is-${agent.status.toLowerCase()}`}>
-          {agent.status === "OK" ? <Sparkles size={13} aria-hidden="true" /> : agent.status === "FAILED" ? <CircleAlert size={13} aria-hidden="true" /> : <Info size={13} aria-hidden="true" />}
-          {agentStatusLabels[agent.status]}
-        </span>
-      </div>
-      {agent.fallbackReason && <p className="pp-agent-error">{agent.fallbackReason}</p>}
-
-      {agent.rationale.length > 0 && (
-        <div className="pp-agent-rationale">
-          <span><ListChecks size={13} aria-hidden="true" />调整说明</span>
-          <ul>
-            {agent.rationale.map((note) => {
-              const citation = citations.find((item) => item.note === note);
-              return (
-                <li key={note}>
-                  {note}
-                  {citation && <span className="pp-agent-cite">依据 #{citation.referenceIndex}</span>}
-                </li>
-              );
-            })}
-          </ul>
-        </div>
-      )}
-
-      {(agent.adjustments.length > 0 || (coaching && coaching.focus !== "none")) && (
-        <div className="pp-agent-adjust">
-          <span>本版调整</span>
-          {agent.adjustments.length > 0 && (
-            <ul>
-              {agent.adjustments.map((item) => (
-                <li key={`${item.area}-${item.to}`}>
-                  <strong>{item.area}</strong>
-                  <span className="pp-agent-adjust-flow">{item.from} <ArrowRight size={12} aria-hidden="true" /> {item.to}</span>
-                  <p>{item.reason}</p>
-                </li>
-              ))}
-            </ul>
-          )}
-          {coaching && coaching.focus !== "none" && (
-            <p className="pp-agent-focus">建议重点：{coaching.focusLabel} · {coaching.focusNote}</p>
-          )}
-        </div>
-      )}
-
-      <details className="pp-agent-refs">
-        <summary>
-          <BookOpen size={13} aria-hidden="true" />参考来源 · {ragStatusLabels[agent.ragStatus]}
-          <ChevronDown size={13} aria-hidden="true" />
-        </summary>
-        {agent.references.length > 0 ? (
-          <ul>
-            {agent.references.map((reference, index) => (
-              <li key={`${reference.title}-${reference.source}`}>
-                <strong><span className="pp-agent-ref-index">#{index + 1}</span>{reference.title}</strong>
-                <small>{reference.source}</small>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p>{ragEmptyCopy[agent.ragStatus]}</p>
-        )}
-      </details>
-
-      {agent.toolLog.length > 0 && (
-        <details className="pp-agent-tools">
-          <summary><ChevronDown size={13} aria-hidden="true" />工具调用记录 · {agent.toolLog.length} 条</summary>
-          <ul>
-            {agent.toolLog.map((entry, index) => (
-              <li key={`${entry.name}-${index}`} className={`is-${entry.status.toLowerCase()}`}>
-                <span>{toolLabels[entry.name] ?? entry.name}</span>
-                <small>{entry.summary}</small>
-                <em>{entry.status === "OK" ? "通过" : entry.status === "REJECTED" ? "被规则拒绝" : "失败"}</em>
-              </li>
-            ))}
-          </ul>
-        </details>
       )}
     </div>
   );
 }
 
-function PlanHistory({ versions, versionTotal, activating, activate }: {
+function PlanHistory({ versions, versionTotal, activating, deleting, activate, remove }: {
   versions: PlanVersionSummary[];
   versionTotal: number;
   activating: number | null;
+  deleting: boolean;
   activate: (version: number) => Promise<void>;
+  remove: (versions: number[]) => Promise<PlanDeleteOutcome>;
 }) {
+  const [managing, setManaging] = React.useState(false);
+  const [selected, setSelected] = React.useState<Set<number>>(() => new Set());
+  const [confirming, setConfirming] = React.useState(false);
+  const [deleteError, setDeleteError] = React.useState<string | null>(null);
+  const [notice, setNotice] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    const allowed = new Set(versions.filter((item) => !item.active).map((item) => item.version));
+    setSelected((current) => {
+      const next = new Set([...current].filter((version) => allowed.has(version)));
+      return next.size === current.size ? current : next;
+    });
+    setConfirming(false);
+    if (allowed.size === 0) setManaging(false);
+  }, [versions]);
+
   if (versions.length === 0) return null;
   const hiddenCount = Math.max(0, versionTotal - versions.length);
+  const deletableCount = versions.filter((item) => !item.active).length;
+  const busy = activating !== null || deleting;
+
+  const toggle = (version: number) => {
+    setDeleteError(null);
+    setConfirming(false);
+    setSelected((current) => {
+      const next = new Set(current);
+      if (next.has(version)) next.delete(version);
+      else next.add(version);
+      return next;
+    });
+  };
+
+  const startManaging = () => {
+    setManaging(true);
+    setSelected(new Set());
+    setConfirming(false);
+    setDeleteError(null);
+    setNotice(null);
+  };
+
+  const stopManaging = () => {
+    setManaging(false);
+    setSelected(new Set());
+    setConfirming(false);
+    setDeleteError(null);
+  };
+
+  const confirmDelete = async () => {
+    if (selected.size === 0 || deleting) return;
+    const outcome = await remove([...selected]);
+    if (outcome.ok) {
+      setManaging(false);
+      setSelected(new Set());
+      setConfirming(false);
+      setDeleteError(null);
+      setNotice(`已删除 ${outcome.deletedCount} 个版本。`);
+      return;
+    }
+    setConfirming(false);
+    setDeleteError(outcome.message);
+  };
+
   return (
-    <div className="pp-plan-history">
-      <div className="pp-generated-subhead">
-        <strong>版本历史</strong>
-        <span>共 {versionTotal} 版</span>
+    <div className={`pp-plan-history ${managing ? "is-managing" : ""}`}>
+      <div className="pp-generated-subhead pp-plan-history-head">
+        <div className="pp-plan-history-title">
+          <strong>版本历史</strong>
+          <span>共 {versionTotal} 版</span>
+        </div>
+        {deletableCount > 0 && (
+          <button
+            type="button"
+            className="pp-plan-history-manage"
+            onClick={() => (managing ? stopManaging() : startManaging())}
+            disabled={busy}
+          >
+            {managing ? <Check size={12} aria-hidden="true" /> : <Settings2 size={12} aria-hidden="true" />}
+            {managing ? "完成" : "管理"}
+          </button>
+        )}
       </div>
+      {notice && <p className="pp-plan-history-notice" role="status">{notice}</p>}
       {hiddenCount > 0 && (
         <p className="pp-plan-history-note">这里显示最近 {versions.length} 个版本，更早的 {hiddenCount} 版仍保留在账户中。</p>
       )}
       <ul>
         {versions.map((item) => (
-          <li key={item.version} className={item.active ? "is-active" : item.isLatest ? "is-latest" : ""}>
+          <li key={item.version} className={[item.active ? "is-active" : item.isLatest ? "is-latest" : "", selected.has(item.version) ? "is-selected" : ""].filter(Boolean).join(" ")}>
             <div className="pp-plan-history-version">
-              <strong>v{item.version}</strong>
-              {item.active && <span className="pp-plan-history-badge">当前启用</span>}
-              {!item.active && item.isLatest && <span className="pp-plan-history-badge is-suggest">最新建议</span>}
+              {managing && (
+                <input
+                  type="checkbox"
+                  className="pp-plan-history-check"
+                  checked={selected.has(item.version)}
+                  disabled={item.active || deleting}
+                  onChange={() => toggle(item.version)}
+                  aria-label={item.active ? `v${item.version} 当前启用，不能删除` : `选择 v${item.version} 以删除`}
+                />
+              )}
+              <div className="pp-plan-history-version-main">
+                <strong>v{item.version}</strong>
+                {item.active && <span className="pp-plan-history-badge">当前启用</span>}
+                {!item.active && item.isLatest && <span className="pp-plan-history-badge is-suggest">最新建议</span>}
+              </div>
             </div>
             <div className="pp-plan-history-copy">
               <p>{item.summary}</p>
@@ -1029,12 +1176,12 @@ function PlanHistory({ versions, versionTotal, activating, activate }: {
             </div>
             {item.active ? (
               <span className="pp-plan-history-current"><Check size={13} aria-hidden="true" />正在使用</span>
-            ) : (
+            ) : managing ? null : (
               <button
                 type="button"
                 className="pp-plan-history-activate"
                 onClick={() => void activate(item.version)}
-                disabled={activating !== null}
+                disabled={busy}
               >
                 {activating === item.version ? <Loader2 size={13} className="pp-spin" aria-hidden="true" /> : <History size={13} aria-hidden="true" />}
                 {activating === item.version ? "启用中…" : "启用此版"}
@@ -1043,7 +1190,251 @@ function PlanHistory({ versions, versionTotal, activating, activate }: {
           </li>
         ))}
       </ul>
+      {managing && (
+        <div className={`pp-plan-history-managebar ${selected.size > 0 ? "has-selection" : ""}`}>
+          <p>
+            {confirming
+              ? `确认删除 ${selected.size} 个版本？删除后不可恢复。`
+              : selected.size > 0
+                ? `已选 ${selected.size} 个版本 · 删除后不可恢复`
+                : "勾选要删除的版本；当前启用的版本不能删除。"}
+          </p>
+          {selected.size > 0 && (
+            <div className="pp-plan-history-manage-actions">
+              {confirming ? (
+                <>
+                  <button type="button" className="pp-plan-history-cancel" onClick={() => setConfirming(false)} disabled={deleting}>再想想</button>
+                  <button type="button" className="pp-plan-history-danger" onClick={() => void confirmDelete()} disabled={deleting}>
+                    {deleting ? <Loader2 size={13} className="pp-spin" aria-hidden="true" /> : <Trash2 size={13} aria-hidden="true" />}
+                    {deleting ? "删除中…" : "确认删除"}
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button type="button" className="pp-plan-history-cancel" onClick={() => { setSelected(new Set()); setConfirming(false); }} disabled={deleting}>取消选择</button>
+                  <button type="button" className="pp-plan-history-danger" onClick={() => setConfirming(true)} disabled={deleting}>
+                    <Trash2 size={13} aria-hidden="true" />删除所选
+                  </button>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+      {deleteError && <p className="pp-plan-history-error" role="alert">{deleteError}</p>}
     </div>
+  );
+}
+
+const revisionQuickChips: Record<PlanKind, readonly string[]> = {
+  diet: ["去掉加餐", "整体清淡一点", "晚餐还能怎么换？", "为什么这样安排？"],
+  exercise: ["每次缩短到 20 分钟", "改成无器材训练", "我只有哑铃和瑜伽垫", "强度怎么判断？"],
+};
+
+const revisionPlaceholders: Record<PlanKind, string> = {
+  diet: "问计划里的安排，或直接说想改哪里",
+  exercise: "问训练安排，或直接说想改哪里",
+};
+
+type RevisionMessage = {
+  id: number;
+  role: "user" | "assistant";
+  text: string;
+  tone?: "ok" | "error";
+};
+
+function PlanRevisionDialog({ open, kind, plan, busy, onClose, onChat, onRegenerate }: {
+  open: boolean;
+  kind: PlanKind;
+  plan: PlanDocument;
+  busy: boolean;
+  onClose: () => void;
+  onChat: (messages: Array<{ role: "user" | "assistant"; content: string }>) => Promise<PlanChatReply>;
+  onRegenerate: () => Promise<PlanGenerateOutcome>;
+}) {
+  const reduce = useReducedMotion();
+  const [feedback, setFeedback] = React.useState("");
+  const [messages, setMessages] = React.useState<RevisionMessage[]>([]);
+  const [pending, setPending] = React.useState(false);
+  const idRef = React.useRef(0);
+  const threadRef = React.useRef<HTMLDivElement>(null);
+  const textareaRef = React.useRef<HTMLTextAreaElement>(null);
+  const dialogRef = React.useRef<HTMLDivElement>(null);
+  const returnFocusRef = React.useRef<HTMLElement | null>(null);
+
+  React.useEffect(() => {
+    if (!open) return;
+    returnFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    setFeedback("");
+    setPending(false);
+    setMessages([{
+      id: ++idRef.current,
+      role: "assistant",
+      text: kind === "diet"
+        ? "可以问我为什么这样安排、某一餐怎么替换，也可以直接说想改哪里。"
+        : "可以问我为什么这样安排、训练强度怎么判断，也可以直接说想改哪里。",
+    }]);
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        onClose();
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const dialog = dialogRef.current;
+      if (!dialog) return;
+      const focusables = Array.from(dialog.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      ));
+      if (focusables.length === 0) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      const active = document.activeElement;
+      if (event.shiftKey && (active === first || !dialog.contains(active))) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && (active === last || !dialog.contains(active))) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    document.addEventListener("keydown", onKeyDown);
+    const frame = requestAnimationFrame(() => textareaRef.current?.focus());
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      document.body.style.overflow = previousOverflow;
+      cancelAnimationFrame(frame);
+      returnFocusRef.current?.focus();
+    };
+    // 只在打开时初始化会话，计划更新后保留当前对话。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  React.useEffect(() => {
+    const thread = threadRef.current;
+    if (!thread) return;
+    thread.scrollTo({ top: thread.scrollHeight, behavior: reduce ? "auto" : "smooth" });
+  }, [messages, pending, reduce]);
+
+  async function send(text: string) {
+    const value = text.trim();
+    if (!value || pending || busy) return;
+    const userMessage: RevisionMessage = { id: ++idRef.current, role: "user", text: value };
+    const history = [...messages.filter((message) => message.tone !== "error"), userMessage]
+      .map((message) => ({ role: message.role, content: message.text }));
+    setMessages((prev) => [...prev, userMessage]);
+    setFeedback("");
+    setPending(true);
+    const outcome = await onChat(history);
+    setPending(false);
+    if (!outcome.ok) {
+      setMessages((prev) => [...prev, { id: ++idRef.current, role: "assistant", tone: "error", text: outcome.message }]);
+      return;
+    }
+    const appliedLine = outcome.applied && outcome.version !== null
+      ? `已生成 v${outcome.version}${outcome.summary ? `：${outcome.summary}` : "。"}`
+      : null;
+    setMessages((prev) => [...prev, {
+      id: ++idRef.current,
+      role: "assistant",
+      tone: outcome.applied ? "ok" : undefined,
+      text: appliedLine ? `${outcome.reply}\n\n${appliedLine}` : outcome.reply,
+    }]);
+  }
+
+  async function regenerate() {
+    if (pending || busy) return;
+    setMessages((prev) => [...prev, { id: ++idRef.current, role: "user", text: "不加意见，直接重新生成一版。" }]);
+    setPending(true);
+    const outcome = await onRegenerate();
+    setPending(false);
+    setMessages((prev) => [...prev, {
+      id: ++idRef.current,
+      role: "assistant",
+      tone: outcome.ok ? "ok" : "error",
+      text: outcome.ok ? `已按当前资料重新生成 v${outcome.version}。` : outcome.message,
+    }]);
+  }
+
+  if (!open) return null;
+
+  return createPortal(
+    <div className="pp-revision-overlay" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <div ref={dialogRef} className="pp-revision-dialog" role="dialog" aria-modal="true" aria-labelledby="pp-revision-title">
+        <header className="pp-revision-head">
+          <div>
+            <div className="pp-sec-eyebrow">AI 计划搭子 · 当前 v{plan.version}</div>
+            <h2 id="pp-revision-title">聊聊这份计划。</h2>
+          </div>
+          <button type="button" className="pp-revision-close" onClick={onClose} aria-label="关闭计划对话">
+            <X size={17} />
+          </button>
+        </header>
+
+        <div className="pp-revision-thread" ref={threadRef} aria-live="polite">
+          {messages.map((message) => (
+            <div key={message.id} className={`pp-revision-msg is-${message.role}${message.tone ? ` is-${message.tone}` : ""}`}>
+              <span className="pp-revision-avatar" aria-hidden="true">
+                {message.role === "assistant" ? <Sparkles size={13} /> : "你"}
+              </span>
+              <div className="pp-revision-bubble">{message.text}</div>
+            </div>
+          ))}
+          {pending && (
+            <div className="pp-revision-msg is-assistant">
+              <span className="pp-revision-avatar" aria-hidden="true"><Sparkles size={13} /></span>
+              <div className="pp-revision-bubble is-typing">
+                <Loader2 size={13} className="pp-spin" aria-hidden="true" />正在结合当前计划想一想…
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="pp-revision-quick" role="group" aria-label="快捷提问或调整">
+          {revisionQuickChips[kind].map((chip) => (
+            <button
+              type="button"
+              key={chip}
+              onClick={() => void send(chip)}
+              disabled={pending || busy}
+            >
+              {chip}
+            </button>
+          ))}
+        </div>
+
+        <form className="pp-revision-compose" onSubmit={(event) => { event.preventDefault(); void send(feedback); }}>
+          <textarea
+            ref={textareaRef}
+            value={feedback}
+            onChange={(event) => setFeedback(event.target.value)}
+            rows={2}
+            maxLength={600}
+            placeholder={revisionPlaceholders[kind]}
+            disabled={pending || busy}
+            aria-label="输入问题或调整意见"
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+                event.preventDefault();
+                void send(feedback);
+              }
+            }}
+          />
+          <div className="pp-revision-compose-foot">
+            <button type="button" className="pp-revision-regenerate" onClick={() => void regenerate()} disabled={pending || busy}>
+              <RotateCw size={13} aria-hidden="true" />直接重生成
+            </button>
+            <button type="submit" className="pp-revision-send" disabled={pending || busy || !feedback.trim()} aria-label="发送消息">
+              {pending ? <Loader2 size={15} className="pp-spin" aria-hidden="true" /> : <Send size={15} aria-hidden="true" />}
+            </button>
+          </div>
+        </form>
+
+        <p className="pp-revision-note">可以问安排，也可以直接说想改哪里。改计划会生成新版本；热量、蛋白质目标与安全边界仍由规则计算。</p>
+      </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -1054,8 +1445,9 @@ function GeneratedPlanPanel({ kind, profile, hasStored, planState }: {
   planState: PlanState;
 }) {
   const setPage = useHealthStore((state) => state.setPage);
-  const { plan, activeVersion, versions, versionTotal, persisted, loading, activating, error, generate, activate } = planState;
+  const { plan, activeVersion, versions, versionTotal, persisted, adjustment, loading, chatting, activating, deleting, restoringAdjustment, error, generate, chat, activate, remove, restoreAdjustment } = planState;
   const completeness = hasStored ? spaceCompleteness(profile) : spaceCompleteness(createEmptySpaceProfile());
+  const [revisionOpen, setRevisionOpen] = React.useState(false);
 
   if (!hasStored) {
     return (
@@ -1093,13 +1485,30 @@ function GeneratedPlanPanel({ kind, profile, hasStored, planState }: {
                 : "资料已就位，生成第一版。"}
             </h2>
           </div>
-          <button type="button" className="pp-generated-regen" onClick={() => void generate()} disabled={loading || activating !== null}>
-            {loading ? <Loader2 size={15} className="pp-spin" aria-hidden="true" /> : <RotateCw size={15} aria-hidden="true" />}
+          <button
+            type="button"
+            className="pp-generated-regen"
+            onClick={() => { if (plan) setRevisionOpen(true); else void generate(); }}
+            disabled={loading || activating !== null || deleting}
+          >
+            {loading ? <Loader2 size={15} className="pp-spin" aria-hidden="true" /> : plan ? <MessageCircle size={15} aria-hidden="true" /> : <RotateCw size={15} aria-hidden="true" />}
             {loading ? "生成中…" : plan ? "生成新版本" : "生成我的计划"}
           </button>
         </header>
 
-        {plan && <PlanStatusBanner plan={plan} activeVersion={activeVersion} activating={activating} activate={activate} />}
+        {plan && (
+          <PlanRevisionDialog
+            open={revisionOpen}
+            kind={kind}
+            plan={plan}
+            busy={loading || chatting || activating !== null || deleting}
+            onClose={() => setRevisionOpen(false)}
+            onChat={(messages) => chat(messages, kind)}
+            onRegenerate={() => generate(undefined, { silentError: true })}
+          />
+        )}
+
+        {plan && <PlanStatusBanner plan={plan} activeVersion={activeVersion} activating={activating} deleting={deleting} activate={activate} />}
 
         {error && <p className="pp-generated-error" role="alert">{error}</p>}
         {loading && !plan && (
@@ -1138,8 +1547,11 @@ function GeneratedPlanPanel({ kind, profile, hasStored, planState }: {
 
             {kind === "diet" ? <GeneratedDiet plan={plan} /> : <GeneratedMovement plan={plan} />}
 
+            {kind === "diet" && adjustment && (
+              <DynamicAdjustmentBlock adjustment={adjustment} restoring={restoringAdjustment} restore={restoreAdjustment} />
+            )}
+
             <PlanRevisionBlock plan={plan} />
-            <AgentInsight plan={plan} />
 
             <details className="pp-generated-basis">
               <summary>数据依据与版本</summary>
@@ -1163,13 +1575,7 @@ function GeneratedPlanPanel({ kind, profile, hasStored, planState }: {
               </div>
             </details>
 
-            <div className="pp-generated-safety">
-              <span><ShieldCheck size={14} aria-hidden="true" />安全边界</span>
-              <ul>{plan.safety.flags.map((flag) => <li key={flag}>{flag}</li>)}</ul>
-              <p>{plan.safety.disclaimer}</p>
-            </div>
-
-            <PlanHistory versions={versions} versionTotal={versionTotal} activating={activating} activate={activate} />
+            <PlanHistory versions={versions} versionTotal={versionTotal} activating={activating} deleting={deleting} activate={activate} remove={remove} />
           </>
         )}
       </section>
@@ -1293,22 +1699,6 @@ function DietTargets({ data, loading }: { data?: DashboardData; loading: boolean
   );
 }
 
-function DietPlanMeals() {
-  return (
-    <Reveal>
-      <section className="pp-section" aria-labelledby="pp-meals-title">
-        <SectionHead
-          eyebrow="一日节奏"
-          title="一日四餐，留出替换的余地。"
-        />
-        <div className="pp-meal-grid">
-          {planMeals.map((meal) => <MealCard meal={{ ...meal, badge: "示例" }} key={meal.time} />)}
-        </div>
-      </section>
-    </Reveal>
-  );
-}
-
 function DietFlex() {
   return (
     <Reveal>
@@ -1365,7 +1755,6 @@ export function DietPlan({ data, loading, profile, hasStored }: { data?: Dashboa
       {!hasStored && <DietTargets data={data} loading={loading} />}
       {planState.plan && <ExampleDivider />}
       <FoodGuide />
-      {hasStored && <DietPlanMeals />}
       <DietFlex />
       <HonestyPanel generated={Boolean(planState.plan)} hasStored={hasStored} />
     </div>

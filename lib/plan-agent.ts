@@ -13,7 +13,7 @@ import type {
 } from "./plan-engine";
 import type { PlanMealSummary } from "./plan-context";
 import { isRagConfigured, searchKnowledge } from "./rag";
-import { activityText, dietText, environmentText, goalText, type SpaceProfile, type SpaceTargets } from "./space";
+import { activityText, dietText, equipmentText, goalText, type SpaceProfile, type SpaceTargets } from "./space";
 
 type PlanAgentInput = {
   profile: SpaceProfile;
@@ -269,7 +269,7 @@ export async function runPlanAgent(input: PlanAgentInput): Promise<PlanAgentDraf
     profile: {
       goal: goalText(input.profile.goal),
       activity: activityText(input.profile.activity),
-      environment: environmentText(input.profile.environment),
+      equipment: equipmentText(input.profile.equipment),
       diet: dietText(input.profile.diet),
       age: input.profile.age,
       gender: input.profile.gender,

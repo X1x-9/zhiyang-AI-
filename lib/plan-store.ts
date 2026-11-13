@@ -2,7 +2,8 @@ import { listDemoSessionMeals } from "./demo-data";
 import type { Identity } from "./identity";
 import { PLANS_WINDOW_DAYS, summarizeMeals, planMealRecordFromDemo, type PlanMealRecord } from "./plan-context";
 import { runPlanAgent } from "./plan-agent";
-import { buildPlan, type PlanDocument, type PlanVersionSummary } from "./plan-engine";
+import { buildPlan, type PlanDocument, type PlanRevisionDirective, type PlanVersionSummary } from "./plan-engine";
+import { requestPlanRevision } from "./plan-revision";
 import { getPrisma } from "./prisma";
 import { buildSpaceTargets, type SpaceProfile } from "./space";
 
@@ -10,6 +11,12 @@ export type StoredPlan = {
   plan: PlanDocument;
   persisted: boolean;
   demo: boolean;
+};
+
+export type PlanRevisionOverride = {
+  directive: PlanRevisionDirective;
+  request: string | null;
+  baseVersion: number;
 };
 
 export type PlanState = {
@@ -25,6 +32,20 @@ export type PlanState = {
 export class PlanStorageError extends Error {
   constructor() {
     super("PLAN_STORAGE_UNAVAILABLE");
+  }
+}
+
+export class PlanRevisionError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "PlanRevisionError";
+  }
+}
+
+export class PlanVersionActiveError extends Error {
+  constructor() {
+    super("PLAN_VERSION_ACTIVE");
+    this.name = "PlanVersionActiveError";
   }
 }
 
@@ -92,16 +113,44 @@ async function runPlanDraft(profile: SpaceProfile, meals: PlanMealRecord[], curr
   return { mealSummary, agent };
 }
 
+async function resolveRevision(
+  feedback: string | null | undefined,
+  profile: SpaceProfile,
+  currentPlan: PlanDocument | null,
+): Promise<{ directive: PlanRevisionDirective | null; request: string | null }> {
+  const request = feedback?.trim().slice(0, 300) ?? "";
+  if (!request) return { directive: null, request: null };
+  if (!currentPlan) throw new PlanRevisionError("请先生成一版计划，再输入调整意见。");
+
+  const outcome = await requestPlanRevision({ feedback: request, profile, plan: currentPlan });
+  if (outcome.status !== "OK") throw new PlanRevisionError(outcome.message);
+  return { directive: outcome.directive, request };
+}
+
+function useRevisionOverride(
+  currentPlan: PlanDocument | null,
+  override: PlanRevisionOverride,
+): { directive: PlanRevisionDirective; request: string | null } {
+  if (!currentPlan) throw new PlanRevisionError("请先生成一版计划，再调整。");
+  if (currentPlan.version !== override.baseVersion) {
+    throw new PlanRevisionError("计划刚刚有了新版本，请先看一眼再调整。");
+  }
+  return { directive: override.directive, request: override.request };
+}
+
 function composePlan(
   profile: SpaceProfile,
   mealSummary: Awaited<ReturnType<typeof runPlanDraft>>["mealSummary"],
   agent: Awaited<ReturnType<typeof runPlanDraft>>["agent"],
   previousPlan: PlanDocument | null,
+  revision: { directive: PlanRevisionDirective | null; request: string | null },
 ) {
   return buildPlan(profile, (previousPlan?.version ?? 0) + 1, new Date(), {
     mealSummary,
     agent,
     previousPlan,
+    revisionDirective: revision.directive,
+    revisionRequest: revision.request,
   });
 }
 
@@ -134,11 +183,19 @@ function saveToMemory(identity: Identity, plan: PlanDocument): StoredPlan {
   return { plan, persisted: false, demo: identity.kind === "demo" };
 }
 
-export async function generatePlanVersion(identity: Identity, profile: SpaceProfile): Promise<StoredPlan> {
+export async function generatePlanVersion(
+  identity: Identity,
+  profile: SpaceProfile,
+  feedback?: string | null,
+  revisionOverride?: PlanRevisionOverride | null,
+): Promise<StoredPlan> {
   if (identity.kind === "demo") {
     const current = memoryRecords(identity)[memoryRecords(identity).length - 1]?.plan ?? null;
+    const revision = revisionOverride
+      ? useRevisionOverride(current, revisionOverride)
+      : await resolveRevision(feedback, profile, current);
     const draft = await runPlanDraft(profile, demoMealsForPlan(identity), current);
-    const plan = composePlan(profile, draft.mealSummary, draft.agent, current);
+    const plan = composePlan(profile, draft.mealSummary, draft.agent, current, revision);
     return saveToMemory(identity, plan);
   }
   if (!process.env.DATABASE_URL) throw new PlanStorageError();
@@ -177,6 +234,9 @@ export async function generatePlanVersion(identity: Identity, profile: SpaceProf
   }
 
   let currentPlan = (latestRow?.plan as unknown as PlanDocument | undefined) ?? null;
+  const revision = revisionOverride
+    ? useRevisionOverride(currentPlan, revisionOverride)
+    : await resolveRevision(feedback, profile, currentPlan);
   const meals: PlanMealRecord[] = mealRows.map((meal) => ({
     title: meal.title,
     mealType: meal.mealType,
@@ -189,7 +249,7 @@ export async function generatePlanVersion(identity: Identity, profile: SpaceProf
   const draft = await runPlanDraft(profile, meals, currentPlan);
 
   for (let attempt = 0; ; attempt += 1) {
-    const plan = composePlan(profile, draft.mealSummary, draft.agent, currentPlan);
+    const plan = composePlan(profile, draft.mealSummary, draft.agent, currentPlan, revision);
     try {
       await prisma.planVersion.create({
         data: { profileId: identity.profileId, version: plan.version, plan },
@@ -197,12 +257,52 @@ export async function generatePlanVersion(identity: Identity, profile: SpaceProf
       return { plan, persisted: true, demo: false };
     } catch (error) {
       if (isVersionConflict(error) && attempt < 2) {
+        if (revisionOverride) {
+          throw new PlanRevisionError("计划刚刚有了新版本，请先看一眼再调整。");
+        }
         currentPlan = (await readLatestPlan(identity.profileId)) ?? currentPlan;
         continue;
       }
       console.error("PLAN VERSION WRITE ERROR", error);
       throw new PlanStorageError();
     }
+  }
+}
+
+export async function deletePlanVersions(identity: Identity, versions: number[]): Promise<number> {
+  const targets = new Set(versions);
+  if (targets.size === 0) return 0;
+
+  if (identity.kind === "demo") {
+    const records = memoryRecords(identity);
+    if (records.some((record) => targets.has(record.plan.version) && record.active)) {
+      throw new PlanVersionActiveError();
+    }
+    const kept = records.filter((record) => !targets.has(record.plan.version));
+    memoryStore().set(memoryKey(identity), kept);
+    return records.length - kept.length;
+  }
+  if (!process.env.DATABASE_URL) throw new PlanStorageError();
+
+  try {
+    const prisma = getPrisma();
+    const active = await prisma.planVersion.findFirst({
+      where: {
+        profileId: identity.profileId,
+        version: { in: [...targets] },
+        activeAt: { not: null },
+      },
+      select: { version: true },
+    });
+    if (active) throw new PlanVersionActiveError();
+    const result = await prisma.planVersion.deleteMany({
+      where: { profileId: identity.profileId, version: { in: [...targets] } },
+    });
+    return result.count;
+  } catch (error) {
+    if (error instanceof PlanVersionActiveError) throw error;
+    console.error("PLAN DELETE ERROR", error);
+    throw new PlanStorageError();
   }
 }
 

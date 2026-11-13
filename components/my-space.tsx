@@ -25,15 +25,17 @@ import {
   dayOptions,
   dietOptions,
   dietText,
-  environmentText,
-  environmentOptions,
+  equipmentOptions,
+  equipmentText,
   goalOptions,
   goalText,
   hasRhythmChoices,
   minuteOptions,
+  normalizeEquipment,
   rhythmText,
   spaceCompleteness,
   validateSpaceProfile,
+  type SpaceEquipment,
   type SpaceFieldErrorKey,
   type SpaceFieldErrors,
   type SpaceGender,
@@ -132,6 +134,55 @@ function Field({
       {children}
       {error && <p className="ms-error" id={`${id}-error`}>{error}</p>}
     </div>
+  );
+}
+
+function EquipmentPicker({
+  value,
+  onChange,
+  error,
+}: {
+  value: SpaceEquipment[];
+  onChange: (value: SpaceEquipment[]) => void;
+  error?: string;
+}) {
+  const errorId = "ms-equipment-error";
+  const toggle = (item: SpaceEquipment, checked: boolean) => {
+    if (item === "bodyweight") {
+      onChange(checked ? ["bodyweight"] : []);
+      return;
+    }
+    const base = value.filter((current) => current !== "bodyweight" && current !== item);
+    onChange(normalizeEquipment(checked ? [...base, item] : base));
+  };
+  return (
+    <fieldset
+      className="ms-equip-set"
+      aria-invalid={error ? true : undefined}
+      aria-describedby={error ? errorId : undefined}
+      tabIndex={error ? -1 : undefined}
+    >
+      <legend>可用运动器材</legend>
+      <p className="ms-equip-hint">请选择你可以使用的运动器材，计划会按器械安排动作。</p>
+      <div className="ms-equip-grid">
+        {equipmentOptions.map((option) => {
+          const checked = value.includes(option.value);
+          return (
+            <label key={option.value} className={`ms-equip${checked ? " is-checked" : ""}`}>
+              <input
+                type="checkbox"
+                value={option.value}
+                checked={checked}
+                onChange={(event) => toggle(option.value, event.target.checked)}
+              />
+              <span className="ms-equip-box" aria-hidden="true"><Check size={12} strokeWidth={3} /></span>
+              <span>{option.label}</span>
+            </label>
+          );
+        })}
+      </div>
+      {error && <p className="ms-error" id={errorId}>{error}</p>}
+    </fieldset>
   );
 }
 
@@ -617,7 +668,7 @@ export function MySpace({ data, loading, profile, hasStored, demo }: MySpaceProp
               <ChoiceGroup legend="每周训练次数" value={draft.days} options={dayOptions} onChange={(value) => update("days", value)} error={errors.days} />
               <ChoiceGroup legend="每次训练时长" value={draft.minutes} options={minuteOptions} onChange={(value) => update("minutes", value)} error={errors.minutes} />
             </div>
-            <ChoiceGroup legend="训练环境" value={draft.environment} options={environmentOptions} onChange={(value) => update("environment", value)} wide error={errors.environment} />
+            <EquipmentPicker value={draft.equipment} onChange={(value) => update("equipment", value)} error={errors.equipment} />
           </section>
 
           <section className="ms-form-section" aria-labelledby="ms-table">
@@ -727,7 +778,7 @@ export function MySpace({ data, loading, profile, hasStored, demo }: MySpaceProp
             <div className="ms-goal-meta">
               <span>{goalText(draft.goal)}</span>
               <span>{draft.days ? `${draft.days} 次 / 周` : "每周次数待选择"}</span>
-              <span>{environmentText(draft.environment)}</span>
+              <span>{equipmentText(draft.equipment)}</span>
             </div>
             <button type="button" onClick={() => setPage("coach")}>
               和健康搭子聊聊 <ArrowRight size={13} aria-hidden="true" />
@@ -787,7 +838,7 @@ export function MySpace({ data, loading, profile, hasStored, demo }: MySpaceProp
                 <div>
                   <h3>一周几次，先排进日历。</h3>
                   <p>
-                    {environmentText(draft.environment)} · 每周 {plans.movement.sessionCount} 次 · 每次 {draft.minutes} 分钟
+                    {equipmentText(draft.equipment)} · 每周 {plans.movement.sessionCount} 次 · 每次 {draft.minutes} 分钟
                     · 共约 {plans.movement.totalMinutes} 分钟
                   </p>
                 </div>

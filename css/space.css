@@ -843,6 +843,104 @@
   padding: 0 8px;
 }
 
+/* equipment multi-select */
+
+.ms-equip-set {
+  min-width: 0;
+  margin: 18px 0 0;
+  padding: 0;
+  border: 0;
+}
+
+.ms-equip-set legend {
+  margin: 0;
+  padding: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: #a5794b;
+}
+
+.ms-equip-hint {
+  margin: 6px 0 12px;
+  font-size: 10.5px;
+  line-height: 1.6;
+  color: #8b968c;
+}
+
+.ms-equip-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.ms-equip {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid #dde5d6;
+  border-radius: 9px;
+  background: #fdfcf7;
+  color: #4c5f52;
+  font-size: 12px;
+  line-height: 1.2;
+  cursor: pointer;
+  transition: background-color .18s ease, border-color .18s ease, color .18s ease;
+}
+
+.ms-equip:hover {
+  border-color: #c6d4c0;
+  background: #fffefb;
+}
+
+.ms-equip input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.ms-equip-box {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border: 1px solid #cfd9c9;
+  border-radius: 5px;
+  background: #fff;
+  color: transparent;
+  transition: background-color .18s ease, border-color .18s ease, color .18s ease;
+}
+
+.ms-equip.is-checked {
+  border-color: #7d9b7b;
+  background: #eef4e8;
+  color: #2f4a38;
+  font-weight: 600;
+}
+
+.ms-equip.is-checked .ms-equip-box {
+  border-color: #6f9272;
+  background:
+    repeating-linear-gradient(45deg, rgba(92, 128, 96, .34) 0 2px, transparent 2px 5px),
+    #e6efe0;
+  color: #2f4a38;
+}
+
+.ms-equip input:focus-visible + .ms-equip-box {
+  outline: 2px solid #7d9b7b;
+  outline-offset: 2px;
+}
+
+.ms-equip-set[aria-invalid="true"] legend { color: #9b4a38; }
+.ms-equip-set[aria-invalid="true"] .ms-equip { border-color: #e4cfc6; }
+.ms-equip-set .ms-error { margin-top: 8px; }
+
 /* save row */
 
 .ms-form-foot {
@@ -1989,6 +2087,7 @@
   .ms-grid { grid-template-columns: 1fr; }
   .ms-choice-grid { grid-template-columns: 1fr; }
   .ms-choice-wide { grid-column: auto; }
+  .ms-equip-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 
   .ms-form-foot {
     flex-direction: column;
@@ -2031,6 +2130,8 @@
   .space-card-panel,
   .space-card-chev,
   .space-card-track i,
+  .ms-equip,
+  .ms-equip-box,
   .ms-ticks i { transition: none; }
 
   .ms-title-3d .ms-char,

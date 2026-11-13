@@ -5,17 +5,21 @@ import {
   buildMovementPlan,
   buildSpaceTargets,
   dietText,
-  environmentText,
+  equipmentText,
   goalText,
   spaceCompleteness,
   type DietSlot,
+  type SpaceDays,
+  type SpaceDiet,
+  type SpaceEquipment,
+  type SpaceMinutes,
   type SpaceProfile,
   type SpaceTargets,
 } from "./space";
 import type { PlanMealSummary } from "./plan-context";
 
-export const PLAN_SCHEMA_VERSION = 2;
-export const PLAN_ENGINE_VERSION = "2026-11.2";
+export const PLAN_SCHEMA_VERSION = 3;
+export const PLAN_ENGINE_VERSION = "2026-11.4";
 export const PLAN_ENGINE_NAME = "智养规则引擎";
 
 export type PlanMeal = DietSlot & { kcalHint: string | null };
@@ -139,6 +143,46 @@ export type PlanRevision = {
   basedOnVersion: number | null;
   changes: Array<{ area: string; before: string; after: string }>;
   summary: string;
+  request?: string;
+  notes?: string[];
+};
+
+export type PlanRevisionMealEdit = {
+  index: number;
+  label?: string;
+  title: string;
+  detail: string;
+  swap: string;
+};
+
+export type PlanRevisionDirective = {
+  summary: string;
+  notes: string[];
+  diet: {
+    style: SpaceDiet | null;
+    removeSnack: boolean;
+    extraAvoid: string | null;
+    meals: PlanRevisionMealEdit[];
+  } | null;
+  movement: {
+    days: SpaceDays | null;
+    minutes: SpaceMinutes | null;
+    equipment: SpaceEquipment[] | null;
+  } | null;
+};
+
+export type PlanRevisionState = {
+  diet: {
+    style: SpaceDiet | null;
+    removeSnack: boolean;
+    extraAvoid: string | null;
+    mealEdits: PlanRevisionMealEdit[];
+  } | null;
+  movement: {
+    days: SpaceDays | null;
+    minutes: SpaceMinutes | null;
+    equipment: SpaceEquipment[] | null;
+  } | null;
 };
 
 export type PlanDocument = {
@@ -164,12 +208,15 @@ export type PlanDocument = {
   coaching?: PlanCoaching;
   agent?: PlanAgentMeta | null;
   revision?: PlanRevision;
+  revisionState?: PlanRevisionState;
 };
 
 export type PlanBuildOptions = {
   mealSummary?: PlanMealSummary | null;
   agent?: PlanAgentDraft | null;
   previousPlan?: PlanDocument | null;
+  revisionDirective?: PlanRevisionDirective | null;
+  revisionRequest?: string | null;
 };
 
 function num(value: string) {
@@ -189,7 +236,7 @@ const fingerprintFields = [
   "activity",
   "days",
   "minutes",
-  "environment",
+  "equipment",
   "diet",
   "avoid",
   "budget",
@@ -205,9 +252,14 @@ export function planFingerprint(profile: SpaceProfile) {
   return `p${(hash >>> 0).toString(36)}`;
 }
 
+function mealCalorieSplit(count: number) {
+  if (count <= 3) return [0.3, 0.4, 0.3].slice(0, count);
+  return [0.25, 0.35, 0.1, 0.3];
+}
+
 function buildMealHints(meals: DietSlot[], targets: SpaceTargets | null): PlanMeal[] {
   if (!targets) return meals.map((meal) => ({ ...meal, kcalHint: null }));
-  const split = [0.25, 0.35, 0.1, 0.3];
+  const split = mealCalorieSplit(meals.length);
   return meals.map((meal, index) => {
     const ratio = split[index] ?? 1 / meals.length;
     const low = Math.round((targets.calorieLow * ratio) / 10) * 10;
@@ -216,7 +268,7 @@ function buildMealHints(meals: DietSlot[], targets: SpaceTargets | null): PlanMe
   });
 }
 
-function buildSafety(profile: SpaceProfile, targets: SpaceTargets | null, targetsReason: string | null, mealSummary?: PlanMealSummary | null) {
+function buildSafety(profile: SpaceProfile, targets: SpaceTargets | null, targetsReason: string | null, mealSummary?: PlanMealSummary | null, revisionState?: PlanRevisionState | null) {
   const flags = [
     "运动以无痛范围为限；胸痛、眩晕、异常气促或心悸时立即停止，必要时就医。",
     "如有慢性病、孕期、饮食障碍史或正在调整用药，先咨询医生或注册营养师。",
@@ -228,6 +280,8 @@ function buildSafety(profile: SpaceProfile, targets: SpaceTargets | null, target
 
   if (!targets && targetsReason) flags.push(targetsReason);
   if (avoid) flags.push(`已记录忌口：${avoid}；加工食品仍需自行核对配料。`);
+  const extraAvoid = revisionState?.diet?.extraAvoid?.trim();
+  if (extraAvoid) flags.push(`已按你的意见补充：${extraAvoid}；加工食品仍需自行核对配料。`);
   if (profile.diet === "vegetarian") flags.push("素食需要留意蛋白质、铁和维生素 B12。");
   if (budget !== null) flags.push(`预算约 ¥${budget}/天，仅作采购参考。`);
   if (weight !== null && targetWeight !== null && weight > 0) {
@@ -249,7 +303,7 @@ function buildSafety(profile: SpaceProfile, targets: SpaceTargets | null, target
 }
 
 function usedProfileFields(profile: SpaceProfile) {
-  const usedFields: string[] = ["称呼", "健康目标", "活动水平", "每周次数", "每次时长", "训练环境", "饮食偏好"];
+  const usedFields: string[] = ["称呼", "健康目标", "活动水平", "每周次数", "每次时长", "可用器械", "饮食偏好"];
   if (profile.gender !== "unspecified") usedFields.unshift("性别");
   if (profile.age.trim()) usedFields.push("年龄");
   if (profile.heightCm.trim()) usedFields.push("身高");
@@ -260,7 +314,98 @@ function usedProfileFields(profile: SpaceProfile) {
   return usedFields;
 }
 
-function buildDataBasis(profile: SpaceProfile, targets: SpaceTargets | null, mealSummary?: PlanMealSummary | null, agent?: PlanAgentDraft | null): PlanDataBasis {
+function combineExtraAvoid(previous: string | null | undefined, next: string | null | undefined) {
+  const parts = [previous, next?.trim()].filter((value): value is string => Boolean(value && value.trim()));
+  if (parts.length === 0) return null;
+  const unique: string[] = [];
+  for (const part of parts) {
+    for (const piece of part.split(/[、,，;；]/)) {
+      const value = piece.trim();
+      if (value && !unique.includes(value)) unique.push(value);
+    }
+  }
+  return unique.length > 0 ? unique.join("、") : null;
+}
+
+function mergeRevisionState(
+  previous: PlanRevisionState | null | undefined,
+  directive: PlanRevisionDirective | null,
+): PlanRevisionState | undefined {
+  const prev = previous ?? null;
+  if (!directive) return prev ?? undefined;
+
+  let diet = prev?.diet ?? null;
+  if (directive.diet) {
+    const incoming = directive.diet;
+    const baseEdits = incoming.style ? [] : [...(diet?.mealEdits ?? [])];
+    const incomingLabels = new Set(incoming.meals.map((edit) => edit.label).filter(Boolean));
+    const incomingIndexes = new Set(incoming.meals.map((edit) => edit.index));
+    const edits = baseEdits.filter((edit) => (edit.label ? !incomingLabels.has(edit.label) : !incomingIndexes.has(edit.index)));
+    edits.push(...incoming.meals);
+    diet = {
+      style: incoming.style ?? diet?.style ?? null,
+      removeSnack: Boolean(diet?.removeSnack || incoming.removeSnack),
+      extraAvoid: combineExtraAvoid(diet?.extraAvoid, incoming.extraAvoid),
+      mealEdits: edits,
+    };
+  }
+
+  let movement = prev?.movement ?? null;
+  if (directive.movement) {
+    movement = {
+      days: directive.movement.days ?? movement?.days ?? null,
+      minutes: directive.movement.minutes ?? movement?.minutes ?? null,
+      equipment: directive.movement.equipment ?? movement?.equipment ?? null,
+    };
+  }
+
+  const dietActive = Boolean(diet && (diet.style || diet.removeSnack || diet.extraAvoid || diet.mealEdits.length > 0));
+  const movementActive = Boolean(movement && (movement.days || movement.minutes || movement.equipment?.length));
+  if (!dietActive && !movementActive) return prev ?? undefined;
+  return { diet: dietActive ? diet : null, movement: movementActive ? movement : null };
+}
+
+function buildPlanDiet(profile: SpaceProfile, state: PlanRevisionState | null | undefined) {
+  const dietState = state?.diet ?? null;
+  const requestedStyle = dietState?.style ?? null;
+  const style = requestedStyle && !(profile.diet === "vegetarian" && requestedStyle !== "vegetarian")
+    ? requestedStyle
+    : profile.diet;
+  const diet = buildDietPlan(style !== profile.diet ? { ...profile, diet: style } : profile);
+  const editsByLabel = new Map<string, PlanRevisionMealEdit>();
+  const editsByIndex = new Map<number, PlanRevisionMealEdit>();
+  for (const edit of dietState?.mealEdits ?? []) {
+    if (edit.label) editsByLabel.set(edit.label, edit);
+    else editsByIndex.set(edit.index, edit);
+  }
+  let meals = diet.meals.map((meal, index) => {
+    const edit = editsByLabel.get(meal.label) ?? editsByIndex.get(index);
+    return edit ? { ...meal, title: edit.title, detail: edit.detail, swap: edit.swap } : meal;
+  });
+  if (dietState?.removeSnack) meals = meals.filter((meal) => meal.label !== "加餐");
+  const extraAvoid = dietState?.extraAvoid?.trim();
+  return {
+    meals,
+    avoidNote: extraAvoid
+      ? `${diet.avoidNote} 本次按你的意见补充：${extraAvoid}；配料仍需本人确认。`
+      : diet.avoidNote,
+    budgetNote: diet.budgetNote,
+  };
+}
+
+function buildPlanMovement(profile: SpaceProfile, state: PlanRevisionState | null | undefined) {
+  const movement = state?.movement;
+  if (!movement) return buildMovementPlan(profile);
+  const next: SpaceProfile = {
+    ...profile,
+    days: movement.days ?? profile.days,
+    minutes: movement.minutes ?? profile.minutes,
+    equipment: movement.equipment ?? profile.equipment,
+  };
+  return buildMovementPlan(next);
+}
+
+function buildDataBasis(profile: SpaceProfile, targets: SpaceTargets | null, mealSummary?: PlanMealSummary | null, agent?: PlanAgentDraft | null, revision?: PlanRevisionDirective | null): PlanDataBasis {
   const completeness = spaceCompleteness(profile);
   const usedFields = usedProfileFields(profile);
   if (mealSummary?.recordCount) usedFields.push("近 7 天已确认餐食");
@@ -278,7 +423,10 @@ function buildDataBasis(profile: SpaceProfile, targets: SpaceTargets | null, mea
     }
   }
   notes.push("热量与蛋白质为区间参考。");
-  notes.push("餐次结构与替换来自固定模板，并按饮食偏好与训练环境选择。");
+  notes.push("餐次结构与替换来自固定模板，并按饮食偏好与可用器械选择。");
+  if (revision) {
+    notes.push("本版按你的调整意见重排了餐次或训练安排；热量、蛋白质与安全边界仍由规则计算。");
+  }
   if (agent?.status === "OK") {
     notes.push("AI 仅选择建议重点，数值与安全边界由规则完成。");
   } else if (agent) {
@@ -365,18 +513,30 @@ function movementSignature(plan: PlanDocument) {
   return `每周 ${plan.movement.sessionCount} 次 · 约 ${plan.movement.totalMinutes} 分钟 · ${plan.movement.environmentLabel}`;
 }
 
-function revisionSummary(previous: PlanDocument | null, plan: PlanDocument, changes: PlanRevision["changes"]) {
-  if (!previous) return "首版：按资料建立热量、餐次与训练结构。";
-  if (changes.length === 0) return "本次未改动热量、餐次或训练结构；新增了基于记录的建议说明与版本依据。";
-  return `本次调整了 ${changes.map((change) => change.area).join("、")}；其余结构保持不变。`;
+function revisionSummary(previous: PlanDocument | null, plan: PlanDocument, changes: PlanRevision["changes"], requested: boolean) {
+  if (!previous) return requested ? "首版：按资料与你的调整意见建立计划。" : "首版：按资料建立热量、餐次与训练结构。";
+  if (changes.length === 0) {
+    return requested
+      ? "按你的意见更新了计划说明；热量、餐次与训练结构未变。"
+      : "本次未改动热量、餐次或训练结构；新增了基于记录的建议说明与版本依据。";
+  }
+  return `${requested ? "按你的意见" : "本次"}调整了 ${changes.map((change) => change.area).join("、")}；其余结构保持不变。`;
 }
 
-function buildRevision(previousPlan: PlanDocument | null | undefined, plan: PlanDocument): PlanRevision {
+function buildRevision(
+  previousPlan: PlanDocument | null | undefined,
+  plan: PlanDocument,
+  request?: string | null,
+  notes?: string[],
+): PlanRevision {
+  const requested = Boolean(request);
   if (!previousPlan) {
     return {
       basedOnVersion: null,
       changes: [],
-      summary: "首版：按资料建立热量、餐次与训练结构。",
+      summary: revisionSummary(null, plan, [], requested),
+      ...(request ? { request } : {}),
+      ...(notes?.length ? { notes } : {}),
     };
   }
 
@@ -390,6 +550,11 @@ function buildRevision(previousPlan: PlanDocument | null | undefined, plan: Plan
   const nextMeals = mealSignature(plan);
   if (previousMeals !== nextMeals) {
     changes.push({ area: "餐次结构", before: previousMeals, after: nextMeals });
+  }
+  const previousAvoid = previousPlan.diet.avoidNote;
+  const nextAvoid = plan.diet.avoidNote;
+  if (previousAvoid !== nextAvoid) {
+    changes.push({ area: "忌口与替换说明", before: previousAvoid, after: nextAvoid });
   }
   const previousMovement = movementSignature(previousPlan);
   const nextMovement = movementSignature(plan);
@@ -405,19 +570,24 @@ function buildRevision(previousPlan: PlanDocument | null | undefined, plan: Plan
   return {
     basedOnVersion: previousPlan.version,
     changes,
-    summary: revisionSummary(previousPlan, plan, changes),
+    summary: revisionSummary(previousPlan, plan, changes, requested),
+    ...(request ? { request } : {}),
+    ...(notes?.length ? { notes } : {}),
   };
 }
 
 export function buildPlan(profile: SpaceProfile, version = 1, now = new Date(), options: PlanBuildOptions = {}): PlanDocument {
   const targetResult = buildSpaceTargets(profile);
-  const diet = buildDietPlan(profile);
-  const movement = buildMovementPlan(profile);
+  const revisionDirective = options.revisionDirective ?? null;
+  const revisionRequest = options.revisionRequest?.trim() || null;
+  const previousPlan = options.previousPlan ?? null;
+  const revisionState = mergeRevisionState(previousPlan?.revisionState, revisionDirective);
+  const diet = buildPlanDiet(profile, revisionState);
+  const movement = buildPlanMovement(profile, revisionState);
   const completeness = spaceCompleteness(profile);
   const targets = targetResult.targets;
   const mealSummary = options.mealSummary;
   const agent = options.agent;
-  const previousPlan = options.previousPlan ?? null;
   const coaching = buildCoaching(mealSummary, agent);
 
   const plan: PlanDocument = {
@@ -432,7 +602,7 @@ export function buildPlan(profile: SpaceProfile, version = 1, now = new Date(), 
       goal: profile.goal,
       goalLabel: goalText(profile.goal),
       activityLabel: activityText(profile.activity),
-      environmentLabel: environmentText(profile.environment),
+      environmentLabel: equipmentText(profile.equipment),
       dietLabel: dietText(profile.diet),
       age: profile.age,
       gender: profile.gender,
@@ -443,7 +613,7 @@ export function buildPlan(profile: SpaceProfile, version = 1, now = new Date(), 
       budget: profile.budget,
     },
     completeness,
-    dataBasis: buildDataBasis(profile, targets, mealSummary, agent),
+    dataBasis: buildDataBasis(profile, targets, mealSummary, agent, revisionDirective),
     targets,
     targetsReason: targetResult.reason,
     goalLine: buildGoalLine(profile),
@@ -453,7 +623,7 @@ export function buildPlan(profile: SpaceProfile, version = 1, now = new Date(), 
       budgetNote: diet.budgetNote,
     },
     movement,
-    safety: buildSafety(profile, targets, targetResult.reason, mealSummary),
+    safety: buildSafety(profile, targets, targetResult.reason, mealSummary, revisionState),
     coaching,
     agent: agent ? buildAgentMeta(agent, profile, mealSummary, previousPlan?.version ?? null) : null,
     revision: {
@@ -461,8 +631,9 @@ export function buildPlan(profile: SpaceProfile, version = 1, now = new Date(), 
       changes: [],
       summary: "",
     },
+    ...(revisionState ? { revisionState } : {}),
   };
 
-  plan.revision = buildRevision(previousPlan, plan);
+  plan.revision = buildRevision(previousPlan, plan, revisionRequest, revisionDirective?.notes);
   return plan;
 }

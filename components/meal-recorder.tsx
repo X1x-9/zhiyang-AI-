@@ -1,10 +1,12 @@
 "use client";
 
 import * as React from "react";
+import { createPortal } from "react-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Camera, Check, Loader2, Pencil, Plus, Sparkles, Trash2, X } from "lucide-react";
+import { Camera, Check, Loader2, Pencil, Plus, ShieldCheck, Sparkles, Trash2, X } from "lucide-react";
 import { HamsterLoader } from "@/components/experience";
 import { Button } from "@/components/ui/button";
+import type { DynamicPlanAdjustment } from "@/lib/plan-adjustment";
 import { useHealthStore } from "@/stores/health-store";
 
 type Nutrition = { proteinG: number; carbsG: number; fatG: number };
@@ -66,6 +68,14 @@ type EstimateResponse = {
   message?: string;
 };
 
+type AdjustmentResponse = {
+  status?: "NONE" | "SUGGESTED" | "ACTIVE" | "APPLIED";
+  suggestion?: DynamicPlanAdjustment;
+  adjustment?: DynamicPlanAdjustment;
+  reason?: string;
+  message?: string;
+};
+
 const mealTypeLabel: Record<string, string> = {
   BREAKFAST: "早餐",
   LUNCH: "午餐",
@@ -99,6 +109,122 @@ function recordSourceMeta(items: MealRecord["items"]) {
 
 function SectionTitle({ title }: { title: string }) {
   return <div className="section-title"><h2>{title}</h2></div>;
+}
+
+function DynamicAdjustPrompt({ suggestion, applying, onClose, onApply }: {
+  suggestion: DynamicPlanAdjustment;
+  applying: boolean;
+  onClose: () => void;
+  onApply: () => void;
+}) {
+  const dialogRef = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    dialogRef.current?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !applying) onClose();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.body.style.overflow = previous;
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [applying, onClose]);
+
+  if (typeof document === "undefined") return null;
+
+  return createPortal(
+    <div
+      className="pp-adjust-overlay"
+      role="presentation"
+      onMouseDown={(event) => { if (event.target === event.currentTarget && !applying) onClose(); }}
+    >
+      <div
+        ref={dialogRef}
+        className="pp-adjust-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="pp-adjust-title"
+        tabIndex={-1}
+      >
+        <header className="pp-adjust-head">
+          <div>
+            <div className="pp-adjust-kicker">动态饮食调整 · 不占版本</div>
+            <h2 id="pp-adjust-title">{suggestion.title}</h2>
+            <p>{suggestion.summary}</p>
+          </div>
+          <button type="button" className="pp-adjust-close" onClick={onClose} disabled={applying} aria-label="关闭调整建议">
+            <X size={16} />
+          </button>
+        </header>
+
+        <div className="pp-adjust-body">
+          <div className="pp-adjust-evidence">
+            <span>为什么建议调整</span>
+            <ul>
+              {suggestion.evidence.map((item) => <li key={item}>{item}</li>)}
+            </ul>
+          </div>
+
+          <div className="pp-adjust-section">
+            <div className="pp-adjust-subhead">
+              <strong>今天剩下</strong>
+              <span>按七分饱，不跳过</span>
+            </div>
+            {suggestion.remainingToday.length > 0 ? (
+              <ul className="pp-adjust-meals">
+                {suggestion.remainingToday.map((meal) => (
+                  <li key={`${meal.label}-${meal.time}`}>
+                    <span className="pp-adjust-time">{meal.time}</span>
+                    <div>
+                      <strong>{meal.label} · {meal.title}</strong>
+                      <p>{meal.change}{meal.kcalHint ? ` · ${meal.kcalHint}` : ""}</p>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="pp-adjust-empty">今天的计划餐次已经记录完，主要调整明天。</p>
+            )}
+          </div>
+
+          <div className="pp-adjust-section">
+            <div className="pp-adjust-subhead">
+              <strong>{suggestion.nextDayLabel}</strong>
+              <span>正常节奏</span>
+            </div>
+            <ul className="pp-adjust-meals">
+              {suggestion.nextDayMeals.map((meal) => (
+                <li key={`${meal.label}-${meal.time}`}>
+                  <span className="pp-adjust-time">{meal.time}</span>
+                  <div>
+                    <strong>{meal.label} · {meal.title}</strong>
+                    <p>{meal.change}{meal.kcalHint ? ` · ${meal.kcalHint}` : ""}</p>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <p className="pp-adjust-safety">
+            <ShieldCheck size={14} aria-hidden="true" />
+            {suggestion.safetyNote}
+          </p>
+        </div>
+
+        <footer className="pp-adjust-foot">
+          <button type="button" className="pp-adjust-dismiss" onClick={onClose} disabled={applying}>先不用，保持原计划</button>
+          <button type="button" className="pp-adjust-apply" onClick={onApply} disabled={applying}>
+            {applying ? <Loader2 size={15} className="pp-spin" aria-hidden="true" /> : <Check size={15} aria-hidden="true" />}
+            {applying ? "调整中…" : "调整今天和明天"}
+          </button>
+        </footer>
+      </div>
+    </div>,
+    document.body,
+  );
 }
 
 async function prepareImage(file: File): Promise<string> {
@@ -189,7 +315,7 @@ function mealDisplayTitle(meal: MealRecord) {
   return meal.title.includes(label) ? meal.title : `${label} · ${meal.title}`;
 }
 
-function SameDayRecords() {
+function SameDayRecords({ onMealConfirmed }: { onMealConfirmed?: () => void }) {
   const queryClient = useQueryClient();
   const [editingId, setEditingId] = React.useState<string | null>(null);
   const [draft, setDraft] = React.useState<{ title: string; kcal: number; mealType: string }>({ title: "", kcal: 0, mealType: "OTHER" });
@@ -221,7 +347,12 @@ function SameDayRecords() {
       }
       return response.json();
     },
-    onSuccess: () => { setEditingId(null); invalidate(); },
+    onSuccess: (data: { meal?: { status?: string } } | null, variables) => {
+      setEditingId(null);
+      invalidate();
+      const status = variables.status ?? data?.meal?.status;
+      if (status === "CONFIRMED") onMealConfirmed?.();
+    },
   });
 
   const remove = useMutation({
@@ -519,11 +650,53 @@ export function MealRecorder() {
   const fileInput = React.useRef<HTMLInputElement>(null);
   const cameraInput = React.useRef<HTMLInputElement>(null);
   const processing = React.useRef(false);
+  const adjustRequest = React.useRef(0);
+  const [adjustSuggestion, setAdjustSuggestion] = React.useState<DynamicPlanAdjustment | null>(null);
+  const [adjustApplying, setAdjustApplying] = React.useState(false);
+  const [adjustNotice, setAdjustNotice] = React.useState<string | null>(null);
 
   const invalidateAll = () => {
     void queryClient.invalidateQueries({ queryKey: ["meals"] });
     void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
   };
+
+  const checkAdjustment = React.useCallback(async () => {
+    const requestId = ++adjustRequest.current;
+    try {
+      const response = await fetch("/api/plans/adjust/evaluate", { method: "POST" });
+      if (!response.ok) return;
+      const data = (await response.json()) as AdjustmentResponse;
+      if (requestId !== adjustRequest.current) return;
+      if (data.status === "SUGGESTED" && data.suggestion) {
+        setAdjustSuggestion(data.suggestion);
+        setAdjustNotice(null);
+      }
+    } catch {
+      // 动态调整检查失败不打断记录流程。
+    }
+  }, []);
+
+  const applyAdjustment = React.useCallback(async () => {
+    if (adjustApplying) return;
+    setAdjustApplying(true);
+    setAdjustNotice(null);
+    try {
+      const response = await fetch("/api/plans/adjust/apply", { method: "POST" });
+      const data = (await response.json().catch(() => null)) as AdjustmentResponse | null;
+      if (!response.ok) throw new Error(data?.message ?? "调整没有保存成功，请稍后重试。");
+      setAdjustSuggestion(null);
+      if (data?.status === "APPLIED") {
+        setAdjustNotice("已调整今天剩下的餐次和明天。计划页可以看到这次调整，随时能恢复正式计划。");
+        window.dispatchEvent(new CustomEvent("plan-adjustment-changed"));
+      } else {
+        setAdjustNotice(data?.reason ?? "记录已变化，暂不需要调整。");
+      }
+    } catch (err) {
+      setAdjustNotice(err instanceof Error ? err.message : "调整没有保存成功，请稍后重试。");
+    } finally {
+      setAdjustApplying(false);
+    }
+  }, [adjustApplying]);
 
   const analyze = useMutation({
     mutationFn: async (payload: { image: string; note: string }) => {
@@ -584,6 +757,7 @@ export function MealRecorder() {
     onSuccess: () => {
       confirm();
       invalidateAll();
+      void checkAdjustment();
     },
   });
 
@@ -713,8 +887,10 @@ export function MealRecorder() {
   const cameraBusy = preparing || analyze.isPending || save.isPending;
 
   return (
+    <>
     <div className="food-layout">
       <div className="food-main">
+        {adjustNotice && <p className="pp-adjust-notice" role="status">{adjustNotice}</p>}
         <section className="surface meal-card food-upload">
           <SectionTitle title="拍照记录" />
           <div
@@ -809,10 +985,10 @@ export function MealRecorder() {
             </Button>
           )}
         </section>
-        <ManualEntry onSaved={invalidateAll} />
+        <ManualEntry onSaved={() => { invalidateAll(); void checkAdjustment(); }} />
         <section className="surface meal-timeline">
           <SectionTitle title="今日记录" />
-          <SameDayRecords />
+          <SameDayRecords onMealConfirmed={checkAdjustment} />
         </section>
       </div>
 
@@ -905,5 +1081,14 @@ export function MealRecorder() {
         </section>
       </div>
     </div>
+    {adjustSuggestion && (
+      <DynamicAdjustPrompt
+        suggestion={adjustSuggestion}
+        applying={adjustApplying}
+        onClose={() => setAdjustSuggestion(null)}
+        onApply={() => void applyAdjustment()}
+      />
+    )}
+    </>
   );
 }

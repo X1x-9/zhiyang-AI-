@@ -49,6 +49,19 @@ html{scroll-behavior:smooth}body{color:var(--color-foreground);font-size:16px;li
 .food-layout>.food-main{grid-area:main;display:grid;gap:16px;align-content:start;min-width:0}
 .food-main>section{min-width:0}
 .food-layout>.right-stack{grid-area:analysis;align-self:start;min-width:0}
+@media(min-width:801px){
+  /* 右列不超过左列高度，超出后在列内滚动；contain 防止溢出内容计入文档高度 */
+  .food-layout>.right-stack{
+    max-height:var(--food-main-height,none);
+    overflow-y:auto;
+    contain:paint;
+    scrollbar-width:thin;
+    scrollbar-color:#c7d5c3 transparent;
+  }
+  .food-layout>.right-stack::-webkit-scrollbar{width:6px}
+  .food-layout>.right-stack::-webkit-scrollbar-thumb{border-radius:999px;background:#c7d5c3}
+  .food-layout>.right-stack::-webkit-scrollbar-track{background:transparent}
+}
 
 /* typography + contrast pass */
 .section-title h2{font-size:15px}

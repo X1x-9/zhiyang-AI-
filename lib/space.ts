@@ -1,7 +1,18 @@
 export type SpaceGender = "female" | "male" | "unspecified";
 export type SpaceGoal = "lose" | "maintain" | "gain" | "steady";
 export type SpaceActivity = "low" | "light" | "moderate" | "high";
-export type SpaceEnvironment = "home" | "gear" | "gym";
+export type SpaceEquipment =
+  | "dumbbell"
+  | "barbell"
+  | "kettlebell"
+  | "band"
+  | "treadmill"
+  | "bike"
+  | "yoga_mat"
+  | "pullup_bar"
+  | "bench"
+  | "rope"
+  | "bodyweight";
 export type SpaceDiet = "balanced" | "takeout" | "protein" | "vegetarian" | "light";
 export type SpaceDays = "2" | "3" | "4" | "5";
 export type SpaceMinutes = "15" | "25" | "40";
@@ -17,7 +28,7 @@ export type SpaceProfile = {
   activity: SpaceActivity | "";
   days: SpaceDays | "";
   minutes: SpaceMinutes | "";
-  environment: SpaceEnvironment | "";
+  equipment: SpaceEquipment[];
   diet: SpaceDiet | "";
   avoid: string;
   budget: string;
@@ -39,10 +50,18 @@ export const activityLabels: Record<SpaceActivity, string> = {
   high: "经常运动",
 };
 
-export const environmentLabels: Record<SpaceEnvironment, string> = {
-  home: "居家 · 无器械",
-  gear: "居家 · 小器械",
-  gym: "健身房",
+export const equipmentLabels: Record<SpaceEquipment, string> = {
+  dumbbell: "哑铃",
+  barbell: "杠铃",
+  kettlebell: "壶铃",
+  band: "弹力带",
+  treadmill: "跑步机",
+  bike: "动感单车",
+  yoga_mat: "瑜伽垫",
+  pullup_bar: "引体向上杆",
+  bench: "训练凳",
+  rope: "跳绳",
+  bodyweight: "无器材",
 };
 
 export const dietLabels: Record<SpaceDiet, string> = {
@@ -86,11 +105,27 @@ export const minuteOptions: Array<{ value: SpaceMinutes; label: string }> = [
   { value: "40", label: "40 分钟" },
 ];
 
-export const environmentOptions: Array<{ value: SpaceEnvironment; label: string }> = [
-  { value: "home", label: "居家 · 无器械" },
-  { value: "gear", label: "居家 · 小器械" },
-  { value: "gym", label: "健身房" },
+export const equipmentOptions: Array<{ value: SpaceEquipment; label: string }> = [
+  { value: "dumbbell", label: "哑铃" },
+  { value: "barbell", label: "杠铃" },
+  { value: "kettlebell", label: "壶铃" },
+  { value: "band", label: "弹力带" },
+  { value: "treadmill", label: "跑步机" },
+  { value: "bike", label: "动感单车" },
+  { value: "yoga_mat", label: "瑜伽垫" },
+  { value: "pullup_bar", label: "引体向上杆" },
+  { value: "bench", label: "训练凳" },
+  { value: "rope", label: "跳绳" },
+  { value: "bodyweight", label: "无器材" },
 ];
+
+const equipmentOrder = equipmentOptions.map((option) => option.value);
+
+export function normalizeEquipment(list: readonly SpaceEquipment[]): SpaceEquipment[] {
+  const unique = equipmentOrder.filter((item) => list.includes(item));
+  if (unique.includes("bodyweight")) return ["bodyweight"];
+  return unique;
+}
 
 export const dietOptions: Array<{ value: SpaceDiet; label: string }> = [
   { value: "balanced", label: "家常均衡" },
@@ -108,8 +143,9 @@ export function activityText(value: SpaceProfile["activity"]) {
   return value ? activityLabels[value] : "活动水平待选择";
 }
 
-export function environmentText(value: SpaceProfile["environment"]) {
-  return value ? environmentLabels[value] : "训练环境待选择";
+export function equipmentText(value: SpaceEquipment[]) {
+  if (value.length === 0) return "可用器械待选择";
+  return value.map((item) => equipmentLabels[item]).join(" · ");
 }
 
 export function dietText(value: SpaceProfile["diet"]) {
@@ -117,14 +153,14 @@ export function dietText(value: SpaceProfile["diet"]) {
 }
 
 export function hasRhythmChoices(profile: SpaceProfile) {
-  return Boolean(profile.goal && profile.activity && profile.days && profile.minutes && profile.environment && profile.diet);
+  return Boolean(profile.goal && profile.activity && profile.days && profile.minutes && profile.equipment.length > 0 && profile.diet);
 }
 
 export function rhythmText(profile: SpaceProfile) {
   const parts = [
     profile.goal ? goalLabels[profile.goal] : "",
     profile.days ? `每周 ${profile.days} 次` : "",
-    profile.environment ? environmentLabels[profile.environment] : "",
+    profile.equipment.length > 0 ? equipmentText(profile.equipment) : "",
   ].filter(Boolean);
   return parts.length > 0 ? parts.join(" · ") : "还没有选择健康目标与训练节奏";
 }
@@ -138,7 +174,7 @@ const coreFields: Array<[keyof SpaceProfile, string]> = [
   ["activity", "活动水平"],
   ["days", "每周次数"],
   ["minutes", "每次时长"],
-  ["environment", "训练环境"],
+  ["equipment", "可用器械"],
   ["diet", "饮食偏好"],
 ];
 
@@ -166,7 +202,7 @@ export function createDemoSpaceProfile(name = "林同学", weightKg: number | nu
     activity: "light",
     days: "3",
     minutes: "25",
-    environment: "home",
+    equipment: ["dumbbell", "band", "yoga_mat"],
     diet: "takeout",
     avoid: "花生",
     budget: "60",
@@ -186,7 +222,7 @@ export function createEmptySpaceProfile(name = ""): SpaceProfile {
     activity: "",
     days: "",
     minutes: "",
-    environment: "",
+    equipment: [],
     diet: "",
     avoid: "",
     budget: "",
@@ -196,7 +232,7 @@ export function createEmptySpaceProfile(name = ""): SpaceProfile {
 
 export function normalizeSpaceProfile(raw: unknown): SpaceProfile | null {
   if (!raw || typeof raw !== "object") return null;
-  const value = raw as Partial<SpaceProfile>;
+  const value = raw as Partial<SpaceProfile> & { environment?: unknown };
   return {
     name: text(value.name, "", 12),
     gender: pick(value.gender, ["female", "male", "unspecified"], "unspecified"),
@@ -208,13 +244,24 @@ export function normalizeSpaceProfile(raw: unknown): SpaceProfile | null {
     activity: pickChoice(value.activity, ["low", "light", "moderate", "high"]),
     days: pickChoice(value.days, ["2", "3", "4", "5"]),
     minutes: pickChoice(value.minutes, ["15", "25", "40"]),
-    environment: pickChoice(value.environment, ["home", "gear", "gym"]),
+    equipment: normalizeStoredEquipment(value.equipment, value.environment),
     diet: pickChoice(value.diet, ["balanced", "takeout", "protein", "vegetarian", "light"]),
     avoid: text(value.avoid, "", 80),
     budget: text(value.budget, "", 6),
     source: value.source === "demo" ? "demo" : "local",
     ...(typeof value.savedAt === "string" ? { savedAt: value.savedAt } : {}),
   };
+}
+
+function normalizeStoredEquipment(raw: unknown, legacyEnvironment: unknown): SpaceEquipment[] {
+  if (Array.isArray(raw)) {
+    const valid = raw.filter((item): item is SpaceEquipment => equipmentOrder.includes(item as SpaceEquipment));
+    if (valid.length > 0) return normalizeEquipment(valid);
+  }
+  if (legacyEnvironment === "home") return ["bodyweight"];
+  if (legacyEnvironment === "gear") return ["dumbbell", "band", "yoga_mat"];
+  if (legacyEnvironment === "gym") return ["dumbbell", "barbell", "bench", "treadmill", "bike"];
+  return [];
 }
 
 function numeric(value: string) {
@@ -382,57 +429,35 @@ export function buildDietPlan(profile: SpaceProfile) {
 
 type SessionTone = "strength" | "cardio" | "mobility";
 
-type SessionTemplate = { title: string; focus: string };
+type SessionTemplate = { title: string; focus: string; requires?: SpaceEquipment[] };
 
-const sessionCatalog: Record<SpaceEnvironment, Record<SessionTone, SessionTemplate[]>> = {
-  home: {
-    strength: [
-      { title: "力量 A", focus: "椅子深蹲 · 臀桥 · 死虫" },
-      { title: "力量 B", focus: "墙面俯卧撑 · 毛巾划船 · 平板支撑" },
-      { title: "全身循环", focus: "深蹲 · 俯卧撑 · 臀桥 · 原地走" },
-    ],
-    cardio: [
-      { title: "快走", focus: "能说短句的速度，保持节奏" },
-      { title: "轻快走", focus: "平地快走，最后 3 分钟放慢" },
-      { title: "室内有氧", focus: "原地走 · 低冲击开合步" },
-    ],
-    mobility: [
-      { title: "活动度", focus: "肩颈绕环 · 髋部拉伸 · 小腿放松" },
-      { title: "恢复日", focus: "轻松走 · 慢呼吸 · 睡前拉伸" },
-    ],
-  },
-  gear: {
-    strength: [
-      { title: "弹力带全身", focus: "深蹲 · 划船 · 推举" },
-      { title: "上肢与背部", focus: "弹力带划船 · 面拉 · 俯卧撑" },
-      { title: "下肢与核心", focus: "弹力带硬拉 · 侧向走 · 死虫" },
-    ],
-    cardio: [
-      { title: "快走 + 台阶", focus: "平地快走与低台阶交替" },
-      { title: "轻快走", focus: "能说短句的速度，保持节奏" },
-      { title: "低冲击有氧", focus: "原地走 · 弹力带侧步" },
-    ],
-    mobility: [
-      { title: "活动度", focus: "肩颈 · 髋部 · 小腿" },
-      { title: "恢复日", focus: "轻松走 · 慢呼吸 · 拉伸" },
-    ],
-  },
-  gym: {
-    strength: [
-      { title: "器械全身 A", focus: "腿举 · 推胸 · 坐姿划船" },
-      { title: "器械全身 B", focus: "髋铰链 · 高位下拉 · 肩推" },
-      { title: "自由重量", focus: "深蹲 · 罗马尼亚硬拉 · 俯卧撑" },
-    ],
-    cardio: [
-      { title: "坡度快走", focus: "中等坡度，能说短句" },
-      { title: "椭圆机", focus: "低冲击，保持均匀呼吸" },
-      { title: "单车", focus: "轻松骑，最后 3 分钟放慢" },
-    ],
-    mobility: [
-      { title: "活动度", focus: "肩颈 · 髋部 · 小腿" },
-      { title: "恢复日", focus: "轻松走 · 慢呼吸 · 拉伸" },
-    ],
-  },
+const sessionCatalog: Record<SessionTone, SessionTemplate[]> = {
+  strength: [
+    { title: "哑铃全身", focus: "哑铃深蹲 · 哑铃划船 · 哑铃推举", requires: ["dumbbell"] },
+    { title: "哑铃上下肢", focus: "哑铃硬拉 · 弓步 · 俯身划船", requires: ["dumbbell"] },
+    { title: "杠铃基础", focus: "杠铃深蹲 · 罗马尼亚硬拉 · 杠铃划船", requires: ["barbell"] },
+    { title: "壶铃摆荡", focus: "壶铃摆荡 · 高脚杯深蹲 · 单臂划船", requires: ["kettlebell"] },
+    { title: "弹力带全身", focus: "弹力带深蹲 · 划船 · 推举", requires: ["band"] },
+    { title: "上肢与背部", focus: "弹力带划船 · 面拉 · 俯卧撑", requires: ["band"] },
+    { title: "引体与悬垂", focus: "引体向上 · 悬垂举腿 · 反向划船", requires: ["pullup_bar"] },
+    { title: "训练凳支撑", focus: "上斜俯卧撑 · 登凳 · 保加利亚分腿蹲", requires: ["bench"] },
+    { title: "自重力量 A", focus: "椅子深蹲 · 臀桥 · 死虫" },
+    { title: "自重力量 B", focus: "墙面俯卧撑 · 毛巾划船 · 平板支撑" },
+  ],
+  cardio: [
+    { title: "跑步机快走", focus: "能说短句的速度，保持节奏", requires: ["treadmill"] },
+    { title: "跑步机间歇", focus: "快走与慢走交替，按呼吸调整", requires: ["treadmill"] },
+    { title: "动感单车", focus: "低冲击，保持均匀呼吸", requires: ["bike"] },
+    { title: "跳绳间歇", focus: "跳 1 分钟 · 休息 30 秒", requires: ["rope"] },
+    { title: "快走", focus: "能说短句的速度，保持节奏" },
+    { title: "室内有氧", focus: "原地走 · 低冲击开合步" },
+    { title: "轻快走", focus: "平地快走，最后 3 分钟放慢" },
+  ],
+  mobility: [
+    { title: "垫上活动度", focus: "肩颈 · 髋部 · 小腿拉伸", requires: ["yoga_mat"] },
+    { title: "活动度", focus: "肩颈绕环 · 髋部拉伸 · 小腿放松" },
+    { title: "恢复日", focus: "轻松走 · 慢呼吸 · 睡前拉伸" },
+  ],
 };
 
 const sessionPattern: Record<SpaceGoal, SessionTone[]> = {
@@ -468,27 +493,32 @@ export function buildMovementPlan(profile: SpaceProfile): {
   totalMinutes: number;
   environmentLabel: string;
 } {
-  if (!profile.goal || !profile.days || !profile.minutes || !profile.environment) {
+  const equipment = profile.equipment ?? [];
+  if (!profile.goal || !profile.days || !profile.minutes || equipment.length === 0) {
     return {
       sessions: [],
       week: weekLabels.map((label, index) => ({ label, short: weekShorts[index], session: null })),
       sessionCount: 0,
       totalMinutes: 0,
-      environmentLabel: environmentText(profile.environment),
+      environmentLabel: equipmentText(equipment),
     };
   }
   const totalMinutes = Number(profile.minutes);
   const days = trainingDays[profile.days];
   const pattern = sessionPattern[profile.goal];
   const used: Record<SessionTone, number> = { strength: 0, cardio: 0, mobility: 0 };
-  const catalog = sessionCatalog[profile.environment];
+  const owns = (item: SpaceEquipment) => equipment.includes(item);
+  const eligible = (tone: SessionTone) => sessionCatalog[tone].filter(
+    (template) => !template.requires?.length || template.requires.every(owns),
+  );
 
   const sessions: SpaceSession[] = days.map((dayIndex, index) => {
     const tone = pattern[index % pattern.length];
-    const template = catalog[tone][used[tone] % catalog[tone].length];
+    const options = eligible(tone);
+    const template = options[used[tone] % options.length];
     used[tone] += 1;
     const minutes = tone === "mobility" ? Math.min(totalMinutes, 20) : totalMinutes;
-    return { day: weekLabels[dayIndex], short: weekShorts[dayIndex], ...template, minutes, tone };
+    return { day: weekLabels[dayIndex], short: weekShorts[dayIndex], title: template.title, focus: template.focus, minutes, tone };
   });
 
   const byDay = new Map<number, SpaceSession>();
@@ -504,7 +534,7 @@ export function buildMovementPlan(profile: SpaceProfile): {
     week,
     sessionCount: sessions.length,
     totalMinutes: sessions.reduce((sum, session) => sum + session.minutes, 0),
-    environmentLabel: environmentLabels[profile.environment],
+    environmentLabel: equipmentText(equipment),
   };
 }
 
@@ -520,7 +550,7 @@ export function buildSpacePlans(profile: SpaceProfile) {
   };
 }
 
-export type SpaceFieldErrorKey = "name" | "age" | "heightCm" | "weightKg" | "targetWeightKg" | "budget" | "avoid" | "goal" | "activity" | "days" | "minutes" | "environment" | "diet";
+export type SpaceFieldErrorKey = "name" | "age" | "heightCm" | "weightKg" | "targetWeightKg" | "budget" | "avoid" | "goal" | "activity" | "days" | "minutes" | "equipment" | "diet";
 export type SpaceFieldErrors = Partial<Record<SpaceFieldErrorKey, string>>;
 
 export function validateSpaceProfile(profile: SpaceProfile): SpaceFieldErrors {
@@ -533,7 +563,7 @@ export function validateSpaceProfile(profile: SpaceProfile): SpaceFieldErrors {
   if (!profile.activity) errors.activity = "选择日常活动水平，热量参考会更贴近你。";
   if (!profile.days) errors.days = "选择每周训练次数。";
   if (!profile.minutes) errors.minutes = "选择每次训练时长。";
-  if (!profile.environment) errors.environment = "选择训练环境，动作会按场地安排。";
+  if (!profile.equipment.length) errors.equipment = "选择可用器械；没有器械就选「无器材」。";
   if (!profile.diet) errors.diet = "选择饮食偏好，餐次会按偏好换菜。";
 
   const age = numeric(profile.age);
