@@ -253,6 +253,8 @@ function ReviewPanel({ data, loading }: { data?: DashboardData; loading: boolean
   if (loading) return <GrowingLoader label="正在整理本周记录…" />;
   if (!data) return <div className="empty-note" role="alert">暂时无法载入复盘数据。</div>;
   const { week } = data;
+  const days = week.days ?? [];
+  const range = days.length ? `${days[0].dateLabel} — ${days[days.length - 1].dateLabel}` : undefined;
   return <>
     <WeekTrail week={week} />
     <WeightReviewSection />
@@ -992,16 +994,23 @@ function OtherPage({ page, spaceProfile, hasStored, demo, identityKey }: { page:
         : <ExercisePlan data={dashboardQuery.data} profile={spaceProfile} hasStored={hasStored} />}
     </div>;
   }
-  const content: Record<string, { eyebrow: string; title: React.ReactNode; intro?: string }> = {
+  const content: Record<string, { eyebrow?: string; title: React.ReactNode; intro?: string }> = {
     food: { eyebrow: "多模态餐食记录", title: "一张照片，轻松记下一餐。" },
     coach: { eyebrow: "不确定的时候，随时聊聊", title: "你好，我在听。" },
-    review: { eyebrow: "看见过程，而不只是结果", title: <><span>这一周，</span><span className="review-title-second">只按已有记录复盘。</span></> },
+    review: {
+      title: (
+        <>
+          <span className="review-title-line">看见过程，</span>
+          <span className="review-title-line review-title-line--offset">而不是结果</span>
+        </>
+      ),
+    },
   };
   const item = content[page] ?? content.food;
   return <div className="app-content">
     <div className={`page-heading${page === "coach" ? " page-heading--coach" : ""}${page === "review" ? " page-heading--review" : ""}`}>
       <div className="page-heading-copy">
-        <div className="eyebrow">{item.eyebrow}</div>
+        {item.eyebrow && <div className="eyebrow">{item.eyebrow}</div>}
         <h1>{item.title}</h1>
         {item.intro && <p>{item.intro}</p>}
       </div>
