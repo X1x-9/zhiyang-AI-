@@ -6,6 +6,7 @@ import { motion } from "framer-motion";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Camera, ChartNoAxesCombined, ChevronRight, Droplets, Dumbbell, LayoutDashboard, Leaf, Loader2, Maximize2, MessageCircle, Mic, Minimize2, Plus, Salad, Square, Trash2, UserRound, Utensils, Volume2, X } from "lucide-react";
 import { AccountPanel } from "@/components/account-panel";
+import { AuthCheckingScreen, AuthScreen } from "@/components/auth-screen";
 import { Button } from "@/components/ui/button";
 import Hero38 from "@/components/originkit/hero-38";
 import { LandingSections, MochiFigure } from "@/components/landing/landing-sections";
@@ -65,39 +66,6 @@ function DemoNotice({ notice }: { notice?: string }) {
       <span className="demo-badge">演示沙盒</span>
       <p>数据仅存当前浏览器，请勿填写真实健康信息；登录后切换到账户数据。{notice ? ` ${notice}` : ""}</p>
     </div>
-  );
-}
-
-function GuestGate({ onLogin, onHome }: { onLogin: () => void; onHome: () => void }) {
-  return (
-    <section className="guest-gate" aria-labelledby="guest-gate-title">
-      <div className="guest-gate-card">
-        <div className="guest-gate-copy">
-          <span className="guest-gate-eyebrow">你的空间 · 尚未登录</span>
-          <h1 id="guest-gate-title">登录后，这里会显示你的今日概览。</h1>
-          <p>餐食、体重、饮水和计划都跟着账户走。登录一次，之后的记录才会出现在这里。</p>
-          <div className="guest-gate-actions">
-            <Button onClick={onLogin}>登录 / 注册</Button>
-            <button type="button" className="guest-gate-home" onClick={onHome}>先回首页看看</button>
-          </div>
-          <p className="guest-gate-note">还没有账户？用邮箱注册即可，不需要填写真实身份信息。</p>
-        </div>
-        <ul className="guest-gate-points" aria-label="登录后可以看到">
-          <li>
-            <span className="guest-gate-icon"><Utensils size={17} aria-hidden="true" /></span>
-            <div><strong>餐食与营养</strong><span>每餐的热量、蛋白质和饮水记录。</span></div>
-          </li>
-          <li>
-            <span className="guest-gate-icon"><Dumbbell size={17} aria-hidden="true" /></span>
-            <div><strong>计划与复盘</strong><span>按你的资料生成饮食和运动计划。</span></div>
-          </li>
-          <li>
-            <span className="guest-gate-icon"><MessageCircle size={17} aria-hidden="true" /></span>
-            <div><strong>健康助手</strong><span>基于你的记录回答问题。</span></div>
-          </li>
-        </ul>
-      </div>
-    </section>
   );
 }
 
@@ -1334,7 +1302,6 @@ function CoreApp({ onHome }: { onHome: () => void }) {
   const previousPageRef = React.useRef<Page>(page);
   const [slideOrigin, setSlideOrigin] = React.useState<Page>(page);
   const [slideFrom, setSlideFrom] = React.useState<Page | null>(null);
-  const [guestLoginOpen, setGuestLoginOpen] = React.useState(false);
   if (slideOrigin !== page) {
     setSlideFrom(slideOrigin);
     setSlideOrigin(page);
@@ -1344,36 +1311,33 @@ function CoreApp({ onHome }: { onHome: () => void }) {
   const renderedPages = visitedPages.includes(page) ? visitedPages : [...visitedPages, page];
   const dashboard = dashboardQuery.data;
   const authRequired = (!profileQuery.data && isAuthError(profileQuery.error)) || (!dashboardQuery.data && isAuthError(dashboardQuery.error));
+  const authPending = !authRequired && !profileQuery.data && profileQuery.isPending;
   const profilePage = page === "profile";
   const pendingMeals = dashboard?.pendingMeals ?? 0;
   const activeNavIndex = Math.max(0, navigation.findIndex((item) => item.id === page));
-  const hasStoredSpace = Boolean(storedSpaceProfile?.savedAt) && !authRequired;
+  const hasStoredSpace = Boolean(storedSpaceProfile?.savedAt);
   const identityKey = profileQuery.data?.account?.email ?? (profileQuery.data?.demo ? "demo" : "pending");
   const spaceProfile = React.useMemo(() => {
     if (storedSpaceProfile) return storedSpaceProfile;
     const accountName = dashboard?.demo ? "" : dashboard?.displayName && dashboard.displayName !== "你" ? dashboard.displayName : "";
     return createEmptySpaceProfile(accountName);
   }, [storedSpaceProfile, dashboard]);
-  const guestSpaceProfile = React.useMemo(() => createEmptySpaceProfile(""), []);
-  const visibleSpaceProfile = authRequired ? guestSpaceProfile : spaceProfile;
-  const visibleProfileData = authRequired ? undefined : profileQuery.data;
 
   React.useEffect(() => {
     if (profileQuery.data?.profile) setSpaceProfile(profileQuery.data.profile);
   }, [profileQuery.data, setSpaceProfile]);
 
-  const handleAccountChanged = React.useCallback(() => {
-    useHealthStore.setState({ page: "dashboard" });
+  const resetAccountData = React.useCallback(() => {
     setSpaceProfile(null);
     void queryClient.resetQueries({ queryKey: ["dashboard"] });
     void queryClient.resetQueries({ queryKey: ["meals"] });
     void queryClient.resetQueries({ queryKey: ["profile"] });
   }, [queryClient, setSpaceProfile]);
 
-  const handleGuestLogin = React.useCallback(() => {
-    setGuestLoginOpen(false);
-    handleAccountChanged();
-  }, [handleAccountChanged]);
+  const handleAccountChanged = React.useCallback(() => {
+    useHealthStore.setState({ page: "dashboard" });
+    resetAccountData();
+  }, [resetAccountData]);
 
   React.useEffect(() => {
     const rememberScroll = () => {
@@ -1389,6 +1353,14 @@ function CoreApp({ onHome }: { onHome: () => void }) {
     previousPageRef.current = page;
     window.scrollTo({ top: scrollPositions.current[page] ?? 0, behavior: "auto" });
   }, [page]);
+
+  if (authRequired) {
+    return <AuthScreen onAuthenticated={resetAccountData} onHome={onHome} />;
+  }
+
+  if (authPending) {
+    return <AuthCheckingScreen />;
+  }
 
   return <div className="app-shell">
     <ScrollProgress />
@@ -1415,9 +1387,9 @@ function CoreApp({ onHome }: { onHome: () => void }) {
           </button>
         </div>
         <SpaceCard
-          profile={visibleSpaceProfile}
+          profile={spaceProfile}
           saved={hasStoredSpace}
-          demo={!authRequired && Boolean(dashboard?.demo)}
+          demo={Boolean(dashboard?.demo)}
           active={profilePage}
           shortcuts={navigation.filter((item) => item.id !== "profile")}
           onOpen={() => setPage("profile")}
@@ -1435,17 +1407,17 @@ function CoreApp({ onHome }: { onHome: () => void }) {
         <div className="topbar-actions">
           {dashboard?.demo && <span className="demo-chip">演示沙盒</span>}
           <span className="date-pill">{dashboard?.dateLabel ?? "今天"}</span>
-          <AccountPanel data={visibleProfileData} loading={authRequired ? false : profileQuery.isPending} onChanged={handleAccountChanged} />
+          <AccountPanel data={profileQuery.data} loading={profileQuery.isPending} onChanged={handleAccountChanged} />
         </div>
       </header>
       <div className="mobile-brand">
         <span className="brand-mark"><img src="/brand/icon-192.png" alt="" width={29} height={29} /></span><b>智养 AI</b>
         {dashboard?.demo && <span className="demo-chip">演示</span>}
-        <AccountPanel data={visibleProfileData} loading={authRequired ? false : profileQuery.isPending} onChanged={handleAccountChanged} compact />
+        <AccountPanel data={profileQuery.data} loading={profileQuery.isPending} onChanged={handleAccountChanged} compact />
         <button type="button" className="mobile-home" onClick={onHome}>首页</button>
       </div>
       <section className="page-content">
-        {authRequired ? <GuestGate onLogin={() => setGuestLoginOpen(true)} onHome={onHome} /> : renderedPages.map((visitedPage) => (
+        {renderedPages.map((visitedPage) => (
           <React.Activity key={visitedPage} mode={visitedPage === page ? "visible" : "hidden"}>
             <div className={`page-panel min-w-0${visitedPage === page ? " is-active" : ""}`} data-slide={visitedPage === page && slideFrom ? slideDirection : undefined}>
               {visitedPage === "dashboard" ? <Dashboard key={identityKey} identityKey={identityKey} /> : <OtherPage key={identityKey} page={visitedPage} spaceProfile={spaceProfile} hasStored={hasStoredSpace} demo={Boolean(profileQuery.data?.demo)} identityKey={identityKey} />}
@@ -1466,17 +1438,6 @@ function CoreApp({ onHome }: { onHome: () => void }) {
         );
       })}
     </nav>
-
-    {authRequired && (
-      <AccountPanel
-        data={undefined}
-        loading={false}
-        onChanged={handleGuestLogin}
-        forceOpen={guestLoginOpen}
-        onForceClose={() => setGuestLoginOpen(false)}
-        hideTrigger
-      />
-    )}
 
     <FloatingCompanion hidden={page === "coach" || page === "profile"} onOpen={() => setPage("coach")} />
     <BackToTop />

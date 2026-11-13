@@ -12,12 +12,9 @@ type AccountPanelProps = {
   loading: boolean;
   onChanged: () => void;
   compact?: boolean;
-  forceOpen?: boolean;
-  onForceClose?: () => void;
-  hideTrigger?: boolean;
 };
 
-export function AccountPanel({ data, loading, onChanged, compact = false, forceOpen = false, onForceClose, hideTrigger = false }: AccountPanelProps) {
+export function AccountPanel({ data, loading, onChanged, compact = false }: AccountPanelProps) {
   const [open, setOpen] = React.useState(false);
   const [mode, setMode] = React.useState<Mode>("login");
   const [email, setEmail] = React.useState("");
@@ -31,8 +28,6 @@ export function AccountPanel({ data, loading, onChanged, compact = false, forceO
   const displayName = data?.displayName || (authenticated ? "已登录" : demo ? "演示沙盒" : "登录");
   const initial = displayName.slice(0, 1) || "你";
 
-  const dialogVisible = open || forceOpen;
-
   const resetForm = () => {
     setPassword("");
     setError(null);
@@ -42,17 +37,16 @@ export function AccountPanel({ data, loading, onChanged, compact = false, forceO
     setOpen(false);
     setPassword("");
     setError(null);
-    onForceClose?.();
-  }, [onForceClose]);
+  }, []);
 
   React.useEffect(() => {
-    if (!dialogVisible) return;
+    if (!open) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") closeDialog();
     };
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [dialogVisible, closeDialog]);
+  }, [open, closeDialog]);
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -94,7 +88,6 @@ export function AccountPanel({ data, loading, onChanged, compact = false, forceO
       setOpen(false);
       setPassword("");
       setError(null);
-      onForceClose?.();
       onChanged();
     } catch (err) {
       setError(err instanceof Error ? err.message : "操作失败，请稍后重试。");
@@ -120,25 +113,23 @@ export function AccountPanel({ data, loading, onChanged, compact = false, forceO
 
   return (
     <>
-      {!hideTrigger && (
-        <button
-          type="button"
-          className={`account-trigger${compact ? " is-compact" : ""}${authenticated ? " is-authenticated" : ""}`}
-          onClick={() => { setOpen(true); resetForm(); }}
-          aria-haspopup="dialog"
-          aria-label={authenticated ? `账户 ${data?.account?.email ?? displayName}` : demo ? "演示沙盒，登录以保存数据" : "登录或注册"}
-        >
-          <span className="account-avatar">{authenticated ? initial : demo ? "演" : <UserRound size={15} aria-hidden="true" />}</span>
-          {!compact && (
-            <span className="account-copy">
-              <strong>{loading ? "读取账户…" : authenticated ? displayName : demo ? "登录 / 注册" : "登录"}</strong>
-              <small>{authenticated ? data?.account?.email ?? "" : demo ? "演示沙盒" : "保存你的记录"}</small>
-            </span>
-          )}
-        </button>
-      )}
+      <button
+        type="button"
+        className={`account-trigger${compact ? " is-compact" : ""}${authenticated ? " is-authenticated" : ""}`}
+        onClick={() => { setOpen(true); resetForm(); }}
+        aria-haspopup="dialog"
+        aria-label={authenticated ? `账户 ${data?.account?.email ?? displayName}` : demo ? "演示沙盒，登录以保存数据" : "登录或注册"}
+      >
+        <span className="account-avatar">{authenticated ? initial : demo ? "演" : <UserRound size={15} aria-hidden="true" />}</span>
+        {!compact && (
+          <span className="account-copy">
+            <strong>{loading ? "读取账户…" : authenticated ? displayName : demo ? "登录 / 注册" : "登录"}</strong>
+            <small>{authenticated ? data?.account?.email ?? "" : demo ? "演示沙盒" : "保存你的记录"}</small>
+          </span>
+        )}
+      </button>
 
-      {dialogVisible && (
+      {open && (
         <div className="account-overlay" onMouseDown={(event) => { if (event.target === event.currentTarget) closeDialog(); }}>
           <div className="account-dialog" role="dialog" aria-modal="true" aria-labelledby="account-title">
             <button type="button" className="account-close" onClick={closeDialog} aria-label="关闭账户面板">

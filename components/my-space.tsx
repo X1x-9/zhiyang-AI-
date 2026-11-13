@@ -378,6 +378,7 @@ export function MySpace({ data, loading, profile, hasStored, demo }: MySpaceProp
       heightCm: syncedDraft.heightCm.trim(),
       weightKg: syncedDraft.weightKg.trim(),
       targetWeightKg: syncedDraft.targetWeightKg.trim(),
+      city: syncedDraft.city.trim(),
       avoid: syncedDraft.avoid.trim(),
       budget: syncedDraft.budget.trim(),
       source: isDemo ? "demo" : "local",
@@ -670,6 +671,20 @@ export function MySpace({ data, loading, profile, hasStored, demo }: MySpaceProp
                   onChange={(event) => update("targetWeightKg", event.target.value)}
                 />
               </Field>
+
+              <Field id="ms-city" label="所在城市" hint="选填 · 训练计划会参考天气" error={errors.city}>
+                <input
+                  className="ms-input"
+                  id="ms-city"
+                  value={draft.city}
+                  maxLength={20}
+                  autoComplete="address-level2"
+                  placeholder="例如 杭州"
+                  aria-invalid={Boolean(errors.city)}
+                  aria-describedby={errors.city ? "ms-city-error" : undefined}
+                  onChange={(event) => update("city", event.target.value)}
+                />
+              </Field>
             </div>
           </section>
 
@@ -819,7 +834,6 @@ export function MySpace({ data, loading, profile, hasStored, demo }: MySpaceProp
                   <h3>一日四餐，留出替换的余地。</h3>
                   <p>{dietText(draft.diet)} · {draft.budget.trim() ? `预算约 ¥${draft.budget.trim()}/天` : "未填写预算"}</p>
                 </div>
-                <span className="ms-plan-tag">按当前资料</span>
               </div>
               <ol className="ms-meals">
                 {plans.diet.meals.map((meal) => (
@@ -859,7 +873,6 @@ export function MySpace({ data, loading, profile, hasStored, demo }: MySpaceProp
                     · 共约 {plans.movement.totalMinutes} 分钟
                   </p>
                 </div>
-                <span className="ms-plan-tag">按当前资料</span>
               </div>
               <div
                 className="ms-week"
