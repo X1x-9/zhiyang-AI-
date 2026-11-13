@@ -149,6 +149,7 @@ export function MySpace({ data, loading, profile, hasStored }: MySpaceProps) {
     kind: "idle",
     text: "",
   });
+  const [saving, setSaving] = React.useState(false);
 
   if (profile !== draftBase) {
     setDraftBase(profile);
@@ -231,8 +232,9 @@ export function MySpace({ data, loading, profile, hasStored }: MySpaceProps) {
     setStatus({ kind: "idle", text: hasStored ? "已恢复到上次保存的资料。" : "已恢复到初始内容。" });
   }
 
-  function submit(event: React.FormEvent<HTMLFormElement>) {
+  async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (saving) return;
     const nextErrors = validateSpaceProfile(draft);
     if (Object.keys(nextErrors).length > 0) {
       setErrors(nextErrors);
@@ -255,12 +257,29 @@ export function MySpace({ data, loading, profile, hasStored }: MySpaceProps) {
     setSpaceProfile(saved);
     setDraft(saved);
     setErrors({});
-    setStatus({
-      kind: "saved",
-      text: stored
-        ? `已保存到本机 · ${formatMoment(saved.savedAt)}。饮食与运动计划已按新资料重排。`
-        : "已更新当前页面，但浏览器存储不可用；刷新后会丢失。",
-    });
+    if (!stored) {
+      setStatus({ kind: "error", text: "已更新当前页面，但浏览器存储不可用；刷新后会丢失。" });
+      return;
+    }
+    setSaving(true);
+    setStatus({ kind: "idle", text: "资料已保存，正在按资料生成计划…" });
+    try {
+      const response = await fetch("/api/plans/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ profile: saved }),
+      });
+      const result = (await response.json().catch(() => null)) as { plan?: { version?: number }; message?: string } | null;
+      if (!response.ok || !result?.plan?.version) throw new Error(result?.message ?? "计划生成失败，请稍后重试。");
+      setStatus({ kind: "saved", text: `已保存到本机 · ${formatMoment(saved.savedAt)}。饮食与运动计划已生成（v${result.plan.version}）。` });
+    } catch (error) {
+      setStatus({
+        kind: "saved",
+        text: `已保存到本机 · ${formatMoment(saved.savedAt)}。${error instanceof Error ? error.message : "计划生成失败，请稍后重试。"}可在计划页重试。`,
+      });
+    } finally {
+      setSaving(false);
+    }
   }
 
   if (loading && !hasStored) {
@@ -567,7 +586,7 @@ export function MySpace({ data, loading, profile, hasStored }: MySpaceProps) {
             <div className="ms-form-actions">
               {isDemo && <button type="button" className="ms-ghost-btn" onClick={fillDemo}>填入演示资料</button>}
               <button type="button" className="ms-ghost-btn" onClick={resetDraft}>撤销修改</button>
-              <GlitchButton type="submit">保存并生成计划 <ArrowRight size={15} aria-hidden="true" /></GlitchButton>
+              <GlitchButton type="submit" disabled={saving}>{saving ? "正在生成计划…" : "保存并生成计划"} {!saving && <ArrowRight size={15} aria-hidden="true" />}</GlitchButton>
             </div>
           </div>
         </form>

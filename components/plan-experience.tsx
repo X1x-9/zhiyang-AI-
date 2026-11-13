@@ -12,6 +12,7 @@ import {
   HeartPulse,
   Info,
   Leaf,
+  Loader2,
   RotateCw,
   Salad,
   ShieldCheck,
@@ -23,6 +24,8 @@ import {
 import { Reveal } from "@/components/experience";
 import { GlitchButton } from "@/components/glitch-button";
 import type { DashboardData } from "@/lib/dashboard";
+import { planFingerprint, type PlanDocument } from "@/lib/plan-engine";
+import { createEmptySpaceProfile, spaceCompleteness, type SpaceProfile } from "@/lib/space";
 import { useHealthStore } from "@/stores/health-store";
 
 const ease = [0.22, 1, 0.36, 1] as const;
@@ -178,8 +181,9 @@ function todayLabel(index: number) {
   return index >= 0 ? `今天 · ${weekPlan[index]?.label ?? ""}` : "今天";
 }
 
-export function PlanSwitcher({ page }: { page: "plans" | "exercise" }) {
+export function PlanSwitcher({ page, profile, hasStored }: { page: "plans" | "exercise"; profile: SpaceProfile; hasStored: boolean }) {
   const setPage = useHealthStore((state) => state.setPage);
+  const completeness = spaceCompleteness(profile);
   const items = [
     { id: "plans", label: "饮食计划", caption: "餐盘与替换思路", icon: Salad },
     { id: "exercise", label: "运动计划", caption: "每周节奏与强度", icon: Dumbbell },
@@ -204,9 +208,96 @@ export function PlanSwitcher({ page }: { page: "plans" | "exercise" }) {
           );
         })}
       </nav>
-      <p className="pp-switch-note"><Info size={12} aria-hidden="true" /> 两套都是示例结构，不会自动改写你的目标</p>
+      <p className="pp-switch-note">
+        <Info size={12} aria-hidden="true" />
+        {hasStored ? `资料已填 ${completeness.filled}/${completeness.total} 项 · 可在下方生成计划` : "还没有保存资料 · 先看示例结构"}
+      </p>
     </div>
   );
+}
+
+const PLAN_CACHE_KEY = "zhiyang-plan-cache-v1";
+
+type PlanState = {
+  plan: PlanDocument | null;
+  persisted: boolean;
+  loading: boolean;
+  error: string | null;
+  generate: () => Promise<void>;
+};
+
+function readCachedPlan(fingerprint: string): { plan: PlanDocument; persisted: boolean } | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(PLAN_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { fingerprint?: string; plan?: PlanDocument; persisted?: boolean };
+    if (parsed.fingerprint !== fingerprint || !parsed.plan?.version) return null;
+    return { plan: parsed.plan, persisted: Boolean(parsed.persisted) };
+  } catch {
+    return null;
+  }
+}
+
+function writeCachedPlan(fingerprint: string, plan: PlanDocument, persisted: boolean) {
+  try {
+    window.localStorage.setItem(PLAN_CACHE_KEY, JSON.stringify({ fingerprint, plan, persisted }));
+  } catch {
+    // 本机缓存不可用时，页面仍然使用本次响应里的计划。
+  }
+}
+
+function useGeneratedPlan(profile: SpaceProfile, hasStored: boolean): PlanState {
+  const fingerprint = React.useMemo(() => planFingerprint(profile), [profile]);
+  const [state, setState] = React.useState<{ plan: PlanDocument; persisted: boolean } | null>(null);
+  const [loading, setLoading] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (!hasStored) {
+      setState(null);
+      return;
+    }
+    const cached = readCachedPlan(fingerprint);
+    setState(cached);
+    let cancelled = false;
+    void (async () => {
+      try {
+        const response = await fetch(`/api/plans/latest?fingerprint=${encodeURIComponent(fingerprint)}`);
+        if (!response.ok) return;
+        const data = (await response.json()) as { plan?: PlanDocument | null; persisted?: boolean };
+        if (cancelled || !data.plan) return;
+        setState({ plan: data.plan, persisted: Boolean(data.persisted) });
+        writeCachedPlan(fingerprint, data.plan, Boolean(data.persisted));
+      } catch {
+        // 读取失败时保留本机缓存，不影响生成入口。
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [fingerprint, hasStored]);
+
+  const generate = React.useCallback(async () => {
+    if (!hasStored || loading) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await fetch("/api/plans/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ profile }),
+      });
+      const data = (await response.json().catch(() => null)) as { plan?: PlanDocument; persisted?: boolean; message?: string } | null;
+      if (!response.ok || !data?.plan) throw new Error(data?.message ?? "计划生成失败，请稍后重试。");
+      setState({ plan: data.plan, persisted: Boolean(data.persisted) });
+      writeCachedPlan(fingerprint, data.plan, Boolean(data.persisted));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "计划生成失败，请稍后重试。");
+    } finally {
+      setLoading(false);
+    }
+  }, [fingerprint, hasStored, loading, profile]);
+
+  return { plan: state?.plan ?? null, persisted: state?.persisted ?? false, loading, error, generate };
 }
 
 function useTilt(ref: React.RefObject<HTMLDivElement | null>) {
@@ -453,11 +544,13 @@ function WeekInstrument() {
   );
 }
 
-function PlanHero({ kind, data }: { kind: PlanKind; data?: DashboardData }) {
+function PlanHero({ kind, data, plan, hasStored }: { kind: PlanKind; data?: DashboardData; plan?: PlanDocument | null; hasStored: boolean }) {
   const reduce = useReducedMotion();
   const diet = kind === "diet";
   const goal = data?.calorieGoal ?? null;
   const macros = data?.macros ?? null;
+  const targets = plan?.targets ?? null;
+  const firstSessionMinutes = plan?.movement.sessions[0]?.minutes ?? null;
 
   return (
     <section className={`pp-hero pp-hero-${kind}`} aria-labelledby={`pp-${kind}-title`}>
@@ -483,20 +576,50 @@ function PlanHero({ kind, data }: { kind: PlanKind; data?: DashboardData }) {
             <span>{diet ? "DIET" : "MOVEMENT"}</span>
             <i aria-hidden="true" />
             <span>{diet ? "饮食计划" : "运动计划"}</span>
-            <span className="pp-mini-tag">{diet ? "示例结构" : "示例安排"}</span>
+            <span className="pp-mini-tag">{plan ? "按资料生成" : diet ? "示例结构" : "示例安排"}</span>
           </div>
           <h1 id={`pp-${kind}-title`}>{diet ? "吃得刚刚好，\n比吃得完美更重要。" : "把训练，\n放回风里。"}</h1>
           <p className="pp-hero-lede">
-            {diet
-              ? "先保证每一餐有蛋白质、蔬菜和主食，再谈份量和细节。时间和搭配都可以换。"
-              : "每周三次、每次约二十五分钟的示例节奏：力量、快走和拉伸轮流出现。忙的时候，走十分钟也算。"}
+            {plan
+              ? diet
+                ? "下面是按你填写的资料生成的餐次结构、热量区间和替换思路；份量可以按饥饿感微调。"
+                : "下面是按你填写的资料生成的每周节奏；状态一般时，先减量，再谈完成。"
+              : diet
+                ? "先保证每一餐有蛋白质、蔬菜和主食，再谈份量和细节。时间和搭配都可以换。"
+                : "每周三次、每次约二十五分钟的示例节奏：力量、快走和拉伸轮流出现。忙的时候，走十分钟也算。"}
           </p>
           <div className="pp-meta-row">
             {diet ? (
               <>
-                <span className="pp-chip">{goal !== null ? <>每日参考 <strong>{goal.toLocaleString("zh-CN")}</strong> kcal</> : "参考目标未接入"}</span>
-                <span className="pp-chip">{macros ? <>蛋白质 <strong>{macros.protein.goal}</strong> g</> : "营养明细未接入"}</span>
+                {targets ? (
+                  <>
+                    <span className="pp-chip">每日参考 <strong>{targets.calorieLow}–{targets.calorieHigh}</strong> kcal</span>
+                    <span className="pp-chip">蛋白质 <strong>{targets.proteinLow}–{targets.proteinHigh}</strong> g</span>
+                  </>
+                ) : hasStored ? (
+                  <>
+                    <span className="pp-chip">目标待生成</span>
+                    <span className="pp-chip">生成后显示蛋白质区间</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="pp-chip">{goal !== null ? <>演示参考 <strong>{goal.toLocaleString("zh-CN")}</strong> kcal</> : "参考目标未接入"}</span>
+                    <span className="pp-chip">{macros ? <>演示蛋白质 <strong>{macros.protein.goal}</strong> g</> : "营养明细未接入"}</span>
+                  </>
+                )}
                 <span className="pp-chip">{data && data.mealsToday > 0 ? <>今天已记录 <strong>{data.mealsToday}</strong> 餐</> : "今天还没有记录"}</span>
+              </>
+            ) : plan ? (
+              <>
+                <span className="pp-chip">每周 <strong>{plan.movement.sessionCount}</strong> 次</span>
+                <span className="pp-chip">{firstSessionMinutes !== null ? <>每次约 <strong>{firstSessionMinutes}</strong> 分钟</> : "时长待生成"}</span>
+                <span className="pp-chip">{plan.movement.environmentLabel}</span>
+              </>
+            ) : hasStored ? (
+              <>
+                <span className="pp-chip">安排待生成</span>
+                <span className="pp-chip">生成后显示每周节奏</span>
+                <span className="pp-chip">环境按资料</span>
               </>
             ) : (
               <>
@@ -517,7 +640,11 @@ function PlanHero({ kind, data }: { kind: PlanKind; data?: DashboardData }) {
         </motion.div>
       </div>
       <p className="pp-hero-credit">
-        {diet ? "照片为氛围示意；餐盘结构与餐次均为示例，不是个体营养处方。" : "照片为氛围示意；训练安排为示例，不记录心率或动作数据。"}
+        {plan
+          ? "照片为氛围示意；生成计划按填写资料计算，仍是通用结构，不是个体营养或医疗处方。"
+          : diet
+            ? "照片为氛围示意；餐盘结构与餐次均为示例，不是个体营养处方。"
+            : "照片为氛围示意；训练安排为示例，不记录心率或动作数据。"}
       </p>
     </section>
   );
@@ -530,6 +657,189 @@ function SectionHead({ eyebrow, title, copy }: { eyebrow: string; title: string;
       <h2>{title}</h2>
       {copy && <p>{copy}</p>}
     </header>
+  );
+}
+
+function GeneratedDiet({ plan }: { plan: PlanDocument }) {
+  return (
+    <div className="pp-generated-block">
+      <div className="pp-generated-subhead">
+        <strong>一天的吃法</strong>
+        <span>{plan.profileSnapshot.dietLabel} · 按资料生成</span>
+      </div>
+      <div className="pp-generated-meals">
+        {plan.diet.meals.map((meal) => (
+          <article key={`${meal.time}-${meal.label}`}>
+            <div className="pp-generated-meal-top">
+              <span>{meal.time}</span>
+              <b>{meal.label}</b>
+              {meal.kcalHint && <em>{meal.kcalHint}</em>}
+            </div>
+            <h3>{meal.title}</h3>
+            <p>{meal.detail}</p>
+            <small>替换：{meal.swap}</small>
+          </article>
+        ))}
+      </div>
+      <div className="pp-generated-notes">
+        <p>{plan.diet.avoidNote}</p>
+        <p>{plan.diet.budgetNote}</p>
+        {plan.diet.energySplitNote && <p>{plan.diet.energySplitNote}</p>}
+      </div>
+    </div>
+  );
+}
+
+function GeneratedMovement({ plan }: { plan: PlanDocument }) {
+  return (
+    <div className="pp-generated-block">
+      <div className="pp-generated-subhead">
+        <strong>一周的安排</strong>
+        <span>{plan.movement.environmentLabel} · {plan.movement.sessionCount} 次 · 约 {plan.movement.totalMinutes} 分钟</span>
+      </div>
+      <div className="pp-generated-week">
+        {plan.movement.week.map((day) => (
+          <div key={day.label} className={day.session ? "has-session" : "rest"}>
+            <span>{day.label}</span>
+            <strong>{day.session?.title ?? "休息 / 散步"}</strong>
+            <small>{day.session ? `${day.session.minutes} 分钟` : "—"}</small>
+          </div>
+        ))}
+      </div>
+      <div className="pp-generated-sessions">
+        {plan.movement.sessions.map((session) => (
+          <article key={`${session.day}-${session.title}`}>
+            <span>{session.day} · {session.tone === "strength" ? "力量" : session.tone === "cardio" ? "心肺" : "恢复"}</span>
+            <h3>{session.title}<small>{session.minutes} 分钟</small></h3>
+            <p>{session.focus}</p>
+          </article>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function GeneratedPlanPanel({ kind, profile, hasStored, planState }: {
+  kind: PlanKind;
+  profile: SpaceProfile;
+  hasStored: boolean;
+  planState: PlanState;
+}) {
+  const setPage = useHealthStore((state) => state.setPage);
+  const { plan, persisted, loading, error, generate } = planState;
+  const completeness = hasStored ? spaceCompleteness(profile) : spaceCompleteness(createEmptySpaceProfile());
+
+  if (!hasStored) {
+    return (
+      <Reveal>
+        <section className="pp-generated pp-generated--empty" aria-labelledby="pp-generated-title">
+          <header className="pp-generated-head">
+            <div>
+              <div className="pp-sec-eyebrow">你的计划 · 尚未生成</div>
+              <h2 id="pp-generated-title">先有资料，才有数字。</h2>
+              <p>计划会按你填写的年龄、身高、体重、目标、活动量和训练环境计算。没有资料时，这里不会给出热量目标，只保留下方示例结构。</p>
+            </div>
+            <span className="pp-generated-stamp">未保存资料</span>
+          </header>
+          <div className="pp-generated-empty-row">
+            <div>
+              <strong>还需要：{completeness.missing.join("、")}</strong>
+              <p>称呼、年龄、身高、体重用来计算参考范围；运动次数和饮食偏好已有默认值，可以之后再改。</p>
+            </div>
+            <GlitchButton className="pp-generated-cta" onClick={() => setPage("profile")}>去补充资料 <ArrowRight size={15} aria-hidden="true" /></GlitchButton>
+          </div>
+        </section>
+      </Reveal>
+    );
+  }
+
+  return (
+    <Reveal>
+      <section className={`pp-generated pp-generated--${kind}`} aria-labelledby="pp-generated-title">
+        <header className="pp-generated-head">
+          <div>
+            <div className="pp-sec-eyebrow">你的生成计划{plan ? ` · 版本 v${plan.version}` : ""}</div>
+            <h2 id="pp-generated-title">{plan ? "按资料生成，不靠猜。" : "资料已就位，生成第一版。"}</h2>
+            <p>
+              {plan
+                ? "热量、蛋白质、餐次和训练安排都由固定规则计算；每次重新生成会留下新的版本号，不会覆盖旧记录。"
+                : "生成后会显示热量与蛋白质区间、餐次分配和每周训练节奏，并标明使用了哪些资料。"}
+            </p>
+          </div>
+          <button type="button" className="pp-generated-regen" onClick={() => void generate()} disabled={loading}>
+            {loading ? <Loader2 size={15} className="pp-spin" aria-hidden="true" /> : <RotateCw size={15} aria-hidden="true" />}
+            {loading ? "生成中…" : plan ? "重新生成" : "生成我的计划"}
+          </button>
+        </header>
+
+        {error && <p className="pp-generated-error" role="alert">{error}</p>}
+        {loading && !plan && (
+          <div className="pp-generated-loading">
+            <Loader2 size={18} className="pp-spin" aria-hidden="true" />
+            <span>正在按资料计算计划…</span>
+          </div>
+        )}
+
+        {plan && (
+          <>
+            <div className="pp-generated-meta">
+              <span>v{plan.version}</span>
+              <span>{new Intl.DateTimeFormat("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(plan.generatedAt))}</span>
+              <span>资料 {plan.completeness.filled}/{plan.completeness.total}</span>
+              <span>{plan.dataBasis.source === "demo" ? "演示资料" : "本机填写"}</span>
+              <span>{plan.engineName} · {plan.engineVersion}</span>
+            </div>
+
+            {plan.targets ? (
+              <div className="pp-generated-targets">
+                <div><small>每日热量参考</small><strong>{plan.targets.calorieLow}–{plan.targets.calorieHigh}</strong><span>kcal</span></div>
+                <div><small>蛋白质参考</small><strong>{plan.targets.proteinLow}–{plan.targets.proteinHigh}</strong><span>g</span></div>
+                <div><small>饮水参考</small><strong>{plan.targets.waterLow.toFixed(1)}–{plan.targets.waterHigh.toFixed(1)}</strong><span>L</span></div>
+                <div><small>当前目标</small><strong className="is-text">{plan.profileSnapshot.goalLabel}</strong><span>每周 {plan.movement.sessionCount} 次</span></div>
+              </div>
+            ) : (
+              <div className="pp-generated-reason">
+                <Info size={15} aria-hidden="true" />
+                <p>{plan.targetsReason ?? "资料不足，暂时不生成热量与蛋白质目标。"}</p>
+              </div>
+            )}
+            {plan.goalLine && <p className="pp-generated-goal">{plan.goalLine}</p>}
+
+            {kind === "diet" ? <GeneratedDiet plan={plan} /> : <GeneratedMovement plan={plan} />}
+
+            <div className="pp-generated-basis">
+              <div>
+                <span>数据依据</span>
+                <p>使用：{plan.dataBasis.usedFields.join("、")}。</p>
+                {plan.dataBasis.missingFields.length > 0 && <p>未填：{plan.dataBasis.missingFields.join("、")}。</p>}
+                <p>没有读取餐食记录、体重趋势或手环数据。</p>
+                {plan.dataBasis.targetMethod && <p>热量算法：{plan.dataBasis.targetMethod}。</p>}
+              </div>
+              <div>
+                <span>版本与来源</span>
+                <p>{persisted ? "本次版本已写入计划历史，可按版本号追溯。" : "当前为演示或临时存储，版本保存在当前会话与本机缓存中。"}</p>
+                {plan.dataBasis.notes.map((note) => <p key={note}>{note}</p>)}
+              </div>
+            </div>
+
+            <div className="pp-generated-safety">
+              <span><ShieldCheck size={14} aria-hidden="true" />安全边界</span>
+              <ul>{plan.safety.flags.map((flag) => <li key={flag}>{flag}</li>)}</ul>
+              <p>{plan.safety.disclaimer}</p>
+            </div>
+          </>
+        )}
+      </section>
+    </Reveal>
+  );
+}
+
+function ExampleDivider({ kind }: { kind: PlanKind }) {
+  return (
+    <div className="pp-example-divider" role="note">
+      <span>以下为示例结构</span>
+      <p>这部分是通用{kind === "diet" ? "饮食" : "运动"}示例，不会替换上方按资料生成的计划。</p>
+    </div>
   );
 }
 
@@ -659,15 +969,21 @@ function DietFlex() {
   );
 }
 
-function HonestyPanel() {
+function HonestyPanel({ generated, hasStored }: { generated: boolean; hasStored: boolean }) {
   const setPage = useHealthStore((state) => state.setPage);
   return (
     <Reveal>
       <section className="pp-dark pp-honest" aria-labelledby="pp-honest-title">
         <div className="pp-dark-copy">
           <div className="pp-sec-eyebrow">计划的边界</div>
-          <h2 id="pp-honest-title">这份示例，不会替你做决定。</h2>
-          <p>它只展示结构，没有根据你的真实记录自动生成，也不会悄悄改变目标。目标范围需要结合身高、体重、活动量和医生建议确定；这里不做个体医疗营养处方。</p>
+          <h2 id="pp-honest-title">{generated ? "示例只补充结构，不替代你的计划。" : "这份示例，不会替你做决定。"}</h2>
+          <p>
+            {generated
+              ? "上方的生成计划按你填写的资料计算，并保留版本号和数据依据；本页其余部分仍是通用示例，不会覆盖生成结果，也不是医疗或营养处方。"
+              : hasStored
+                ? "还没有生成计划。下方仍是通用示例结构；生成后会按资料计算热量与蛋白质区间，但不构成医疗处方。"
+                : "它只展示结构，没有根据你的真实资料自动生成，也不会悄悄改变目标。目标范围需要结合年龄、身高、体重、活动量和医生建议确定；这里不做个体医疗营养处方。"}
+          </p>
         </div>
         <div className="pp-dark-actions">
           <GlitchButton tone="cream" className="pp-dark-glitch" onClick={() => setPage("coach")}>和健康搭子讨论 <ArrowRight size={16} aria-hidden="true" /></GlitchButton>
@@ -678,14 +994,17 @@ function HonestyPanel() {
   );
 }
 
-export function DietPlan({ data, loading }: { data?: DashboardData; loading: boolean }) {
+export function DietPlan({ data, loading, profile, hasStored }: { data?: DashboardData; loading: boolean; profile: SpaceProfile; hasStored: boolean }) {
+  const planState = useGeneratedPlan(profile, hasStored);
   return (
     <div className="pp-page">
-      <PlanHero kind="diet" data={data} />
-      <DietTargets data={data} loading={loading} />
+      <PlanHero kind="diet" data={data} plan={planState.plan} hasStored={hasStored} />
+      <GeneratedPlanPanel kind="diet" profile={profile} hasStored={hasStored} planState={planState} />
+      {!hasStored && <DietTargets data={data} loading={loading} />}
+      {planState.plan && <ExampleDivider kind="diet" />}
       <DietPlanMeals />
       <DietFlex />
-      <HonestyPanel />
+      <HonestyPanel generated={Boolean(planState.plan)} hasStored={hasStored} />
     </div>
   );
 }
@@ -913,8 +1232,9 @@ function SafetyPanel() {
   );
 }
 
-export function ExercisePlan({ data }: { data?: DashboardData; loading?: boolean }) {
+export function ExercisePlan({ data, profile, hasStored }: { data?: DashboardData; loading?: boolean; profile: SpaceProfile; hasStored: boolean }) {
   const [today, setToday] = React.useState(-1);
+  const planState = useGeneratedPlan(profile, hasStored);
 
   React.useEffect(() => {
     const frame = requestAnimationFrame(() => setToday(shanghaiWeekdayIndex()));
@@ -923,14 +1243,15 @@ export function ExercisePlan({ data }: { data?: DashboardData; loading?: boolean
 
   return (
     <div className="pp-page">
-      <PlanHero kind="exercise" data={data} />
-      <ExerciseWeek today={today} />
+      <PlanHero kind="exercise" data={data} plan={planState.plan} hasStored={hasStored} />
+      <GeneratedPlanPanel kind="exercise" profile={profile} hasStored={hasStored} planState={planState} />
+      {planState.plan ? <ExampleDivider kind="exercise" /> : <ExerciseWeek today={today} />}
       <SessionDeck />
       <IntensityMeter />
       <ExerciseLife />
       <SafetyPanel />
       <p className="pp-endnote">
-        <Leaf size={12} aria-hidden="true" /> 智养 AI · 示例计划 · 今天做到一点点，就已经在往前。
+        <Leaf size={12} aria-hidden="true" /> 智养 AI · {planState.plan ? `生成计划 v${planState.plan.version} + 示例结构` : "示例计划"} · 今天做到一点点，就已经在往前。
       </p>
     </div>
   );

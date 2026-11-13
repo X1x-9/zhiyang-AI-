@@ -3,11 +3,20 @@ import { z } from "zod";
 import { getPrisma } from "@/lib/prisma";
 import { deleteDemoMeal, isDemoMode, updateDemoMeal } from "@/lib/demo-data";
 
+const mealItemSchema = z.object({
+  name: z.string().trim().min(1).max(80),
+  amountGrams: z.number().min(0).max(3000),
+  calories: z.number().min(0).max(5000),
+  foodId: z.string().max(60).optional(),
+  dataSource: z.enum(["food_table", "model_estimate", "manual"]).optional(),
+  matchedName: z.string().max(80).optional(),
+});
+
 const updateSchema = z.object({
   title: z.string().trim().min(1).max(100).optional(),
   mealType: z.enum(["BREAKFAST", "LUNCH", "DINNER", "SNACK", "OTHER"]).optional(),
   status: z.enum(["PENDING", "CONFIRMED", "REJECTED"]).optional(),
-  items: z.array(z.object({ name: z.string().trim().min(1).max(80), amountGrams: z.number().min(0).max(3000), calories: z.number().min(0).max(5000) })).min(1).max(30).optional(),
+  items: z.array(mealItemSchema).min(1).max(30).optional(),
   notes: z.string().max(1000).optional(),
 });
 

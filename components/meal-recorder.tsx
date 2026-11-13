@@ -8,24 +8,47 @@ import { Button } from "@/components/ui/button";
 import { useHealthStore } from "@/stores/health-store";
 
 type Nutrition = { proteinG: number; carbsG: number; fatG: number };
-type AnalysisItem = { name: string; grams: number; kcal: number; confidence: "high" | "medium" | "low"; nutrition: Nutrition; per100?: Nutrition & { kcal: number }; estimatedName?: string };
+type MealDataSource = "food_table" | "model_estimate" | "manual";
+type AnalysisItem = {
+  name: string;
+  grams: number;
+  kcal: number;
+  confidence: "high" | "medium" | "low";
+  nutrition: Nutrition;
+  per100?: Nutrition & { kcal: number };
+  estimatedName?: string;
+  dataSource?: MealDataSource;
+  foodId?: string;
+  matchedName?: string;
+  matchScore?: number;
+};
 type Analysis = {
   dish: string;
   items: AnalysisItem[];
   totalKcal: number;
   uncertainty: string;
   nutrition: Nutrition;
+  foodDataVersion?: string;
+  foodDataSource?: string;
+  nutritionSummary?: { foodTableItems: number; modelEstimateItems: number };
 };
 
 type MealRecord = {
   id: string;
   title: string;
   mealType: string;
-  items: Array<{ name: string; amountGrams?: number; calories?: number }>;
+  items: Array<{ name: string; amountGrams?: number; calories?: number; foodId?: string; dataSource?: MealDataSource; matchedName?: string }>;
   estimatedKcal: number | null;
   status: string;
   eatenAt: string;
   notes: string;
+};
+
+type EstimateResponse = {
+  per100?: Per100;
+  source?: "food_table" | "model_estimate";
+  food?: { id: string; name: string; portionGrams: number; portionLabel: string; dataSource: string; dataVersion: string };
+  message?: string;
 };
 
 const mealTypeLabel: Record<string, string> = {
@@ -41,6 +64,13 @@ const confidenceLabel: Record<AnalysisItem["confidence"], string> = {
   medium: "可能",
   low: "不确定",
 };
+
+function sourceMeta(item: AnalysisItem) {
+  if (item.dataSource === "food_table") return { label: item.matchedName ? `食物参考库 · ${item.matchedName}` : "食物参考库", tone: "table" };
+  if (item.dataSource === "model_estimate") return { label: "AI 估算", tone: "model" };
+  if (item.dataSource === "manual") return { label: "手动填写", tone: "manual" };
+  return { label: "来源待核对", tone: "unknown" };
+}
 
 function SectionTitle({ title }: { title: string }) {
   return <div className="section-title"><h2>{title}</h2></div>;
@@ -165,7 +195,7 @@ function SameDayRecords() {
   };
 
   const update = useMutation({
-    mutationFn: async ({ id, title, mealType, status, items, notes }: { id: string; title?: string; mealType?: string; status?: string; items?: Array<{ name: string; amountGrams: number; calories: number }>; notes?: string }) => {
+    mutationFn: async ({ id, title, mealType, status, items, notes }: { id: string; title?: string; mealType?: string; status?: string; items?: Array<{ name: string; amountGrams: number; calories: number; foodId?: string; dataSource?: MealDataSource; matchedName?: string }>; notes?: string }) => {
       const response = await fetch(`/api/meals/${id}`, {
         method: "PATCH",
         headers: demoHeaders(true),
@@ -224,7 +254,7 @@ function SameDayRecords() {
                     className="flex-1"
                     disabled={update.isPending || !draft.title.trim()}
                     onClick={() => {
-                      const items = meal.items.map((item) => ({ name: item.name, amountGrams: item.amountGrams ?? 0, calories: item.calories ?? 0 }));
+                      const items = meal.items.map((item) => ({ name: item.name, amountGrams: item.amountGrams ?? 0, calories: item.calories ?? 0, ...(item.foodId ? { foodId: item.foodId } : {}), ...(item.dataSource ? { dataSource: item.dataSource } : {}), ...(item.matchedName ? { matchedName: item.matchedName } : {}) }));
                       const original = items.reduce((sum, item) => sum + item.calories, 0);
                       const scale = original > 0 ? draft.kcal / original : 1;
                       update.mutate({
@@ -282,6 +312,7 @@ function ManualEntry({ onSaved }: { onSaved: () => void }) {
   const [eatenAt, setEatenAt] = React.useState(() => { const now = new Date(); now.setMinutes(now.getMinutes() - now.getTimezoneOffset()); return now.toISOString().slice(0, 16); });
   const [grams, setGrams] = React.useState("");
   const [kcal, setKcal] = React.useState("");
+  const [estimateSource, setEstimateSource] = React.useState<{ source: "food_table" | "model_estimate"; foodId?: string; foodName?: string } | null>(null);
 
   const create = useMutation({
     mutationFn: async () => {
@@ -292,7 +323,14 @@ function ManualEntry({ onSaved }: { onSaved: () => void }) {
           title: name.trim(),
           mealType,
           eatenAt: isoFromLocal(eatenAt),
-          items: [{ name: name.trim(), amountGrams: Number(grams) || 0, calories: Number(kcal) || 0 }],
+          items: [{
+            name: name.trim(),
+            amountGrams: Number(grams) || 0,
+            calories: Number(kcal) || 0,
+            ...(estimateSource
+              ? { dataSource: estimateSource.source, ...(estimateSource.foodId ? { foodId: estimateSource.foodId, matchedName: estimateSource.foodName } : {}) }
+              : { dataSource: "manual" }),
+          }],
           notes: "手动添加",
           status: "CONFIRMED",
         }),
@@ -304,7 +342,7 @@ function ManualEntry({ onSaved }: { onSaved: () => void }) {
       return data;
     },
     onSuccess: () => {
-      setName(""); setGrams(""); setKcal("");
+      setName(""); setGrams(""); setKcal(""); setEstimateSource(null);
       onSaved();
     },
   });
@@ -316,14 +354,20 @@ function ManualEntry({ onSaved }: { onSaved: () => void }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: name.trim() }),
       });
-      const data = (await response.json().catch(() => null)) as { per100?: Per100; message?: string } | null;
+      const data = (await response.json().catch(() => null)) as EstimateResponse | null;
       if (!response.ok || !data?.per100) throw new Error(data?.message ?? "热量估算失败，请重试。");
-      return data.per100;
+      return {
+        per100: data.per100,
+        source: data.source ?? "model_estimate" as const,
+        foodId: data.food?.id,
+        foodName: data.food?.name,
+      };
     },
-    onSuccess: (per100) => {
+    onSuccess: (data) => {
       const g = Number(grams) || 100;
-      const value = Math.round(per100.kcal * g / 100);
+      const value = Math.round(data.per100.kcal * g / 100);
       setKcal(String(value));
+      setEstimateSource({ source: data.source, foodId: data.foodId, foodName: data.foodName });
     },
   });
 
@@ -349,7 +393,7 @@ function ManualEntry({ onSaved }: { onSaved: () => void }) {
             </div>
             <div>
               <label className="block text-sm font-medium" htmlFor="manual-name">食物或餐食名称</label>
-              <input id="manual-name" className="mt-1 w-full rounded-md border border-[#e7ece5] bg-white px-2 py-2 text-sm" value={name} onChange={(event) => setName(event.target.value)} placeholder="例如：清炒时蔬" maxLength={80} />
+              <input id="manual-name" className="mt-1 w-full rounded-md border border-[#e7ece5] bg-white px-2 py-2 text-sm" value={name} onChange={(event) => { setName(event.target.value); setEstimateSource(null); }} placeholder="例如：清炒时蔬" maxLength={80} />
             </div>
             <div>
               <label className="block text-sm font-medium" htmlFor="manual-mealtime">用餐时间</label>
@@ -370,10 +414,17 @@ function ManualEntry({ onSaved }: { onSaved: () => void }) {
             </div>
           </div>
           <p className="mt-2 text-xs text-[#84908a]">份量和热量至少填一项；填好名称和份量后可点「AI 估算」自动算热量，也可手动填写。</p>
+          {estimateSource && (
+            <p className={`food-source-note ${estimateSource.source === "food_table" ? "is-table" : "is-model"}`}>
+              {estimateSource.source === "food_table"
+                ? `已按食物参考库「${estimateSource.foodName}」的每 100g 数据换算。`
+                : "食物参考库未收录这一项，已使用 AI 估算，数值仅供参照。"}
+            </p>
+          )}
           {estimateCalories.isError && <p className="mt-2 text-xs text-red-800" role="alert">{estimateCalories.error.message}</p>}
           <div className="mt-3 flex gap-2">
             <Button className="flex-1" disabled={!valid || create.isPending} onClick={() => create.mutate()}>{create.isPending ? "正在保存…" : <><Check size={15} />保存记录</>}</Button>
-            <Button variant="secondary" onClick={() => { setOpen(false); setName(""); setGrams(""); setKcal(""); }}>收起</Button>
+            <Button variant="secondary" onClick={() => { setOpen(false); setName(""); setGrams(""); setKcal(""); setEstimateSource(null); }}>收起</Button>
           </div>
           {create.isError && <p className="mt-2 text-sm text-red-800" role="alert">{create.error.message}</p>}
         </>
@@ -434,7 +485,14 @@ export function MealRecorder() {
           title: analysis.dish || "一餐记录",
           mealType,
           eatenAt: isoFromLocal(eatenAt),
-          items: analysis.items.map((item) => ({ name: item.name, amountGrams: item.grams, calories: item.kcal })),
+          items: analysis.items.map((item) => ({
+            name: item.name,
+            amountGrams: item.grams,
+            calories: item.kcal,
+            ...(item.dataSource ? { dataSource: item.dataSource } : {}),
+            ...(item.foodId ? { foodId: item.foodId } : {}),
+            ...(item.matchedName ? { matchedName: item.matchedName } : {}),
+          })),
           notes: note,
           status: "CONFIRMED",
         }),
@@ -527,14 +585,23 @@ export function MealRecorder() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name }),
       });
-      const data = (await response.json().catch(() => null)) as { per100?: Per100; message?: string } | null;
+      const data = (await response.json().catch(() => null)) as EstimateResponse | null;
       if (!response.ok || !data?.per100) throw new Error(data?.message ?? "营养估算失败，请重试。");
-      return { index, name, per100: data.per100 };
+      return {
+        index,
+        name,
+        per100: data.per100,
+        source: data.source ?? "model_estimate" as const,
+        foodId: data.food?.id,
+        foodName: data.food?.name,
+      };
     },
-    onSuccess: ({ index, name, per100 }) => {
+    onSuccess: ({ index, name, per100, source, foodId, foodName }) => {
       setAnalysis((current) => {
         if (!current) return current;
-        const items = current.items.map((item, itemIndex) => itemIndex === index ? applyGrams({ ...item, name, per100, estimatedName: name }, item.grams) : item);
+        const items = current.items.map((item, itemIndex) => itemIndex === index
+          ? applyGrams({ ...item, name, per100, estimatedName: name, dataSource: source, foodId, matchedName: foodName, matchScore: undefined }, item.grams)
+          : item);
         return { ...current, items, totalKcal: items.reduce((total, item) => total + item.kcal, 0), nutrition: sumNutrition(items) };
       });
       useHealthStore.getState().resetMealConfirmation();
@@ -549,6 +616,7 @@ export function MealRecorder() {
       kcal: 0,
       confidence: "low",
       nutrition: { proteinG: 0, carbsG: 0, fatG: 0 },
+      dataSource: "manual",
     };
     setAnalysis((current) => current ? {
       ...current,
@@ -679,19 +747,21 @@ export function MealRecorder() {
                 <div className="mt-2">
                   {analysis.items.map((item, index) => {
                     const per100 = per100Of(item);
+                    const source = sourceMeta(item);
                     const nameChanged = item.estimatedName !== undefined && item.estimatedName !== item.name.trim();
                     const estimating = estimate.isPending && estimate.variables?.index === index;
                     return (
                       <div className="border-b border-[#e8ece5] py-3" key={index}>
                         <div className="grid grid-cols-[minmax(0,1fr)_90px_64px_36px] items-center gap-2">
                           <label className="sr-only" htmlFor={`food-name-${index}`}>食物名称</label>
-                          <input id={`food-name-${index}`} className="min-w-0 rounded-md border border-[#e7ece5] bg-white px-2 py-2 text-sm" value={item.name} onChange={(event) => updateItem(index, { name: event.target.value })} aria-label={`第 ${index + 1} 项食物名称`} />
+                          <input id={`food-name-${index}`} className="min-w-0 rounded-md border border-[#e7ece5] bg-white px-2 py-2 text-sm" value={item.name} onChange={(event) => updateItem(index, { name: event.target.value, estimatedName: undefined, dataSource: undefined, foodId: undefined, matchedName: undefined, matchScore: undefined })} aria-label={`第 ${index + 1} 项食物名称`} />
                           <label className="sr-only" htmlFor={`food-grams-${index}`}>克数</label>
                           <div className="flex items-center gap-1"><input id={`food-grams-${index}`} className="w-full min-w-0 rounded-md border border-[#e7ece5] bg-white px-2 py-2 text-right text-sm" type="number" min="0" max="3000" step="1" value={item.grams} onChange={(event) => updateItem(index, { grams: Math.max(0, Math.min(3000, Number(event.target.value) || 0)) })} aria-label={`${item.name}克数`} /><span className="text-xs text-[#8a978d]">g</span></div>
                           <span className="text-right text-xs text-[#58685d]">{item.kcal} kcal</span>
                           <button type="button" className="rounded-md p-2.5 text-[#9b7068] hover:bg-[#f7eeeb]" aria-label={`删除${item.name}`} onClick={() => removeItem(index)}><Trash2 size={15} /></button>
                         </div>
                         <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-[#84908a]">
+                          <span className={`food-source-badge is-${source.tone}`}>{source.label}</span>
                           <span>{confidenceLabel[item.confidence]} · 每 100g 约 {per100.kcal} kcal（蛋白 {per100.proteinG} / 碳水 {per100.carbsG} / 脂肪 {per100.fatG} g）</span>
                           <button type="button" className="link-button text-xs" disabled={estimating || !item.name.trim()} onClick={() => estimate.mutate({ index, name: item.name.trim() })}>
                             {estimating ? "估算中…" : nameChanged ? "按新名称重新估算" : "重新估算营养"}
@@ -706,6 +776,11 @@ export function MealRecorder() {
               <Button type="button" variant="ghost" className="mt-2 w-full" onClick={addItem}><Plus size={15} />添加食物</Button>
               <div className="mt-3 flex items-center justify-between border-t border-[#e8ece5] pt-4 text-sm"><span>估算总热量</span><strong className="text-base">{analysis.totalKcal} kcal</strong></div>
               <div className="food-ingredient"><span>蛋白质 / 碳水 / 脂肪</span><span>{formatNutrition(analysis.nutrition.proteinG)} / {formatNutrition(analysis.nutrition.carbsG)} / {formatNutrition(analysis.nutrition.fatG)} g</span></div>
+              {analysis.foodDataVersion && analysis.nutritionSummary && (
+                <p className={`food-source-note ${analysis.nutritionSummary.foodTableItems > 0 ? "is-table" : "is-model"}`}>
+                  来源：{analysis.nutritionSummary.foodTableItems} 项按食物参考库换算，{analysis.nutritionSummary.modelEstimateItems} 项为 AI 估算 · 食物库 {analysis.foodDataVersion}
+                </p>
+              )}
               {analysis.uncertainty && <p className="range-note mt-3">误差说明：{analysis.uncertainty}</p>}
               <Button className="mt-4 w-full" disabled={confirmed || save.isPending || analysis.items.length === 0 || analysis.items.some((item) => !item.name.trim())} onClick={() => save.mutate()}>
                 {save.isPending ? "正在保存…" : confirmed ? <><Check size={16} />已确认并记录</> : "确认并记录"}
@@ -716,7 +791,7 @@ export function MealRecorder() {
         </section>
         <section className="info-panel">
           <h3>估算说明</h3>
-          <p>识别、份量和热量都是估算，会受拍摄角度、油量、隐藏配料影响。修改克数时，营养会按识别时的每克估算比例同步更新。确认前不会计入统计；如有食物过敏或特殊健康情况，请优先遵循专业建议。</p>
+          <p>识别、份量和热量都是估算，会受拍摄角度、油量、隐藏配料影响。名称命中食物参考库时，会按每 100g 数据换算并标出来源；未收录的项使用 AI 估算，会单独标注。修改克数时，营养按当前每 100g 数据同步更新。确认前不会计入统计；如有食物过敏或特殊健康情况，请优先遵循专业建议。</p>
         </section>
       </div>
     </div>

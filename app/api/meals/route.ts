@@ -3,9 +3,18 @@ import { z } from "zod";
 import { getPrisma } from "@/lib/prisma";
 import { addDemoMeal, chinaDayRange, isDemoMode, listDemoMeals } from "@/lib/demo-data";
 
+const mealItemSchema = z.object({
+  name: z.string().trim().min(1).max(80),
+  amountGrams: z.number().min(0).max(3000),
+  calories: z.number().min(0).max(5000),
+  foodId: z.string().max(60).optional(),
+  dataSource: z.enum(["food_table", "model_estimate", "manual"]).optional(),
+  matchedName: z.string().max(80).optional(),
+});
+
 const mealSchema = z.object({
   title: z.string().trim().min(1).max(100),
-  items: z.array(z.object({ name: z.string().trim().min(1).max(80), amountGrams: z.number().min(0).max(3000), calories: z.number().min(0).max(5000) })).min(1).max(30),
+  items: z.array(mealItemSchema).min(1).max(30),
   notes: z.string().max(1000).optional(),
   status: z.enum(["PENDING", "CONFIRMED", "REJECTED"]).optional(),
   mealType: z.enum(["BREAKFAST", "LUNCH", "DINNER", "SNACK", "OTHER"]).optional(),

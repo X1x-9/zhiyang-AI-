@@ -379,7 +379,7 @@ const sessionCatalog: Record<SpaceEnvironment, Record<SessionTone, SessionTempla
       { title: "全身循环", focus: "深蹲 · 俯卧撑 · 臀桥 · 原地走" },
     ],
     cardio: [
-      { title: "快走", focus: "能说短句的速度，20–30 分钟" },
+      { title: "快走", focus: "能说短句的速度，保持节奏" },
       { title: "轻快走", focus: "平地快走，最后 3 分钟放慢" },
       { title: "室内有氧", focus: "原地走 · 低冲击开合步" },
     ],

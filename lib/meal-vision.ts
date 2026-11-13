@@ -2,6 +2,7 @@ import { Output, generateText } from "ai";
 import { z } from "zod";
 import { getModel, getVisionModel } from "./ai-tools";
 import { searchKnowledge } from "./rag";
+import { FOOD_DATA_SOURCE, FOOD_DATA_VERSION, matchFood, scaleNutrition, sumNutrition } from "./food-data";
 
 const nutritionSchema = z.object({
   proteinG: z.number().min(0),
@@ -28,6 +29,23 @@ export const mealAnalysisSchema = z.object({
 });
 
 export type MealAnalysis = z.infer<typeof mealAnalysisSchema>;
+
+export type EnrichedMealItem = MealAnalysis["items"][number] & {
+  dataSource: "food_table" | "model_estimate";
+  foodId?: string;
+  matchedName?: string;
+  matchScore?: number;
+};
+
+export type EnrichedMealAnalysis = Omit<MealAnalysis, "items"> & {
+  items: EnrichedMealItem[];
+  foodDataVersion: string;
+  foodDataSource: string;
+  nutritionSummary: {
+    foodTableItems: number;
+    modelEstimateItems: number;
+  };
+};
 
 const SUPPORTED_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
 const MAX_BYTES = 4 * 1024 * 1024;
@@ -103,7 +121,49 @@ async function analyzeDescription(description: string): Promise<MealAnalysis> {
   return output;
 }
 
-export async function analyzeMeal(image: ParsedImage, note: string): Promise<MealAnalysis> {
+export async function analyzeMeal(image: ParsedImage, note: string): Promise<EnrichedMealAnalysis> {
   const description = await describeImage(image, note);
-  return analyzeDescription(description);
+  return enrichAnalysis(await analyzeDescription(description));
+}
+
+export function enrichAnalysis(analysis: MealAnalysis): EnrichedMealAnalysis {
+  let foodTableItems = 0;
+  const items: EnrichedMealItem[] = analysis.items.map((item) => {
+    const match = matchFood(item.name);
+    if (!match) return { ...item, dataSource: "model_estimate" };
+
+    foodTableItems += 1;
+    const scaled = scaleNutrition(match.food.per100, item.grams);
+    return {
+      ...item,
+      kcal: scaled.kcal,
+      nutrition: { proteinG: scaled.proteinG, carbsG: scaled.carbsG, fatG: scaled.fatG },
+      dataSource: "food_table",
+      foodId: match.food.id,
+      matchedName: match.food.name,
+      matchScore: Math.round(match.score * 100) / 100,
+    };
+  });
+
+  const totals = sumNutrition(items.map((item) => ({
+    kcal: item.kcal,
+    proteinG: item.nutrition.proteinG,
+    carbsG: item.nutrition.carbsG,
+    fatG: item.nutrition.fatG,
+  })));
+  const modelEstimateItems = items.length - foodTableItems;
+  const sourceNote = foodTableItems > 0
+    ? `其中 ${foodTableItems}/${items.length} 项按食物参考库换算${modelEstimateItems > 0 ? `，其余 ${modelEstimateItems} 项保留模型估算` : ""}。`
+    : "本轮没有匹配到食物参考库条目，营养为模型估算。";
+
+  return {
+    ...analysis,
+    items,
+    totalKcal: totals.kcal,
+    nutrition: { proteinG: totals.proteinG, carbsG: totals.carbsG, fatG: totals.fatG },
+    uncertainty: `${analysis.uncertainty}${analysis.uncertainty ? " " : ""}${sourceNote}`,
+    foodDataVersion: FOOD_DATA_VERSION,
+    foodDataSource: FOOD_DATA_SOURCE,
+    nutritionSummary: { foodTableItems, modelEstimateItems },
+  };
 }

@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getModel } from "@/lib/ai-tools";
 import { isDemoMode } from "@/lib/demo-data";
+import { FOOD_DATA_SOURCE, FOOD_DATA_VERSION, matchFood } from "@/lib/food-data";
 import { clientKey, rateLimit } from "@/lib/rate-limit";
 
 export const maxDuration = 60;
@@ -16,13 +17,30 @@ const nutritionSchema = z.object({
 
 export async function POST(request: Request) {
   if (process.env.NODE_ENV === "production" && !isDemoMode()) return NextResponse.json({ message: "请登录后使用营养估算。" }, { status: 401 });
-  if (!process.env.OPENAI_API_KEY) return NextResponse.json({ message: "营养估算服务暂不可用。" }, { status: 503 });
+  const parsed = input.safeParse(await request.json().catch(() => null));
+  if (!parsed.success) return NextResponse.json({ message: "请输入 1–80 字的食物名称。" }, { status: 400 });
+
+  const matched = matchFood(parsed.data.name);
+  if (matched) {
+    return NextResponse.json({
+      per100: matched.food.per100,
+      source: "food_table",
+      food: {
+        id: matched.food.id,
+        name: matched.food.name,
+        portionGrams: matched.food.portionGrams,
+        portionLabel: matched.food.portionLabel,
+        dataSource: FOOD_DATA_SOURCE,
+        dataVersion: FOOD_DATA_VERSION,
+      },
+    });
+  }
+
+  if (!process.env.OPENAI_API_KEY) return NextResponse.json({ message: "食物参考库没有匹配到这一项，当前环境也无法使用模型估算。" }, { status: 503 });
   const limited = rateLimit(clientKey(request, "estimate"), 20, 60_000);
   if (!limited.ok) {
     return NextResponse.json({ message: "估算请求有点频繁，请稍等片刻再试。" }, { status: 429, headers: { "Retry-After": String(limited.retryAfter) } });
   }
-  const parsed = input.safeParse(await request.json().catch(() => null));
-  if (!parsed.success) return NextResponse.json({ message: "请输入 1–80 字的食物名称。" }, { status: 400 });
   try {
     const { output } = await generateText({
       model: getModel(),
@@ -32,7 +50,7 @@ export async function POST(request: Request) {
       maxOutputTokens: 1200,
       abortSignal: AbortSignal.timeout(45000),
     });
-    return NextResponse.json({ per100: output });
+    return NextResponse.json({ per100: output, source: "model_estimate" });
   } catch {
     return NextResponse.json({ message: "营养估算失败，请稍后重试。" }, { status: 502 });
   }

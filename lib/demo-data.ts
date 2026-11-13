@@ -2,11 +2,19 @@ import type { DashboardData, WeightPoint } from "./dashboard";
 
 export type DemoMealType = "BREAKFAST" | "LUNCH" | "DINNER" | "SNACK" | "OTHER";
 export type DemoMealStatus = "PENDING" | "CONFIRMED" | "REJECTED";
+export type DemoMealItem = {
+  name: string;
+  amountGrams: number;
+  calories: number;
+  foodId?: string;
+  dataSource?: "food_table" | "model_estimate" | "manual";
+  matchedName?: string;
+};
 export type DemoMeal = {
   id: string;
   title: string;
   mealType: DemoMealType;
-  items: Array<{ name: string; amountGrams: number; calories: number }>;
+  items: DemoMealItem[];
   estimatedKcal: number;
   status: DemoMealStatus;
   eatenAt: string;
@@ -222,7 +230,7 @@ export function listDemoMeals() {
 export function addDemoMeal(input: {
   title: string;
   mealType?: DemoMealType;
-  items: Array<{ name: string; amountGrams: number; calories: number }>;
+  items: DemoMealItem[];
   notes?: string;
   status?: DemoMealStatus;
   eatenAt?: string;
@@ -248,7 +256,7 @@ export function updateDemoMeal(
     title?: string;
     mealType?: DemoMealType;
     status?: DemoMealStatus;
-    items?: Array<{ name: string; amountGrams: number; calories: number }>;
+    items?: DemoMealItem[];
     notes?: string;
   },
 ) {
