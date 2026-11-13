@@ -1,0 +1,723 @@
+"use client";
+
+import * as React from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Camera, Check, Loader2, Pencil, Plus, Sparkles, Trash2, X } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { useHealthStore } from "@/stores/health-store";
+
+type Nutrition = { proteinG: number; carbsG: number; fatG: number };
+type AnalysisItem = { name: string; grams: number; kcal: number; confidence: "high" | "medium" | "low"; nutrition: Nutrition; per100?: Nutrition & { kcal: number }; estimatedName?: string };
+type Analysis = {
+  dish: string;
+  items: AnalysisItem[];
+  totalKcal: number;
+  uncertainty: string;
+  nutrition: Nutrition;
+};
+
+type MealRecord = {
+  id: string;
+  title: string;
+  mealType: string;
+  items: Array<{ name: string; amountGrams?: number; calories?: number }>;
+  estimatedKcal: number | null;
+  status: string;
+  eatenAt: string;
+  notes: string;
+};
+
+const mealTypeLabel: Record<string, string> = {
+  BREAKFAST: "早餐",
+  LUNCH: "午餐",
+  DINNER: "晚餐",
+  SNACK: "加餐",
+  OTHER: "其他",
+};
+
+const confidenceLabel: Record<AnalysisItem["confidence"], string> = {
+  high: "较确定",
+  medium: "可能",
+  low: "不确定",
+};
+
+function SectionTitle({ title }: { title: string }) {
+  return <div className="section-title"><h2>{title}</h2></div>;
+}
+
+async function prepareImage(file: File): Promise<string> {
+  if (!file.type.startsWith("image/")) throw new Error("请上传图片文件。");
+  if (file.size > 30 * 1024 * 1024) throw new Error("原图超过 30MB，请选择较小的图片。");
+  const url = URL.createObjectURL(file);
+  try {
+    const image = new Image();
+    image.src = url;
+    await image.decode().catch(() => { throw new Error("无法读取图片，请转为 JPG、PNG 或 WebP 后重试。"); });
+    const scale = Math.min(1, 1600 / Math.max(image.naturalWidth, image.naturalHeight));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+    canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("浏览器无法处理图片，请更换浏览器重试。");
+    context.fillStyle = "white";
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.drawImage(image, 0, 0, canvas.width, canvas.height);
+    const data = canvas.toDataURL("image/jpeg", 0.82);
+    if (data.length > 4 * 1024 * 1024 * 4 / 3) throw new Error("压缩后图片仍过大，请裁剪后重试。");
+    return data;
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+type Per100 = { kcal: number; proteinG: number; carbsG: number; fatG: number };
+
+function sumNutrition(items: AnalysisItem[]): Nutrition {
+  return items.reduce(
+    (total, item) => ({
+      proteinG: total.proteinG + item.nutrition.proteinG,
+      carbsG: total.carbsG + item.nutrition.carbsG,
+      fatG: total.fatG + item.nutrition.fatG,
+    }),
+    { proteinG: 0, carbsG: 0, fatG: 0 },
+  );
+}
+
+function formatNutrition(value: number) {
+  return Number(value.toFixed(1));
+}
+
+function per100Of(item: AnalysisItem): Per100 {
+  if (item.per100) return item.per100;
+  const factor = item.grams > 0 ? 100 / item.grams : 0;
+  return {
+    kcal: Math.round(item.kcal * factor),
+    proteinG: formatNutrition(item.nutrition.proteinG * factor),
+    carbsG: formatNutrition(item.nutrition.carbsG * factor),
+    fatG: formatNutrition(item.nutrition.fatG * factor),
+  };
+}
+
+function applyGrams(item: AnalysisItem, grams: number): AnalysisItem {
+  const per100 = per100Of(item);
+  const ratio = grams / 100;
+  return {
+    ...item,
+    per100,
+    grams,
+    kcal: Math.round(per100.kcal * ratio),
+    nutrition: {
+      proteinG: formatNutrition(per100.proteinG * ratio),
+      carbsG: formatNutrition(per100.carbsG * ratio),
+      fatG: formatNutrition(per100.fatG * ratio),
+    },
+  };
+}
+
+function isoFromLocal(value: string) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? new Date().toISOString() : date.toISOString();
+}
+
+function guessMealType() {
+  const hour = new Date().getHours();
+  if (hour >= 5 && hour < 10) return "BREAKFAST";
+  if (hour >= 10 && hour < 15) return "LUNCH";
+  if (hour >= 15 && hour < 17) return "SNACK";
+  if (hour >= 17 && hour < 21) return "DINNER";
+  return "OTHER";
+}
+
+function demoHeaders(hasJsonBody = false) {
+  const headers: Record<string, string> = hasJsonBody ? { "Content-Type": "application/json" } : {};
+  if (useHealthStore.getState().demoData) headers["x-demo-mode"] = "true";
+  return headers;
+}
+
+function mealDisplayTitle(meal: MealRecord) {
+  const label = mealTypeLabel[meal.mealType] ?? "其他";
+  return meal.title.includes(label) ? meal.title : `${label} · ${meal.title}`;
+}
+
+function SameDayRecords() {
+  const queryClient = useQueryClient();
+  const setDemoData = useHealthStore((state) => state.setDemoData);
+  const [editingId, setEditingId] = React.useState<string | null>(null);
+  const [draft, setDraft] = React.useState<{ title: string; kcal: number; mealType: string }>({ title: "", kcal: 0, mealType: "OTHER" });
+
+  const mealsQuery = useQuery({
+    queryKey: ["meals"],
+    queryFn: async () => {
+      const response = await fetch("/api/meals");
+      if (!response.ok) throw new Error("未能载入今日记录。");
+      return (await response.json()) as { meals: MealRecord[]; demo: boolean; notice?: string };
+    },
+  });
+
+  React.useEffect(() => {
+    if (mealsQuery.data) setDemoData(mealsQuery.data.demo);
+  }, [mealsQuery.data, setDemoData]);
+
+  const invalidate = () => {
+    void queryClient.invalidateQueries({ queryKey: ["meals"] });
+    void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+  };
+
+  const update = useMutation({
+    mutationFn: async ({ id, title, mealType, status, items, notes }: { id: string; title?: string; mealType?: string; status?: string; items?: Array<{ name: string; amountGrams: number; calories: number }>; notes?: string }) => {
+      const response = await fetch(`/api/meals/${id}`, {
+        method: "PATCH",
+        headers: demoHeaders(true),
+        body: JSON.stringify({ ...(title !== undefined ? { title } : {}), ...(mealType !== undefined ? { mealType } : {}), ...(status !== undefined ? { status } : {}), ...(items !== undefined ? { items } : {}), ...(notes !== undefined ? { notes } : {}) }),
+      });
+      if (!response.ok) {
+        const data = (await response.json().catch(() => null)) as { message?: string } | null;
+        throw new Error(data?.message ?? "更新失败，请重试。");
+      }
+      return response.json();
+    },
+    onSuccess: () => { setEditingId(null); invalidate(); },
+  });
+
+  const remove = useMutation({
+    mutationFn: async (id: string) => {
+      const response = await fetch(`/api/meals/${id}`, { method: "DELETE", headers: demoHeaders() });
+      if (!response.ok) throw new Error("删除失败，请重试。");
+      return response.json();
+    },
+    onSuccess: invalidate,
+  });
+
+  if (mealsQuery.isPending) return <p className="mt-4 text-sm text-[#58685d]" role="status">正在载入今日记录…</p>;
+  if (mealsQuery.isError) return <p className="mt-4 text-sm text-red-800" role="alert">{(mealsQuery.error as Error).message}</p>;
+
+  const meals = mealsQuery.data?.meals ?? [];
+  const notice = mealsQuery.data?.notice ?? (mealsQuery.data?.demo ? "演示记录由所有访问者共享；新增、修改或删除只影响演示数据，请勿填写真实信息。" : null);
+
+  return (
+    <div className="mt-4">
+      {notice && <p className="demo-inline" role="note">{notice}</p>}
+      {meals.length === 0 && <p className="text-sm text-[#58685d]">今天还没有记录，拍一张照片或手动添加一餐吧。</p>}
+      {meals.map((meal) => {
+        const editing = editingId === meal.id;
+        return (
+          <div className="border-b border-[#e8ece5] py-3 last:border-b-0" key={meal.id}>
+            {editing ? (
+              <>
+                <div className="grid grid-cols-[minmax(0,1fr)_110px_36px] items-center gap-2">
+                  <label className="sr-only" htmlFor={`record-type-${meal.id}`}>餐次</label>
+                  <select id={`record-type-${meal.id}`} className="rounded-md border border-[#e7ece5] bg-white px-2 py-2 text-sm" value={draft.mealType} onChange={(event) => setDraft({ ...draft, mealType: event.target.value })} aria-label="餐次">
+                    <option value="BREAKFAST">早餐</option><option value="LUNCH">午餐</option><option value="DINNER">晚餐</option><option value="SNACK">加餐</option><option value="OTHER">其他</option>
+                  </select>
+                  <label className="sr-only" htmlFor={`record-title-${meal.id}`}>记录名称</label>
+                  <input id={`record-title-${meal.id}`} className="min-w-0 rounded-md border border-[#e7ece5] bg-white px-2 py-2 text-sm" value={draft.title} onChange={(event) => setDraft({ ...draft, title: event.target.value })} aria-label="记录名称" />
+                  <label className="sr-only" htmlFor={`record-kcal-${meal.id}`}>总热量</label>
+                  <div className="flex items-center gap-1">
+                    <input id={`record-kcal-${meal.id}`} className="w-full min-w-0 rounded-md border border-[#e7ece5] bg-white px-2 py-2 text-right text-sm" type="number" min="0" max="3000" value={draft.kcal} onChange={(event) => setDraft({ ...draft, kcal: Math.max(0, Math.min(3000, Number(event.target.value) || 0)) })} aria-label="总热量" />
+                    <span className="text-xs text-[#8a978d]">kcal</span>
+                  </div>
+                  <button type="button" className="rounded-md p-2.5 text-[#7b877e] hover:bg-[#f0f5ef]" aria-label="取消编辑" onClick={() => setEditingId(null)}><X size={15} /></button>
+                </div>
+                <div className="mt-2 flex gap-2">
+                  <Button
+                    className="flex-1"
+                    disabled={update.isPending || !draft.title.trim()}
+                    onClick={() => {
+                      const items = meal.items.map((item) => ({ name: item.name, amountGrams: item.amountGrams ?? 0, calories: item.calories ?? 0 }));
+                      const original = items.reduce((sum, item) => sum + item.calories, 0);
+                      const scale = original > 0 ? draft.kcal / original : 1;
+                      update.mutate({
+                        id: meal.id,
+                        title: draft.title.trim(),
+                        mealType: draft.mealType,
+                        notes: meal.notes,
+                        items: items.map((item) => ({ ...item, calories: Math.round(item.calories * scale) })),
+                      });
+                    }}
+                  >
+                    {update.isPending ? "保存中…" : <><Check size={15} />保存</>}
+                  </Button>
+                  <Button variant="secondary" onClick={() => setEditingId(null)}>取消</Button>
+                </div>
+                {update.isError && <p className="mt-2 text-xs text-red-800" role="alert">{update.error.message}</p>}
+              </>
+            ) : (
+              <>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="min-w-0 truncate text-sm text-[#3c4a41]">{mealDisplayTitle(meal)}</span>
+                  <span className="flex items-center gap-1 whitespace-nowrap text-sm text-[#58685d]">
+                    {meal.status === "PENDING" && <span className="meal-pending">待确认</span>}
+                    {meal.status === "PENDING" ? "约 " : ""}{meal.estimatedKcal ?? 0} kcal
+                    <button type="button" className="rounded-md p-2.5 text-[#84908a] hover:bg-[#f0f5ef]" aria-label={`编辑${meal.title}`} onClick={() => { setEditingId(meal.id); setDraft({ title: meal.title, kcal: meal.estimatedKcal ?? 0, mealType: meal.mealType ?? "OTHER" }); }}><Pencil size={14} /></button>
+                    <button type="button" className="rounded-md p-2.5 text-[#9b7068] hover:bg-[#f7eeeb]" aria-label={`删除${meal.title}`} onClick={() => remove.mutate(meal.id)}><Trash2 size={14} /></button>
+                  </span>
+                </div>
+                {meal.status === "PENDING" && (
+                  <div className="meal-pending-row">
+                    <span>识别结果尚未计入今天的热量统计。</span>
+                    <Button disabled={update.isPending} onClick={() => update.mutate({ id: meal.id, status: "CONFIRMED" })}>
+                      {update.isPending ? "确认中…" : <><Check size={14} />确认记录</>}
+                    </Button>
+                  </div>
+                )}
+                <p className="mt-1 text-xs text-[#84908a]">
+                  {new Date(meal.eatenAt).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}
+                  {meal.items.length > 0 ? ` · ${meal.items.map((item) => `${item.name}${item.amountGrams ? ` ${item.amountGrams}g` : ""}`).join(" · ")}` : ""}
+                </p>
+                {remove.isError && <p className="mt-1 text-xs text-red-800" role="alert">{remove.error.message}</p>}
+              </>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function ManualEntry({ onSaved }: { onSaved: () => void }) {
+  const [open, setOpen] = React.useState(false);
+  const [name, setName] = React.useState("");
+  const [mealType, setMealType] = React.useState("OTHER");
+  const [eatenAt, setEatenAt] = React.useState(() => { const now = new Date(); now.setMinutes(now.getMinutes() - now.getTimezoneOffset()); return now.toISOString().slice(0, 16); });
+  const [grams, setGrams] = React.useState("");
+  const [kcal, setKcal] = React.useState("");
+
+  const create = useMutation({
+    mutationFn: async () => {
+      const response = await fetch("/api/meals", {
+        method: "POST",
+        headers: demoHeaders(true),
+        body: JSON.stringify({
+          title: name.trim(),
+          mealType,
+          eatenAt: isoFromLocal(eatenAt),
+          items: [{ name: name.trim(), amountGrams: Number(grams) || 0, calories: Number(kcal) || 0 }],
+          notes: "手动添加",
+          status: "CONFIRMED",
+        }),
+      });
+      const data = (await response.json().catch(() => null)) as { message?: string; error?: string } | null;
+      if (!response.ok) {
+        throw new Error(data?.message ?? (data?.error === "AUTH_REQUIRED" ? "请登录后再记录。" : data?.error === "DATABASE_UNAVAILABLE" ? "数据服务暂时不可用，请稍后重试；如果多次失败，请刷新页面。" : "记录失败，请重试。"));
+      }
+      return data;
+    },
+    onSuccess: () => {
+      setName(""); setGrams(""); setKcal("");
+      onSaved();
+    },
+  });
+
+  const estimateCalories = useMutation({
+    mutationFn: async () => {
+      const response = await fetch("/api/meals/estimate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: name.trim() }),
+      });
+      const data = (await response.json().catch(() => null)) as { per100?: Per100; message?: string } | null;
+      if (!response.ok || !data?.per100) throw new Error(data?.message ?? "热量估算失败，请重试。");
+      return data.per100;
+    },
+    onSuccess: (per100) => {
+      const g = Number(grams) || 100;
+      const value = Math.round(per100.kcal * g / 100);
+      setKcal(String(value));
+    },
+  });
+
+  const valid = name.trim().length > 0 && (Number(grams) > 0 || Number(kcal) > 0);
+
+  return (
+    <section className="surface meal-card manual-entry">
+      <SectionTitle title="手动添加一餐" />
+      {!open ? (
+        <Button type="button" variant="secondary" className="mt-4 w-full" onClick={() => setOpen(true)}><Plus size={15} />手动添加饮食记录</Button>
+      ) : (
+        <>
+          <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div>
+              <label className="block text-sm font-medium" htmlFor="manual-mealtype">餐次</label>
+              <select id="manual-mealtype" className="mt-1 w-full rounded-md border border-[#e7ece5] bg-white px-2 py-2 text-sm" value={mealType} onChange={(event) => setMealType(event.target.value)}>
+                <option value="BREAKFAST">早餐</option>
+                <option value="LUNCH">午餐</option>
+                <option value="DINNER">晚餐</option>
+                <option value="SNACK">加餐 / 零食</option>
+                <option value="OTHER">其他</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium" htmlFor="manual-name">食物或餐食名称</label>
+              <input id="manual-name" className="mt-1 w-full rounded-md border border-[#e7ece5] bg-white px-2 py-2 text-sm" value={name} onChange={(event) => setName(event.target.value)} placeholder="例如：清炒时蔬" maxLength={80} />
+            </div>
+            <div>
+              <label className="block text-sm font-medium" htmlFor="manual-mealtime">用餐时间</label>
+              <input id="manual-mealtime" className="mt-1 w-full rounded-md border border-[#e7ece5] bg-white px-2 py-2 text-sm" type="datetime-local" value={eatenAt} onChange={(event) => setEatenAt(event.target.value)} />
+            </div>
+            <div>
+              <label className="block text-sm font-medium" htmlFor="manual-grams">份量 (g)</label>
+              <input id="manual-grams" className="mt-1 w-full rounded-md border border-[#e7ece5] bg-white px-2 py-2 text-right text-sm" type="number" min="0" max="3000" value={grams} onChange={(event) => setGrams(event.target.value)} placeholder="0" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium" htmlFor="manual-kcal">热量 (kcal)</label>
+              <div className="mt-1 flex items-center gap-2">
+                <input id="manual-kcal" className="w-full min-w-0 rounded-md border border-[#e7ece5] bg-white px-2 py-2 text-right text-sm" type="number" min="0" max="5000" value={kcal} onChange={(event) => setKcal(event.target.value)} placeholder="0" />
+                <Button type="button" variant="secondary" className="whitespace-nowrap" disabled={estimateCalories.isPending || !name.trim()} onClick={() => estimateCalories.mutate()}>
+                  {estimateCalories.isPending ? <Loader2 size={15} className="animate-spin" /> : <Sparkles size={15} />}AI 估算
+                </Button>
+              </div>
+            </div>
+          </div>
+          <p className="mt-2 text-xs text-[#84908a]">份量和热量至少填一项；填好名称和份量后可点「AI 估算」自动算热量，也可手动填写。</p>
+          {estimateCalories.isError && <p className="mt-2 text-xs text-red-800" role="alert">{estimateCalories.error.message}</p>}
+          <div className="mt-3 flex gap-2">
+            <Button className="flex-1" disabled={!valid || create.isPending} onClick={() => create.mutate()}>{create.isPending ? "正在保存…" : <><Check size={15} />保存记录</>}</Button>
+            <Button variant="secondary" onClick={() => { setOpen(false); setName(""); setGrams(""); setKcal(""); }}>收起</Button>
+          </div>
+          {create.isError && <p className="mt-2 text-sm text-red-800" role="alert">{create.error.message}</p>}
+        </>
+      )}
+    </section>
+  );
+}
+
+export function MealRecorder() {
+  const note = useHealthStore((s) => s.mealNote);
+  const setNote = useHealthStore((s) => s.setMealNote);
+  const confirmed = useHealthStore((s) => s.confirmed);
+  const confirm = useHealthStore((s) => s.confirmMeal);
+  const queryClient = useQueryClient();
+
+  const [preview, setPreview] = React.useState<string | null>(null);
+  const [analysis, setAnalysis] = React.useState<Analysis | null>(null);
+  const [mealType, setMealType] = React.useState(guessMealType);
+  const [eatenAt, setEatenAt] = React.useState(() => { const now = new Date(); now.setMinutes(now.getMinutes() - now.getTimezoneOffset()); return now.toISOString().slice(0, 16); });
+  const [error, setError] = React.useState<string | null>(null);
+  const [preparing, setPreparing] = React.useState(false);
+  const [dragging, setDragging] = React.useState(false);
+  const fileInput = React.useRef<HTMLInputElement>(null);
+  const cameraInput = React.useRef<HTMLInputElement>(null);
+  const processing = React.useRef(false);
+
+  const invalidateAll = () => {
+    void queryClient.invalidateQueries({ queryKey: ["meals"] });
+    void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+  };
+
+  const analyze = useMutation({
+    mutationFn: async (payload: { image: string; note: string }) => {
+      const response = await fetch("/api/meals/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = (await response.json().catch(() => null)) as { analysis?: Analysis; message?: string; error?: string } | null;
+      if (!response.ok || !data?.analysis) throw new Error(data?.message ?? "识别失败，请重试。");
+      return data.analysis;
+    },
+    onSuccess: (data) => {
+      setAnalysis(data);
+      useHealthStore.getState().resetMealConfirmation();
+      setError(null);
+    },
+    onError: (err) => setError(err instanceof Error ? err.message : "识别失败，请重试。"),
+  });
+
+  const save = useMutation({
+    mutationFn: async () => {
+      if (!analysis) throw new Error("还没有可保存的识别结果。");
+      const response = await fetch("/api/meals", {
+        method: "POST",
+        headers: demoHeaders(true),
+        body: JSON.stringify({
+          title: analysis.dish || "一餐记录",
+          mealType,
+          eatenAt: isoFromLocal(eatenAt),
+          items: analysis.items.map((item) => ({ name: item.name, amountGrams: item.grams, calories: item.kcal })),
+          notes: note,
+          status: "CONFIRMED",
+        }),
+      });
+      const data = (await response.json().catch(() => null)) as { message?: string; error?: string } | null;
+      if (!response.ok) {
+        throw new Error(
+          data?.message ?? (data?.error === "AUTH_REQUIRED"
+            ? "请登录后再确认餐食。"
+            : data?.error === "DATABASE_UNAVAILABLE"
+              ? "数据服务暂时不可用，请稍后重试；如果多次失败，请刷新页面。"
+              : "餐食没有保存成功，请稍后重试。"),
+        );
+      }
+      return data;
+    },
+    onSuccess: () => {
+      confirm();
+      invalidateAll();
+    },
+  });
+
+  async function handleFile(file?: File) {
+    if (!file || processing.current || analyze.isPending || save.isPending) return;
+    processing.current = true;
+    setPreparing(true);
+    setError(null);
+    setAnalysis(null);
+    try {
+      const dataUrl = await prepareImage(file);
+      setPreview(dataUrl);
+      analyze.mutate({ image: dataUrl, note });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "处理图片失败，请重试。");
+    } finally {
+      setPreparing(false);
+      processing.current = false;
+    }
+  }
+
+  function clearPhoto() {
+    setPreview(null);
+    setAnalysis(null);
+    setError(null);
+    useHealthStore.getState().resetMealConfirmation();
+    save.reset();
+    if (fileInput.current) fileInput.current.value = "";
+    if (cameraInput.current) cameraInput.current.value = "";
+  }
+
+  function handleDrop(event: React.DragEvent<HTMLDivElement>) {
+    event.preventDefault();
+    setDragging(false);
+    void handleFile(event.dataTransfer.files?.[0]);
+  }
+
+  function handlePaste(event: React.ClipboardEvent<HTMLDivElement>) {
+    const file = Array.from(event.clipboardData.files).find((item) => item.type.startsWith("image/"));
+    if (file) {
+      event.preventDefault();
+      void handleFile(file);
+    }
+  }
+
+  function updateItem(index: number, patch: Partial<AnalysisItem>) {
+    setAnalysis((current) => {
+      if (!current) return current;
+      const items = current.items.map((item, itemIndex) => {
+        if (itemIndex !== index) return item;
+        if (patch.grams !== undefined) {
+          return applyGrams({ ...item, ...patch, grams: item.grams }, patch.grams);
+        }
+        return { ...item, ...patch };
+      });
+      return {
+        ...current,
+        items,
+        totalKcal: items.reduce((total, item) => total + item.kcal, 0),
+        nutrition: sumNutrition(items),
+      };
+    });
+    useHealthStore.getState().resetMealConfirmation();
+    save.reset();
+  }
+
+  const estimate = useMutation({
+    mutationFn: async ({ index, name }: { index: number; name: string }) => {
+      const response = await fetch("/api/meals/estimate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      const data = (await response.json().catch(() => null)) as { per100?: Per100; message?: string } | null;
+      if (!response.ok || !data?.per100) throw new Error(data?.message ?? "营养估算失败，请重试。");
+      return { index, name, per100: data.per100 };
+    },
+    onSuccess: ({ index, name, per100 }) => {
+      setAnalysis((current) => {
+        if (!current) return current;
+        const items = current.items.map((item, itemIndex) => itemIndex === index ? applyGrams({ ...item, name, per100, estimatedName: name }, item.grams) : item);
+        return { ...current, items, totalKcal: items.reduce((total, item) => total + item.kcal, 0), nutrition: sumNutrition(items) };
+      });
+      useHealthStore.getState().resetMealConfirmation();
+      save.reset();
+    },
+  });
+
+  function addItem() {
+    const blank: AnalysisItem = {
+      name: "新食物",
+      grams: 100,
+      kcal: 0,
+      confidence: "low",
+      nutrition: { proteinG: 0, carbsG: 0, fatG: 0 },
+    };
+    setAnalysis((current) => current ? {
+      ...current,
+      items: [...current.items, blank],
+      totalKcal: current.totalKcal + blank.kcal,
+      nutrition: sumNutrition([...current.items, blank]),
+    } : current);
+    useHealthStore.getState().resetMealConfirmation();
+  }
+
+  function removeItem(index: number) {
+    setAnalysis((current) => {
+      if (!current) return current;
+      const items = current.items.filter((_, itemIndex) => itemIndex !== index);
+      return { ...current, items, totalKcal: items.reduce((total, item) => total + item.kcal, 0), nutrition: sumNutrition(items) };
+    });
+    useHealthStore.getState().resetMealConfirmation();
+    save.reset();
+  }
+
+  return (
+    <div className="food-layout">
+        <section className="surface meal-card food-upload">
+          <SectionTitle title="拍照记录" />
+          <div
+            className={`upload-zone ${dragging ? "dragging" : ""}`}
+            role="button"
+            tabIndex={0}
+            aria-label="选择、拍摄或拖放餐食照片"
+            onClick={() => { if (!preparing && !analyze.isPending && !save.isPending) fileInput.current?.click(); }}
+            onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); if (!preparing && !analyze.isPending && !save.isPending) fileInput.current?.click(); } }}
+            onDragOver={(event) => { event.preventDefault(); setDragging(true); }}
+            onDragLeave={() => setDragging(false)}
+            onDrop={handleDrop}
+            onPaste={handlePaste}
+          >
+            {preview ? (
+              <span className="block">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={preview} alt="已选择的餐食照片预览" className="mx-auto max-h-52 w-full rounded-xl object-contain" />
+                <span className="mt-3 block text-sm text-[#718075]">点击图片或“更换照片”，可以换一张重新识别。</span>
+                <span className="upload-buttons mt-3 inline-flex">
+                  <button
+                    type="button"
+                    className="subtle-button inline-flex items-center gap-2"
+                    disabled={preparing || analyze.isPending || save.isPending}
+                    onClick={(event) => { event.stopPropagation(); fileInput.current?.click(); }}
+                  >
+                    <Camera size={15} />{preparing || analyze.isPending ? "正在识别…" : "更换照片"}
+                  </button>
+                  <button
+                    type="button"
+                    className="subtle-button inline-flex items-center gap-2"
+                    disabled={preparing || analyze.isPending || save.isPending}
+                    onClick={(event) => { event.stopPropagation(); clearPhoto(); }}
+                  >
+                    移除照片
+                  </button>
+                </span>
+              </span>
+            ) : (
+              <span>
+                <Camera size={25} />
+                <strong className="mt-3 block">拍一张，或把照片拖到这里</strong>
+                <span className="mt-2 block text-sm text-[#718075]">也可以点击选择图片或粘贴截图，AI 会分析食物与营养</span>
+                <span className="upload-buttons mt-4 inline-flex">
+                  <button type="button" className="subtle-button inline-flex items-center gap-2" onClick={(event) => { event.stopPropagation(); cameraInput.current?.click(); }}><Camera size={15} />打开相机拍摄</button>
+                  <button type="button" className="subtle-button inline-flex items-center gap-2" onClick={(event) => { event.stopPropagation(); fileInput.current?.click(); }}>选择照片</button>
+                </span>
+              </span>
+            )}
+          </div>
+          <input ref={fileInput} className="sr-only" type="file" accept="image/*" aria-label="选择餐食照片" onChange={(event) => { void handleFile(event.target.files?.[0]); event.target.value = ""; }} />
+          <input ref={cameraInput} className="sr-only" type="file" accept="image/*" capture="environment" aria-label="拍摄餐食照片" onChange={(event) => { void handleFile(event.target.files?.[0]); event.target.value = ""; }} />
+          {(preparing || analyze.isPending) && <p className="mt-3 flex items-center gap-2 text-sm text-[#58685d]" role="status"><Loader2 size={15} className="animate-spin" />{preparing ? "正在压缩照片…" : "正在识别与分析…"}</p>}
+          <label className="mt-4 block text-sm font-medium" htmlFor="meal-note">餐食补充说明（可选）</label>
+          <textarea id="meal-note" className="meal-note" value={note} onChange={(event) => setNote(event.target.value)} placeholder="例如：米饭只有半碗，鸡胸肉是煎的，少油…" />
+          {preview && (
+            <Button className="mt-3 w-full" variant="secondary" disabled={preparing || analyze.isPending} onClick={() => analyze.mutate({ image: preview, note })}>
+              {preparing || analyze.isPending ? <><Loader2 size={16} className="animate-spin" />正在识别…</> : <><Sparkles size={16} />重新识别这张照片</>}
+            </Button>
+          )}
+        </section>
+        <ManualEntry onSaved={invalidateAll} />
+        <section className="surface meal-timeline">
+          <SectionTitle title="今日记录" />
+          <SameDayRecords />
+        </section>
+
+      <div className="right-stack">
+        <section className="surface food-result">
+          <SectionTitle title="AI 的营养分析" />
+          {analyze.isPending && <p className="mt-4 flex items-center gap-2 text-sm text-[#58685d]"><Loader2 size={15} className="animate-spin" />正在分析照片中的食物与份量…</p>}
+          {error && <p className="mt-4 text-sm text-red-800" role="alert">{error}</p>}
+          {!analyze.isPending && !analysis && !error && <p className="mt-4 text-sm text-[#58685d]">上传一张照片后，这里会显示识别出的食物、份量和估算营养。</p>}
+          {analysis && (
+            <>
+              <label className="mt-4 block text-sm font-medium" htmlFor="dish-title">餐食名称</label>
+              <input
+                id="dish-title"
+                className="meal-note h-11 resize-none"
+                value={analysis.dish}
+                onChange={(event) => {
+                  setAnalysis({ ...analysis, dish: event.target.value });
+                  useHealthStore.getState().resetMealConfirmation();
+                  save.reset();
+                }}
+              />
+              <div className="meal-meta-row">
+                <label htmlFor="dish-mealtype">
+                  <span>餐次</span>
+                  <select id="dish-mealtype" value={mealType} onChange={(event) => setMealType(event.target.value)}>
+                    <option value="BREAKFAST">早餐</option>
+                    <option value="LUNCH">午餐</option>
+                    <option value="DINNER">晚餐</option>
+                    <option value="SNACK">加餐</option>
+                    <option value="OTHER">其他</option>
+                  </select>
+                </label>
+                <label htmlFor="dish-eatenat">
+                  <span>用餐时间</span>
+                  <input id="dish-eatenat" type="datetime-local" value={eatenAt} onChange={(event) => setEatenAt(event.target.value)} />
+                </label>
+              </div>
+              {analysis.items.length === 0 ? (
+                <p className="mt-2 text-sm text-[#58685d]">没有识别出明确的食物，请换一张更清晰、光线更好的照片，或手动补充食物。</p>
+              ) : (
+                <div className="mt-2">
+                  {analysis.items.map((item, index) => {
+                    const per100 = per100Of(item);
+                    const nameChanged = item.estimatedName !== undefined && item.estimatedName !== item.name.trim();
+                    const estimating = estimate.isPending && estimate.variables?.index === index;
+                    return (
+                      <div className="border-b border-[#e8ece5] py-3" key={index}>
+                        <div className="grid grid-cols-[minmax(0,1fr)_90px_64px_36px] items-center gap-2">
+                          <label className="sr-only" htmlFor={`food-name-${index}`}>食物名称</label>
+                          <input id={`food-name-${index}`} className="min-w-0 rounded-md border border-[#e7ece5] bg-white px-2 py-2 text-sm" value={item.name} onChange={(event) => updateItem(index, { name: event.target.value })} aria-label={`第 ${index + 1} 项食物名称`} />
+                          <label className="sr-only" htmlFor={`food-grams-${index}`}>克数</label>
+                          <div className="flex items-center gap-1"><input id={`food-grams-${index}`} className="w-full min-w-0 rounded-md border border-[#e7ece5] bg-white px-2 py-2 text-right text-sm" type="number" min="0" max="3000" step="1" value={item.grams} onChange={(event) => updateItem(index, { grams: Math.max(0, Math.min(3000, Number(event.target.value) || 0)) })} aria-label={`${item.name}克数`} /><span className="text-xs text-[#8a978d]">g</span></div>
+                          <span className="text-right text-xs text-[#58685d]">{item.kcal} kcal</span>
+                          <button type="button" className="rounded-md p-2.5 text-[#9b7068] hover:bg-[#f7eeeb]" aria-label={`删除${item.name}`} onClick={() => removeItem(index)}><Trash2 size={15} /></button>
+                        </div>
+                        <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-[#84908a]">
+                          <span>{confidenceLabel[item.confidence]} · 每 100g 约 {per100.kcal} kcal（蛋白 {per100.proteinG} / 碳水 {per100.carbsG} / 脂肪 {per100.fatG} g）</span>
+                          <button type="button" className="link-button text-xs" disabled={estimating || !item.name.trim()} onClick={() => estimate.mutate({ index, name: item.name.trim() })}>
+                            {estimating ? "估算中…" : nameChanged ? "按新名称重新估算" : "重新估算营养"}
+                          </button>
+                        </div>
+                        {estimate.isError && estimate.variables?.index === index && <p className="mt-1 text-xs text-red-800" role="alert">{estimate.error.message}</p>}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              <Button type="button" variant="ghost" className="mt-2 w-full" onClick={addItem}><Plus size={15} />添加食物</Button>
+              <div className="mt-3 flex items-center justify-between border-t border-[#e8ece5] pt-4 text-sm"><span>估算总热量</span><strong className="text-base">{analysis.totalKcal} kcal</strong></div>
+              <div className="food-ingredient"><span>蛋白质 / 碳水 / 脂肪</span><span>{formatNutrition(analysis.nutrition.proteinG)} / {formatNutrition(analysis.nutrition.carbsG)} / {formatNutrition(analysis.nutrition.fatG)} g</span></div>
+              {analysis.uncertainty && <p className="range-note mt-3">误差说明：{analysis.uncertainty}</p>}
+              <Button className="mt-4 w-full" disabled={confirmed || save.isPending || analysis.items.length === 0 || analysis.items.some((item) => !item.name.trim())} onClick={() => save.mutate()}>
+                {save.isPending ? "正在保存…" : confirmed ? <><Check size={16} />已确认并记录</> : "确认并记录"}
+              </Button>
+              {save.isError && <p className="mt-3 text-sm text-red-800" role="alert">{save.error.message}</p>}
+            </>
+          )}
+        </section>
+        <section className="info-panel">
+          <h3>估算说明</h3>
+          <p>识别、份量和热量都是估算，会受拍摄角度、油量、隐藏配料影响。修改克数时，营养会按识别时的每克估算比例同步更新。确认前不会计入统计；如有食物过敏或特殊健康情况，请优先遵循专业建议。</p>
+        </section>
+      </div>
+    </div>
+  );
+}
