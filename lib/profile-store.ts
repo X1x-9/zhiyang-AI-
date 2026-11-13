@@ -37,6 +37,7 @@ export async function clearProfile(identity: Identity): Promise<void> {
   const prisma = getPrisma();
   await prisma.$transaction([
     prisma.planVersion.deleteMany({ where: { profileId: identity.profileId } }),
+    prisma.planAdjustment.deleteMany({ where: { profileId: identity.profileId } }),
     prisma.healthProfile.update({
       where: { id: identity.profileId },
       data: {

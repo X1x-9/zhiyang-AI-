@@ -41,15 +41,11 @@ export default function HeroAccordion({
   const timelineRef = useRef<gsap.core.Timeline | null>(null);
   const firstRunRef = useRef(true);
   const interactedRef = useRef(false);
-  const [active, setActive] = useState(() =>
+  const [requested, setActive] = useState(() =>
     Math.min(Math.max(defaultIndex, 0), Math.max(count - 1, 0))
   );
+  const active = Math.min(Math.max(requested, 0), Math.max(count - 1, 0));
   const [mediaSize, setMediaSize] = useState(320);
-
-  useEffect(() => {
-    if (count === 0) return;
-    setActive((current) => Math.min(current, count - 1));
-  }, [count]);
 
   useEffect(() => {
     const root = rootRef.current;

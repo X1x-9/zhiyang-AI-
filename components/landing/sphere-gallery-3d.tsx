@@ -893,7 +893,7 @@ export default function SphereGallery3D(props: SphereGallery3DProps) {
                 l.texture = null
             })
         }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
+         
     }, [mediaKey])
 
     /* ------------------------------------------------------------ GL setup */
@@ -1815,7 +1815,7 @@ export default function SphereGallery3D(props: SphereGallery3DProps) {
             // canvas, so a StrictMode remount would reuse a force-lost one
         }
         // built once — every live input is read from `live.current`
-        // eslint-disable-next-line react-hooks/exhaustive-deps
+         
     }, [])
 
     /* -------------------------------------------------------------- render */

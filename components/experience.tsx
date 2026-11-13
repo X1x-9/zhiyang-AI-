@@ -106,12 +106,15 @@ export function HealthTipsCarousel() {
                 key={tip.title}
                 style={{ transform: `rotateY(${index * angle}deg) translateZ(var(--tip-radius))` }}
               >
-                <div className="tip-top">
-                  <span className="tip-icon"><Icon size={20} strokeWidth={2} /></span>
-                  <span className="tip-tag">{tip.tag}</span>
+                <div className="tip-face tip-face--front">
+                  <div className="tip-top">
+                    <span className="tip-icon"><Icon size={20} strokeWidth={2} /></span>
+                    <span className="tip-tag">{tip.tag}</span>
+                  </div>
+                  <h3>{tip.title}</h3>
+                  <p>{tip.body}</p>
                 </div>
-                <h3>{tip.title}</h3>
-                <p>{tip.body}</p>
+                <div className="tip-face tip-face--back" aria-hidden="true" />
               </article>
             );
           })}
