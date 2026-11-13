@@ -21,6 +21,7 @@ import {
   Wind,
 } from "lucide-react";
 import { Reveal } from "@/components/experience";
+import { GlitchButton } from "@/components/glitch-button";
 import type { DashboardData } from "@/lib/dashboard";
 import { useHealthStore } from "@/stores/health-store";
 
@@ -669,7 +670,7 @@ function HonestyPanel() {
           <p>它只展示结构，没有根据你的真实记录自动生成，也不会悄悄改变目标。目标范围需要结合身高、体重、活动量和医生建议确定；这里不做个体医疗营养处方。</p>
         </div>
         <div className="pp-dark-actions">
-          <button type="button" className="pp-cta" onClick={() => setPage("coach")}>和健康搭子讨论 <ArrowRight size={16} aria-hidden="true" /></button>
+          <GlitchButton tone="cream" className="pp-dark-glitch" onClick={() => setPage("coach")}>和健康搭子讨论 <ArrowRight size={16} aria-hidden="true" /></GlitchButton>
           <button type="button" className="pp-cta-ghost" onClick={() => setPage("food")}>回到餐食记录</button>
         </div>
       </section>
@@ -904,7 +905,7 @@ function SafetyPanel() {
           </div>
         </div>
         <div className="pp-dark-actions">
-          <button type="button" className="pp-cta" onClick={() => setPage("coach")}>和健康搭子聊聊 <ArrowRight size={16} aria-hidden="true" /></button>
+          <GlitchButton tone="cream" className="pp-dark-glitch" onClick={() => setPage("coach")}>和健康搭子聊聊 <ArrowRight size={16} aria-hidden="true" /></GlitchButton>
           <span className="pp-dark-foot"><Check size={13} aria-hidden="true" /> 一般活动建议，不替代医疗或康复指导</span>
         </div>
       </section>

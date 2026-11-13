@@ -8,28 +8,22 @@ import { Button } from "@/components/ui/button";
 import { DashboardHero } from "@/components/dashboard-hero";
 import { BackToTop, FloatingCompanion, GrowingLoader, HealthTipsCarousel, Reveal, ScrollProgress } from "@/components/experience";
 import { MealRecorder } from "@/components/meal-recorder";
+import { MySpace } from "@/components/my-space";
 import { DietPlan, ExercisePlan, PlanSwitcher } from "@/components/plan-experience";
+import { SpaceCard } from "@/components/space-card";
 import { getDashboard, type DashboardData, type WeightPoint } from "@/lib/dashboard";
+import { createDemoSpaceProfile, createEmptySpaceProfile, type SpaceProfile } from "@/lib/space";
 import { useHealthStore } from "@/stores/health-store";
 
 const navigation = [
   { id: "dashboard", label: "今日概览", short: "今天", icon: LayoutDashboard },
+  { id: "profile", label: "我的空间", short: "我的", icon: UserRound },
   { id: "food", label: "餐食记录", short: "记录", icon: Utensils },
   { id: "plans", label: "饮食计划", short: "计划", icon: Salad },
   { id: "exercise", label: "运动计划", short: "运动", icon: Dumbbell, mobileHidden: true },
   { id: "coach", label: "AI 健康助手", short: "助手", icon: MessageCircle },
   { id: "review", label: "每周复盘", short: "复盘", icon: ChartNoAxesCombined },
 ] as const;
-
-const demoProfile: Array<[string, string]> = [
-  ["当前目标", "温和减脂 · 建立力量"],
-  ["每周训练", "3 次 · 每次约 25 分钟"],
-  ["训练环境", "居家 · 无器械"],
-  ["饮食偏好", "外食友好 · 少做饭"],
-  ["饮食禁忌", "避免花生"],
-  ["计划强度", "温和、可持续"],
-  ["记录范围", "饮食 · 饮水 · 体重"],
-];
 
 function SectionTitle({ title, action }: { title: string; action?: React.ReactNode }) {
   return <div className="section-title"><h2>{title}</h2>{action}</div>;
@@ -126,6 +120,13 @@ function Dashboard() {
   const water = data.waterMl + waterAdded;
   const waterPercent = data.waterGoal > 0 ? Math.min(100, (water / data.waterGoal) * 100) : 0;
   const macros = data.macros;
+  const revealHydration = () => {
+    const target = document.getElementById("hydration-card");
+    if (!target) return;
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    target.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "center" });
+    target.focus({ preventScroll: true });
+  };
 
   return <div className="app-content">
     <DashboardHero
@@ -134,6 +135,8 @@ function Dashboard() {
       percent={percent}
       onRecord={() => setPage("food")}
       onProfile={() => setPage("profile")}
+      onNavigate={setPage}
+      onHydration={revealHydration}
     />
 
     {data.demo && <DemoNotice notice={data.notice} />}
@@ -251,8 +254,8 @@ function Dashboard() {
           )}
         </section>
 
-        <section className="surface hydration-card">
-          <div className="section-title"><h2>喝水也算照顾自己</h2><span className="goal-tag">{water.toLocaleString("zh-CN")} / {data.waterGoal.toLocaleString("zh-CN")} ml</span></div>
+        <section className="surface hydration-card" id="hydration-card" tabIndex={-1} aria-labelledby="hydration-title">
+          <div className="section-title"><h2 id="hydration-title">喝水也算照顾自己</h2><span className="goal-tag">{water.toLocaleString("zh-CN")} / {data.waterGoal.toLocaleString("zh-CN")} ml</span></div>
           <div className="hydration-row">
             <span className="water-icon"><Droplets size={20} /></span>
             <div className="water-detail"><strong>每一杯都算数</strong><small>{waterAdded > 0 ? `本次已加 ${waterAdded} ml` : "今天已记录"}</small></div>
@@ -291,21 +294,6 @@ function ReviewPanel({ data, loading }: { data?: DashboardData; loading: boolean
       <Button className="mt-2 w-full" variant="secondary" onClick={() => useHealthStore.getState().setPage("coach")}>去聊聊 <ChevronRight size={15} /></Button>
     </section>
   </div>;
-}
-
-function ProfilePanel({ data, loading }: { data?: DashboardData; loading: boolean }) {
-  if (loading) return <div className="empty-note" role="status">正在载入健康画像…</div>;
-  const demo = data?.demo ?? false;
-  const fields: Array<[string, string]> = demo
-    ? [["称呼", data?.displayName ?? "林同学"], ...demoProfile]
-    : [["称呼", data?.displayName ?? "未填写"], ["当前目标", "未录入"], ["每周训练", "未录入"], ["饮食偏好", "未录入"], ["饮食禁忌", "未录入"], ["记录范围", "饮食 · 饮水"]];
-  return <section className="surface meal-card">
-    <SectionTitle title="基础信息与生活偏好" action={<span className="goal-tag">{demo ? "示例资料" : "只读"}</span>} />
-    <div className="profile-grid mt-4">
-      {fields.map(([title, value]) => <div className="profile-field" key={title}><small>{title}</small><strong>{value}</strong></div>)}
-    </div>
-    <p className="range-note mt-4">{demo ? "以上为演示资料。当前版本为只读展示，不会保存修改。" : "当前版本为只读展示，编辑功能尚未开放；没有采集的信息不会用示例值补齐。"}</p>
-  </section>;
 }
 
 type ChatMessage = {
@@ -430,8 +418,13 @@ function ChatPanel() {
   </div>;
 }
 
-function OtherPage({ page }: { page: string }) {
+function OtherPage({ page, spaceProfile, hasStored }: { page: string; spaceProfile: SpaceProfile; hasStored: boolean }) {
   const dashboardQuery = useQuery({ queryKey: ["dashboard"], queryFn: getDashboard });
+  if (page === "profile") {
+    return <div className="app-content">
+      <MySpace data={dashboardQuery.data} loading={dashboardQuery.isPending} profile={spaceProfile} hasStored={hasStored} />
+    </div>;
+  }
   if (page === "plans" || page === "exercise") {
     return <div className="app-content pp-shell">
       <PlanSwitcher page={page} />
@@ -444,7 +437,6 @@ function OtherPage({ page }: { page: string }) {
     food: { eyebrow: "多模态餐食记录", title: "一张照片，轻松记下一餐。", intro: "AI 先帮你看一眼；哪里不准，你来修正。确认之前不会计入营养统计。" },
     coach: { eyebrow: "不确定的时候，随时聊聊", title: "你好，我在听。", intro: "回答基于你愿意分享的信息；不确定的地方会说清楚，也不替代医生。" },
     review: { eyebrow: "看见过程，而不只是结果", title: "这一周，只按已有记录复盘。", intro: "记录有限时，我们先理解情况，不急着调整目标，也不合成执行分数。" },
-    profile: { eyebrow: "你的数据，由你掌握", title: "个人健康画像", intro: "当前为只读展示；没有采集的信息会明确写“未录入”，不会用示例值补齐。" },
   };
   const item = content[page] ?? content.food;
   return <div className="app-content">
@@ -452,19 +444,30 @@ function OtherPage({ page }: { page: string }) {
     {page === "food" && <MealRecorder />}
     {page === "coach" && <ChatPanel />}
     {page === "review" && <ReviewPanel data={dashboardQuery.data} loading={dashboardQuery.isPending} />}
-    {page === "profile" && <ProfilePanel data={dashboardQuery.data} loading={dashboardQuery.isPending} />}
   </div>;
 }
 
 export default function HomePage() {
   const page = useHealthStore((state) => state.page);
   const setPage = useHealthStore((state) => state.setPage);
+  const storedSpaceProfile = useHealthStore((state) => state.spaceProfile);
+  const hydrateSpaceProfile = useHealthStore((state) => state.hydrateSpaceProfile);
   const dashboardQuery = useQuery({ queryKey: ["dashboard"], queryFn: getDashboard });
   const dashboard = dashboardQuery.data;
-  const profile = page === "profile";
+  const profilePage = page === "profile";
   const displayName = dashboard?.displayName ?? "你";
   const avatarText = displayName.slice(0, 1);
   const pendingMeals = dashboard?.pendingMeals ?? 0;
+  const hasStoredSpace = Boolean(storedSpaceProfile);
+  const spaceProfile = React.useMemo(() => {
+    if (storedSpaceProfile) return storedSpaceProfile;
+    if (dashboard?.demo) return createDemoSpaceProfile(dashboard.displayName, dashboard.weightKg);
+    return createEmptySpaceProfile(dashboard?.displayName && dashboard.displayName !== "你" ? dashboard.displayName : "");
+  }, [storedSpaceProfile, dashboard]);
+
+  React.useEffect(() => {
+    hydrateSpaceProfile();
+  }, [hydrateSpaceProfile]);
 
   React.useEffect(() => {
     window.scrollTo({ top: 0, behavior: "auto" });
@@ -490,17 +493,22 @@ export default function HomePage() {
           <p>每天的一点点，会慢慢连成改变。</p>
           <button onClick={() => setPage("coach")}>和教练聊聊 <ChevronRight size={14} /></button>
         </div>
-        <button className="profile-button" onClick={() => setPage("profile")} aria-current={profile ? "page" : undefined}>
-          <span className="avatar">{avatarText}</span>
-          <span className="profile-text"><strong>{displayName}</strong><small>{dashboard?.demo ? "演示画像" : "个人空间"}</small></span>
-          <UserRound size={15} />
-        </button>
+        <SpaceCard
+          profile={spaceProfile}
+          saved={hasStoredSpace}
+          demo={!hasStoredSpace && Boolean(dashboard?.demo)}
+          active={profilePage}
+          onOpen={() => setPage("profile")}
+        />
       </div>
     </aside>
 
     <main className="main-area">
       <header className="topbar">
-        <div className="breadcrumb"><span>我的空间</span><span className="slash">/</span><strong>{navigation.find((item) => item.id === page)?.label ?? "个人档案"}</strong></div>
+        <div className="breadcrumb">
+          <span>我的空间</span><span className="slash">/</span>
+          <strong>{page === "profile" ? "个人资料" : navigation.find((item) => item.id === page)?.label ?? "个人档案"}</strong>
+        </div>
         <div className="topbar-actions">
           {dashboard?.demo && <span className="demo-chip">演示模式</span>}
           <span className="date-pill">{dashboard?.dateLabel ?? "今天"}</span>
@@ -518,7 +526,7 @@ export default function HomePage() {
             transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
             className="min-w-0"
           >
-            {page === "dashboard" ? <Dashboard /> : <OtherPage page={page} />}
+            {page === "dashboard" ? <Dashboard /> : <OtherPage page={page} spaceProfile={spaceProfile} hasStored={hasStoredSpace} />}
           </motion.div>
         </AnimatePresence>
       </section>
@@ -536,7 +544,7 @@ export default function HomePage() {
       })}
     </nav>
 
-    <FloatingCompanion hidden={page === "coach"} onOpen={() => setPage("coach")} />
+    <FloatingCompanion hidden={page === "coach" || page === "profile"} onOpen={() => setPage("coach")} />
     <BackToTop />
   </div>;
 }

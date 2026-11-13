@@ -2,6 +2,15 @@
 @import "../css/styles.css";
 @import "../css/effects.css";
 @import "../css/plans.css";
+@import "../css/space.css";
+
+@font-face {
+  font-family: "Lemi XiaoYu";
+  src: url("/fonts/lemi-xiaoyu.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
 
 :root { color-scheme: light; }
 body { font-family: "Raleway", "Noto Sans SC", "Microsoft YaHei", sans-serif; }
