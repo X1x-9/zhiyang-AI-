@@ -3,18 +3,20 @@
 import * as React from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useQuery } from "@tanstack/react-query";
-import { CalendarDays, Camera, ChartNoAxesCombined, ChevronRight, CircleHelp, Droplets, Dumbbell, LayoutDashboard, Leaf, Loader2, MessageCircle, Plus, RotateCw, UserRound, Utensils } from "lucide-react";
+import { Camera, ChartNoAxesCombined, ChevronRight, CircleHelp, Droplets, Dumbbell, LayoutDashboard, Leaf, Loader2, MessageCircle, Plus, Salad, UserRound, Utensils } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DashboardHero } from "@/components/dashboard-hero";
 import { BackToTop, FloatingCompanion, GrowingLoader, HealthTipsCarousel, Reveal, ScrollProgress } from "@/components/experience";
 import { MealRecorder } from "@/components/meal-recorder";
+import { DietPlan, ExercisePlan, PlanSwitcher } from "@/components/plan-experience";
 import { getDashboard, type DashboardData, type WeightPoint } from "@/lib/dashboard";
 import { useHealthStore } from "@/stores/health-store";
 
 const navigation = [
   { id: "dashboard", label: "今日概览", short: "今天", icon: LayoutDashboard },
   { id: "food", label: "餐食记录", short: "记录", icon: Utensils },
-  { id: "plans", label: "我的计划", short: "计划", icon: CalendarDays },
+  { id: "plans", label: "饮食计划", short: "计划", icon: Salad },
+  { id: "exercise", label: "运动计划", short: "运动", icon: Dumbbell, mobileHidden: true },
   { id: "coach", label: "AI 健康助手", short: "助手", icon: MessageCircle },
   { id: "review", label: "每周复盘", short: "复盘", icon: ChartNoAxesCombined },
 ] as const;
@@ -173,7 +175,7 @@ function Dashboard() {
         </section>
 
         <section className="surface training-card">
-          <SectionTitle title="今天的身体时间" action={<button onClick={() => setPage("plans")}>查看计划说明 <ChevronRight size={13} /></button>} />
+          <SectionTitle title="今天的身体时间" action={<button onClick={() => setPage("exercise")}>查看运动计划 <ChevronRight size={13} /></button>} />
           {data.workout ? (
             <>
               <div className="training-content">
@@ -263,62 +265,6 @@ function Dashboard() {
     </div>
 
     <Reveal delay={0.05}><HealthTipsCarousel /></Reveal>
-  </div>;
-}
-
-const planMeals = [
-  { time: "08:00", title: "早餐 · 燕麦酸奶碗", swap: "无糖酸奶可以换成豆浆，燕麦换成全麦面包，蛋白质和主食都还在。" },
-  { time: "12:30", title: "午餐 · 番茄鸡胸杂粮饭", swap: "外食可以选少油盖饭，再加一份青菜；不必追求和示例完全一致。" },
-  { time: "16:00", title: "加餐 · 无糖豆浆和坚果", swap: "坚果一小把即可；不方便时，用一杯无糖酸奶替换也可以。" },
-  { time: "19:00", title: "晚餐 · 虾仁豆腐", swap: "虾仁可以换成鱼或鸡蛋，豆腐可以换成其他豆制品。" },
-];
-
-function FlipPlanCard({ meal }: { meal: (typeof planMeals)[number] }) {
-  const [flipped, setFlipped] = React.useState(false);
-  return (
-    <button
-      type="button"
-      className={`flip-plan ${flipped ? "flipped" : ""}`}
-      aria-expanded={flipped}
-      onClick={() => setFlipped((value) => !value)}
-    >
-      <span className="flip-plan-inner">
-        <span className="flip-plan-face flip-plan-front">
-          <span className="flip-plan-top">
-            <span className="flip-plan-time">{meal.time}</span>
-            <span className="flip-plan-side"><span className="flip-plan-badge">示例</span><RotateCw size={12} aria-hidden="true" /></span>
-          </span>
-          <strong>{meal.title}</strong>
-          <span className="flip-plan-hint">点击翻看替换思路</span>
-        </span>
-        <span className="flip-plan-face flip-plan-back">
-          <span className="flip-plan-tag">替换思路 · 示例</span>
-          <span className="flip-plan-copy">{meal.swap}</span>
-          <span className="flip-plan-hint">再点一下翻回来</span>
-        </span>
-      </span>
-    </button>
-  );
-}
-
-function PlansPanel({ data }: { data?: DashboardData }) {
-  const setPage = useHealthStore((state) => state.setPage);
-  const goal = data?.calorieGoal ?? 2250;
-  return <div className="plans-layout">
-    <section className="surface meal-plan-card">
-      <SectionTitle title="本周 · 示例计划" action={<span className="goal-tag">示例</span>} />
-      <div className="plan-hero mt-4"><strong>每日参考 {goal.toLocaleString("zh-CN")} kcal</strong><span className="goal-tag">示例目标</span></div>
-      <div className="flip-plan-grid">
-        {planMeals.map((meal) => <FlipPlanCard meal={meal} key={meal.time} />)}
-      </div>
-      <p className="flip-plan-note">翻卡内容是搭配示例，不是个体营养处方；份量按自己的情况调整。</p>
-    </section>
-    <section className="surface adjust-card">
-      <h3>计划依据</h3>
-      <p>这份计划只用于展示结构，没有根据你的真实记录自动生成。当前版本不支持在线编辑，也不会悄悄改变目标。</p>
-      <p className="range-note">目标范围需要结合身高、体重、活动量和医生建议确定；这里不做个体医疗营养处方。</p>
-      <Button variant="secondary" onClick={() => setPage("coach")}>和健康搭子讨论</Button>
-    </section>
   </div>;
 }
 
@@ -486,18 +432,24 @@ function ChatPanel() {
 
 function OtherPage({ page }: { page: string }) {
   const dashboardQuery = useQuery({ queryKey: ["dashboard"], queryFn: getDashboard });
+  if (page === "plans" || page === "exercise") {
+    return <div className="app-content pp-shell">
+      <PlanSwitcher page={page} />
+      {page === "plans"
+        ? <DietPlan data={dashboardQuery.data} loading={dashboardQuery.isPending} />
+        : <ExercisePlan data={dashboardQuery.data} />}
+    </div>;
+  }
   const content: Record<string, { eyebrow: string; title: string; intro: string }> = {
     food: { eyebrow: "多模态餐食记录", title: "一张照片，轻松记下一餐。", intro: "AI 先帮你看一眼；哪里不准，你来修正。确认之前不会计入营养统计。" },
-    plans: { eyebrow: "为真实生活留有余地", title: "这份计划，只是示例。", intro: "当前展示的是一份示例计划，不会根据记录自动改变。编辑与生成功能还在接入中。" },
     coach: { eyebrow: "不确定的时候，随时聊聊", title: "你好，我在听。", intro: "回答基于你愿意分享的信息；不确定的地方会说清楚，也不替代医生。" },
     review: { eyebrow: "看见过程，而不只是结果", title: "这一周，只按已有记录复盘。", intro: "记录有限时，我们先理解情况，不急着调整目标，也不合成执行分数。" },
     profile: { eyebrow: "你的数据，由你掌握", title: "个人健康画像", intro: "当前为只读展示；没有采集的信息会明确写“未录入”，不会用示例值补齐。" },
   };
-  const item = content[page] ?? content.dashboard;
+  const item = content[page] ?? content.food;
   return <div className="app-content">
     <div className="page-heading"><div className="eyebrow">{item.eyebrow}</div><h1>{item.title}</h1><p>{item.intro}</p></div>
     {page === "food" && <MealRecorder />}
-    {page === "plans" && <PlansPanel data={dashboardQuery.data} />}
     {page === "coach" && <ChatPanel />}
     {page === "review" && <ReviewPanel data={dashboardQuery.data} loading={dashboardQuery.isPending} />}
     {page === "profile" && <ProfilePanel data={dashboardQuery.data} loading={dashboardQuery.isPending} />}
@@ -574,11 +526,14 @@ export default function HomePage() {
     </main>
 
     <nav className="mobile-nav" aria-label="移动端导航">
-      {navigation.map(({ id, short, icon: Icon }) => (
-        <button className={page === id ? "active" : ""} key={id} onClick={() => setPage(id)} aria-current={page === id ? "page" : undefined}>
-          <span><Icon size={18} /></span>{short}
-        </button>
-      ))}
+      {navigation.filter((item) => !("mobileHidden" in item && item.mobileHidden)).map(({ id, short, icon: Icon }) => {
+        const active = page === id || (id === "plans" && page === "exercise");
+        return (
+          <button className={active ? "active" : ""} key={id} onClick={() => setPage(id)} aria-current={active ? "page" : undefined}>
+            <span><Icon size={18} /></span>{short}
+          </button>
+        );
+      })}
     </nav>
 
     <FloatingCompanion hidden={page === "coach"} onOpen={() => setPage("coach")} />

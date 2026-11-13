@@ -1,6 +1,7 @@
 @import "tailwindcss";
 @import "../css/styles.css";
 @import "../css/effects.css";
+@import "../css/plans.css";
 
 :root { color-scheme: light; }
 body { font-family: "Raleway", "Noto Sans SC", "Microsoft YaHei", sans-serif; }

@@ -2,18 +2,19 @@
 
 import * as React from "react";
 import { motion, useReducedMotion, useScroll, useSpring } from "framer-motion";
-import { Activity, ArrowUp, ChevronLeft, ChevronRight, Droplets, Heart, Moon, Sparkles, Utensils, X } from "lucide-react";
+import { Activity, ArrowUp, ChevronRight, Coffee, Droplets, Heart, Info, Moon, NotebookPen, Pause, Play, Salad, Sparkles, Sun, Utensils, Wind, X } from "lucide-react";
 
 const ease = [0.22, 1, 0.36, 1] as const;
 
 export function Reveal({ children, delay = 0, className }: { children: React.ReactNode; delay?: number; className?: string }) {
+  const reduce = useReducedMotion();
   return (
     <motion.div
       className={className}
-      initial={{ opacity: 0, y: 24 }}
-      whileInView={{ opacity: 1, y: 0 }}
+      initial={reduce ? false : { opacity: 0, y: 24 }}
+      whileInView={reduce ? undefined : { opacity: 1, y: 0 }}
       viewport={{ once: true, amount: 0.15 }}
-      transition={{ duration: 0.58, delay, ease }}
+      transition={{ duration: reduce ? 0 : 0.58, delay: reduce ? 0 : delay, ease }}
     >
       {children}
     </motion.div>
@@ -41,89 +42,64 @@ const tips = [
   { tag: "节奏", title: "给饱腹感一点时间", body: "吃到不饿、还没撑的时候停一停，身体会慢慢告诉你“够了”。", icon: Heart, theme: "rose" },
   { tag: "饮水", title: "让水杯留在视线里", body: "看不见就容易忘记。把水放在手边，每次经过喝一小口。", icon: Droplets, theme: "sky" },
   { tag: "休息", title: "睡前留十分钟空白", body: "关掉屏幕，做一点安静的收尾，让今天慢慢结束。", icon: Moon, theme: "lilac" },
+  { tag: "早餐", title: "给早餐留十分钟", body: "哪怕只是酸奶加水果，坐下来吃完，也比边走边解决更从容。", icon: Coffee, theme: "apricot" },
+  { tag: "日照", title: "白天出门走一走", body: "自然光帮身体分辨白天和夜晚；午饭后绕一小圈就很好。", icon: Sun, theme: "rose" },
+  { tag: "放松", title: "慢慢呼吸三次", body: "把呼气放长一点，肩膀松下来。不是任务，只是给自己一个缓冲。", icon: Wind, theme: "sky" },
+  { tag: "记录", title: "记录是为了看见", body: "不用追求满格，也不用每天完美。记录只是帮你了解自己的节奏。", icon: NotebookPen, theme: "lilac" },
+  { tag: "蔬菜", title: "这周多试一种蔬菜", body: "不用大改菜单，在常吃的菜里加一样新的，就算一次小尝试。", icon: Salad, theme: "sky" },
 ] as const;
 
 export function HealthTipsCarousel() {
-  const reduce = useReducedMotion();
-  const [active, setActive] = React.useState(0);
   const [paused, setPaused] = React.useState(false);
   const count = tips.length;
   const angle = 360 / count;
 
-  React.useEffect(() => {
-    if (paused || reduce) return;
-    const timer = window.setInterval(() => setActive((value) => (value + 1) % count), 4800);
-    return () => window.clearInterval(timer);
-  }, [paused, reduce, count]);
-
-  const go = (direction: number) => setActive((value) => (value + direction + count) % count);
-  const current = tips[active];
-
   return (
-    <section
-      className="tips-section"
-      aria-labelledby="tips-title"
-      onMouseEnter={() => setPaused(true)}
-      onMouseLeave={() => setPaused(false)}
-      onFocusCapture={() => setPaused(true)}
-      onBlurCapture={(event) => {
-        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setPaused(false);
-      }}
-    >
+    <section className="tips-section" aria-labelledby="tips-title">
       <div className="tips-head">
         <div>
           <div className="tips-eyebrow"><Sparkles size={13} /> 轻提示</div>
           <h2 id="tips-title">今天，给自己一个小提醒</h2>
-          <p>转动卡片看看；这些只是一般生活建议，不替代个体化指导。</p>
+          <p>10 条一般生活建议，慢慢转；悬停或点暂停，可以停下来读。不替代个体化指导。</p>
         </div>
         <div className="tips-controls">
-          <button type="button" className="tips-arrow" aria-label="上一条提示" onClick={() => go(-1)}><ChevronLeft size={16} /></button>
-          <button type="button" className="tips-arrow" aria-label="下一条提示" onClick={() => go(1)}><ChevronRight size={16} /></button>
+          <button
+            type="button"
+            className={`tips-toggle ${paused ? "is-paused" : ""}`}
+            aria-label={paused ? "继续自动旋转" : "暂停自动旋转"}
+            onClick={() => setPaused((value) => !value)}
+          >
+            {paused ? <Play size={13} aria-hidden="true" /> : <Pause size={13} aria-hidden="true" />}
+            {paused ? "继续旋转" : "暂停旋转"}
+          </button>
         </div>
       </div>
 
       <div className="tips-stage">
-        <div className="tips-ring" style={{ transform: `rotateY(${-active * angle}deg)` }}>
+        <div className={`tips-ring ${paused ? "is-paused" : ""}`}>
           {tips.map((tip, index) => {
             const Icon = tip.icon;
-            const isActive = index === active;
             return (
               <article
-                className={`tip-3d theme-${tip.theme} ${isActive ? "is-active" : ""}`}
+                className={`tip-3d theme-${tip.theme}`}
                 key={tip.title}
                 style={{ transform: `rotateY(${index * angle}deg) translateZ(var(--tip-radius))` }}
-                aria-hidden={isActive ? undefined : true}
               >
-                <span className="tip-orbit" aria-hidden="true" />
                 <div className="tip-top">
-                  <span className="tip-icon"><Icon size={18} /></span>
+                  <span className="tip-icon"><Icon size={20} strokeWidth={2} /></span>
                   <span className="tip-tag">{tip.tag}</span>
                 </div>
                 <h3>{tip.title}</h3>
                 <p>{tip.body}</p>
                 <div className="tip-foot">
-                  <span>{String(index + 1).padStart(2, "0")} / {String(count).padStart(2, "0")}</span>
-                  <span>轻提示 · 不替代个体建议</span>
+                  <Info size={11} aria-hidden="true" />
+                  <span>一般生活建议</span>
                 </div>
               </article>
             );
           })}
         </div>
       </div>
-
-      <div className="tips-dots" role="group" aria-label="切换健康小提示">
-        {tips.map((tip, index) => (
-          <button
-            type="button"
-            key={tip.title}
-            className={`tips-dot ${index === active ? "active" : ""}`}
-            aria-label={`查看第 ${index + 1} 条提示：${tip.title}`}
-            aria-current={index === active ? "true" : undefined}
-            onClick={() => setActive(index)}
-          />
-        ))}
-      </div>
-      <p className="sr-only" aria-live="polite">{current.tag}：{current.title}。{current.body}</p>
     </section>
   );
 }

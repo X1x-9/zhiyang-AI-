@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-type Page = "dashboard" | "food" | "plans" | "coach" | "review" | "profile";
+type Page = "dashboard" | "food" | "plans" | "exercise" | "coach" | "review" | "profile";
 type HealthState = {
   page: Page;
   waterAdded: number;
