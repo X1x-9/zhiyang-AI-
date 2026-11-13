@@ -2905,6 +2905,7 @@
   .pp-example-divider { display: grid; gap: 3px; }
   .pp-plan-status { grid-template-columns: auto minmax(0, 1fr); padding: 12px 13px; }
   .pp-plan-status .pp-plan-activate { grid-column: 1 / -1; width: 100%; justify-content: center; }
+
   .pp-plan-history > ul > li { grid-template-columns: auto minmax(0, 1fr); }
   .pp-plan-history > ul > li > .pp-plan-history-activate,
   .pp-plan-history > ul > li > .pp-plan-history-current { grid-column: 1 / -1; justify-self: start; }

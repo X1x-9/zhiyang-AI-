@@ -3,6 +3,7 @@ import { tool } from "ai";
 import { z } from "zod";
 import { assessHealthSafety } from "./ai-safety";
 import { searchKnowledge, type KnowledgePassage } from "./rag";
+import { getWeatherForecast as fetchWeatherForecast } from "./weather";
 
 type HealthToolOptions = {
   onKnowledge?: (passages: KnowledgePassage[]) => void;
@@ -39,6 +40,15 @@ function createHealthToolSet({ onKnowledge }: HealthToolOptions = {}) {
             ? "只提供一般生活方式信息，不作诊断、处方或剂量建议；建议咨询医生或注册营养师。"
             : "仅提供一般生活方式信息；避免承诺疗效。";
         return { risk, reasons: assessment.reasons, guidance };
+      },
+    }),
+    getWeatherForecast: tool({
+      description: "获取城市实时天气预报（默认今天，可查未来 1–3 天），用于回答天气与户外活动适宜性；实时数据不可用时会明确失败，不得编造天气。",
+      inputSchema: z.object({ city: z.string().trim().min(2).max(60), days: z.number().int().min(1).max(3).optional() }),
+      execute: async ({ city, days }) => {
+        const result = await fetchWeatherForecast(city, days ?? 1);
+        if (!result.ok) return { status: "UNAVAILABLE", message: result.note };
+        return result;
       },
     }),
   };

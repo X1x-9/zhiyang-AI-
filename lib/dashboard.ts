@@ -1,3 +1,5 @@
+import { ApiError } from "./api-error";
+
 export type MacroProgress = { consumed: number; goal: number | null };
 export type MacroSummary = {
   protein: MacroProgress;
@@ -60,7 +62,7 @@ export async function getDashboard(): Promise<DashboardData> {
   const response = await fetch("/api/dashboard");
   if (!response.ok) {
     const data = (await response.json().catch(() => null)) as { message?: string } | null;
-    throw new Error(data?.message ?? "暂时无法获取今日数据，请稍后重试。");
+    throw new ApiError(data?.message ?? "暂时无法获取今日数据，请稍后重试。", response.status);
   }
   return response.json() as Promise<DashboardData>;
 }

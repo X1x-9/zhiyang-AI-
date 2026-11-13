@@ -35,6 +35,11 @@ function toolLog(name: string, status: PlanAgentToolLog["status"], summary: stri
   return { name, status, summary };
 }
 
+function querySnippet(query: string) {
+  const clean = query.replace(/\s+/g, " ").trim();
+  return clean.length > 36 ? `${clean.slice(0, 36)}…` : clean;
+}
+
 function dedupeReferences(references: PlanAgentReference[]) {
   const seen = new Set<string>();
   return references.filter((reference) => {
@@ -163,7 +168,9 @@ export async function runPlanAgent(input: PlanAgentInput): Promise<PlanAgentDraf
         captured.toolLog.push(toolLog(
           "searchGuidelines",
           result.status === "RETRIEVAL_FAILED" ? "ERROR" : "OK",
-          result.status === "OK" ? `命中 ${result.passages.length} 条` : result.status,
+          result.status === "OK"
+            ? `“${querySnippet(query)}”命中 ${result.passages.length} 条`
+            : `“${querySnippet(query)}”${result.status}`,
         ));
         return {
           status: result.status,
@@ -330,7 +337,8 @@ export async function runPlanAgent(input: PlanAgentInput): Promise<PlanAgentDraf
     }
 
     if (!captured.ragCalled && isRagConfigured()) {
-      const fallback = await searchKnowledge(guidelineQuery(input.profile), 4);
+      const fallbackQuery = guidelineQuery(input.profile);
+      const fallback = await searchKnowledge(fallbackQuery, 4);
       captured.ragStatus = fallback.status;
       if (fallback.status === "OK") {
         captured.references = dedupeReferences([
@@ -345,7 +353,9 @@ export async function runPlanAgent(input: PlanAgentInput): Promise<PlanAgentDraf
       captured.toolLog.push(toolLog(
         "searchGuidelines",
         fallback.status === "RETRIEVAL_FAILED" ? "ERROR" : "OK",
-        fallback.status === "OK" ? `系统补充检索：命中 ${fallback.passages.length} 条` : `系统补充检索：${fallback.status}`,
+        fallback.status === "OK"
+          ? `系统补充检索：“${querySnippet(fallbackQuery)}”命中 ${fallback.passages.length} 条`
+          : `系统补充检索：“${querySnippet(fallbackQuery)}”${fallback.status}`,
       ));
     }
 
@@ -371,7 +381,8 @@ export async function runPlanAgent(input: PlanAgentInput): Promise<PlanAgentDraf
   } catch (error) {
     console.error("PLAN AGENT ERROR", error instanceof Error ? error.message : "unknown");
     if (!captured.ragCalled && isRagConfigured()) {
-      const fallback = await searchKnowledge(guidelineQuery(input.profile), 4).catch(() => null);
+      const fallbackQuery = guidelineQuery(input.profile);
+      const fallback = await searchKnowledge(fallbackQuery, 4).catch(() => null);
       if (fallback) {
         captured.ragStatus = fallback.status;
         if (fallback.status === "OK") {

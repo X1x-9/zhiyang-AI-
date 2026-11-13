@@ -4,7 +4,7 @@ import * as React from "react";
 import { createPortal } from "react-dom";
 import { motion } from "framer-motion";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Camera, ChartNoAxesCombined, ChevronRight, Droplets, Dumbbell, LayoutDashboard, Leaf, Loader2, Maximize2, MessageCircle, Minimize2, Plus, Salad, Trash2, UserRound, Utensils, X } from "lucide-react";
+import { Camera, ChartNoAxesCombined, ChevronRight, Droplets, Dumbbell, LayoutDashboard, Leaf, Loader2, Maximize2, MessageCircle, Mic, Minimize2, Plus, Salad, Square, Trash2, UserRound, Utensils, Volume2, X } from "lucide-react";
 import { AccountPanel } from "@/components/account-panel";
 import { Button } from "@/components/ui/button";
 import Hero38 from "@/components/originkit/hero-38";
@@ -20,12 +20,15 @@ import { WeightReviewSection } from "@/components/weight-review";
 import { WeightTrendChart, WeightValue } from "@/components/weight-trend-chart";
 import { ReviewFluidTitle } from "@/components/review-fluid-title";
 import { formatWeightChange, getDashboard, type DashboardData, type WeekSummary } from "@/lib/dashboard";
+import { isAuthError } from "@/lib/api-error";
 import { fetchProfile } from "@/lib/profile-client";
 import { createEmptySpaceProfile, type SpaceProfile } from "@/lib/space";
 import { loadWaterLog, recordWater, waterTodayKey } from "@/lib/water-log";
 import { useHealthStore, type Page } from "@/stores/health-store";
 
 const useIsomorphicLayoutEffect = typeof window === "undefined" ? React.useEffect : React.useLayoutEffect;
+
+const authAwareRetry = (failureCount: number, error: unknown) => !isAuthError(error) && failureCount < 2;
 
 const navigation = [
   { id: "dashboard", label: "今日概览", short: "今天", icon: LayoutDashboard },
@@ -65,9 +68,42 @@ function DemoNotice({ notice }: { notice?: string }) {
   );
 }
 
+function GuestGate({ onLogin, onHome }: { onLogin: () => void; onHome: () => void }) {
+  return (
+    <section className="guest-gate" aria-labelledby="guest-gate-title">
+      <div className="guest-gate-card">
+        <div className="guest-gate-copy">
+          <span className="guest-gate-eyebrow">你的空间 · 尚未登录</span>
+          <h1 id="guest-gate-title">登录后，这里会显示你的今日概览。</h1>
+          <p>餐食、体重、饮水和计划都跟着账户走。登录一次，之后的记录才会出现在这里。</p>
+          <div className="guest-gate-actions">
+            <Button onClick={onLogin}>登录 / 注册</Button>
+            <button type="button" className="guest-gate-home" onClick={onHome}>先回首页看看</button>
+          </div>
+          <p className="guest-gate-note">还没有账户？用邮箱注册即可，不需要填写真实身份信息。</p>
+        </div>
+        <ul className="guest-gate-points" aria-label="登录后可以看到">
+          <li>
+            <span className="guest-gate-icon"><Utensils size={17} aria-hidden="true" /></span>
+            <div><strong>餐食与营养</strong><span>每餐的热量、蛋白质和饮水记录。</span></div>
+          </li>
+          <li>
+            <span className="guest-gate-icon"><Dumbbell size={17} aria-hidden="true" /></span>
+            <div><strong>计划与复盘</strong><span>按你的资料生成饮食和运动计划。</span></div>
+          </li>
+          <li>
+            <span className="guest-gate-icon"><MessageCircle size={17} aria-hidden="true" /></span>
+            <div><strong>健康助手</strong><span>基于你的记录回答问题。</span></div>
+          </li>
+        </ul>
+      </div>
+    </section>
+  );
+}
+
 function Dashboard({ identityKey }: { identityKey: string }) {
   const setPage = useHealthStore((state) => state.setPage);
-  const { data, isPending, isError, error, refetch } = useQuery({ queryKey: ["dashboard"], queryFn: getDashboard });
+  const { data, isPending, isError, error, refetch } = useQuery({ queryKey: ["dashboard"], queryFn: getDashboard, retry: authAwareRetry });
   const [trainingStarted, setTrainingStarted] = React.useState(false);
   const [waterLog, setWaterLog] = React.useState<Record<string, number>>(() => loadWaterLog(identityKey));
   const waterAdded = waterLog[waterTodayKey()] ?? 0;
@@ -490,6 +526,77 @@ function splitAnswer(content: string) {
   return { body, urls };
 }
 
+type SpeechResultMap = {
+  length: number;
+  [index: number]: { isFinal: boolean; 0: { transcript: string } };
+};
+
+type SpeechRecognitionLike = {
+  lang: string;
+  continuous: boolean;
+  interimResults: boolean;
+  maxAlternatives: number;
+  start: () => void;
+  stop: () => void;
+  abort: () => void;
+  onresult: ((event: { resultIndex: number; results: SpeechResultMap }) => void) | null;
+  onerror: ((event: { error: string }) => void) | null;
+  onend: (() => void) | null;
+};
+
+type SpeechRecognitionConstructor = new () => SpeechRecognitionLike;
+
+function speechRecognitionConstructor() {
+  if (typeof window === "undefined") return null;
+  const scope = window as unknown as {
+    SpeechRecognition?: SpeechRecognitionConstructor;
+    webkitSpeechRecognition?: SpeechRecognitionConstructor;
+  };
+  return scope.SpeechRecognition ?? scope.webkitSpeechRecognition ?? null;
+}
+
+const emptySpeechSubscribe = () => () => {};
+const hasSpeechSynthesis = () => typeof window !== "undefined" && "speechSynthesis" in window;
+
+function speechErrorMessage(code: string) {
+  if (code === "not-allowed" || code === "service-not-allowed") return "浏览器没拿到麦克风权限，允许后再试。";
+  if (code === "no-speech") return "没有听到声音，再试一次。";
+  if (code === "audio-capture") return "没有找到可用的麦克风。";
+  if (code === "network") return "语音识别需要联网，网络恢复后再试。";
+  if (code === "aborted") return "";
+  return "语音输入没有成功，稍后再试。";
+}
+
+function speechChunks(text: string) {
+  const sentences = text.match(/[^。！？!?；;\n]+[。！？!?；;\n]?/g) ?? [text];
+  const chunks: string[] = [];
+  let current = "";
+  for (const sentence of sentences) {
+    const piece = sentence.trim();
+    if (!piece) continue;
+    if (current && current.length + piece.length > 120) {
+      chunks.push(current);
+      current = piece;
+    } else {
+      current += piece;
+    }
+  }
+  if (current) chunks.push(current);
+  return chunks;
+}
+
+function readableText(content: string) {
+  return content
+    .replace(urlPattern, "")
+    .replace(/\[\d{1,2}\]/g, "")
+    .replace(/^[ \t]*(?:[-*•·#]+|\d+[.)、])[ \t]*/gm, "")
+    .replace(/\*\*|__|`{1,3}/g, "")
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n{2,}/g, "\n")
+    .trim()
+    .slice(0, 4000);
+}
+
 function ChatPanel({ identityKey }: { identityKey: string }) {
   const storageKey = chatThreadsKey(identityKey);
   const [threads, setThreads] = React.useState<ChatThread[]>(() => loadChatThreads(storageKey));
@@ -499,7 +606,17 @@ function ChatPanel({ identityKey }: { identityKey: string }) {
   const [reaction, setReaction] = React.useState<ChatReactionId | null>(null);
   const [historyOpen, setHistoryOpen] = React.useState(() => typeof window === "undefined" || !window.matchMedia("(max-width: 640px)").matches);
   const [expanded, setExpanded] = React.useState(false);
+  const speechSupported = React.useSyncExternalStore(emptySpeechSubscribe, () => Boolean(speechRecognitionConstructor()), () => false);
+  const ttsSupported = React.useSyncExternalStore(emptySpeechSubscribe, hasSpeechSynthesis, () => false);
+  const [listening, setListening] = React.useState(false);
+  const [voiceHint, setVoiceHint] = React.useState("");
+  const [speakingId, setSpeakingId] = React.useState<string | null>(null);
   const scrollRef = React.useRef<HTMLDivElement>(null);
+  const recognitionRef = React.useRef<SpeechRecognitionLike | null>(null);
+  const voiceBaseRef = React.useRef("");
+  const voiceHintTimerRef = React.useRef<number | null>(null);
+  const speechRunRef = React.useRef(0);
+  const spokenRef = React.useRef<SpeechSynthesisUtterance[]>([]);
 
   const orderedThreads = React.useMemo(() => [...threads].sort((a, b) => b.updatedAt - a.updatedAt), [threads]);
   const activeThread = threads.find((thread) => thread.id === activeThreadId) ?? threads[0] ?? null;
@@ -521,6 +638,13 @@ function ChatPanel({ identityKey }: { identityKey: string }) {
     if (messages.length < 2) return;
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: expanded ? "auto" : "smooth" });
   }, [messages, expanded]);
+
+  React.useEffect(() => () => {
+    recognitionRef.current?.abort();
+    recognitionRef.current = null;
+    if (voiceHintTimerRef.current) window.clearTimeout(voiceHintTimerRef.current);
+    if (typeof window !== "undefined" && "speechSynthesis" in window) window.speechSynthesis.cancel();
+  }, []);
 
   React.useEffect(() => {
     if (!expanded) return;
@@ -566,10 +690,110 @@ function ChatPanel({ identityKey }: { identityKey: string }) {
       .filter((source): source is KnowledgeSource => Boolean(source));
   }
 
+  function showVoiceHint(message: string) {
+    if (!message) return;
+    setVoiceHint(message);
+    if (voiceHintTimerRef.current) window.clearTimeout(voiceHintTimerRef.current);
+    voiceHintTimerRef.current = window.setTimeout(() => setVoiceHint(""), 4200);
+  }
+
+  function stopListening() {
+    const recognition = recognitionRef.current;
+    recognitionRef.current = null;
+    setListening(false);
+    recognition?.abort();
+  }
+
+  function toggleListening() {
+    if (!canChat || pending) return;
+    if (listening) {
+      stopListening();
+      return;
+    }
+    const Recognition = speechRecognitionConstructor();
+    if (!Recognition) {
+      showVoiceHint("当前浏览器不支持语音输入，用键盘输入就可以。");
+      return;
+    }
+    const recognition = new Recognition();
+    recognition.lang = "zh-CN";
+    recognition.continuous = false;
+    recognition.interimResults = true;
+    recognition.maxAlternatives = 1;
+    voiceBaseRef.current = question.trim() ? `${question.trim()} ` : "";
+    recognition.onresult = (event) => {
+      let transcript = "";
+      for (let index = 0; index < event.results.length; index += 1) {
+        transcript += event.results[index][0]?.transcript ?? "";
+      }
+      setQuestion(`${voiceBaseRef.current}${transcript}`.slice(0, 1000));
+    };
+    recognition.onerror = (event) => {
+      showVoiceHint(speechErrorMessage(event.error));
+      setListening(false);
+      recognitionRef.current = null;
+    };
+    recognition.onend = () => {
+      setListening(false);
+      recognitionRef.current = null;
+    };
+    recognitionRef.current = recognition;
+    setVoiceHint("");
+    setListening(true);
+    try {
+      recognition.start();
+    } catch {
+      recognitionRef.current = null;
+      setListening(false);
+      showVoiceHint("语音输入没能启动，稍后再试。");
+    }
+  }
+
+  function stopSpeaking() {
+    speechRunRef.current += 1;
+    spokenRef.current = [];
+    if (typeof window !== "undefined" && "speechSynthesis" in window) window.speechSynthesis.cancel();
+    setSpeakingId(null);
+  }
+
+  function toggleSpeak(message: ChatMessage) {
+    if (!ttsSupported) return;
+    if (speakingId === message.id) {
+      stopSpeaking();
+      return;
+    }
+    const text = readableText(splitAnswer(message.content).body);
+    if (!text) return;
+    const synth = window.speechSynthesis;
+    synth.cancel();
+    const run = speechRunRef.current + 1;
+    speechRunRef.current = run;
+    const chunks = speechChunks(text);
+    const preferred = synth.getVoices().find((voice) => voice.lang.toLowerCase().startsWith("zh"));
+    const utterances = chunks.map((chunk, index) => {
+      const utterance = new SpeechSynthesisUtterance(chunk);
+      utterance.lang = "zh-CN";
+      utterance.rate = 1.02;
+      if (preferred) utterance.voice = preferred;
+      utterance.onend = () => {
+        if (speechRunRef.current === run && index === chunks.length - 1) setSpeakingId(null);
+      };
+      utterance.onerror = () => {
+        if (speechRunRef.current === run && index === chunks.length - 1) setSpeakingId(null);
+      };
+      return utterance;
+    });
+    spokenRef.current = utterances;
+    setSpeakingId(message.id);
+    for (const utterance of utterances) synth.speak(utterance);
+  }
+
   async function send(value: string, options: { appendUser?: boolean; reaction?: ChatReactionId } = {}) {
     const { appendUser = true, reaction: reactionId } = options;
     const text = value.trim();
     if (!activeThread || pending || (!text && !reactionId)) return;
+    stopSpeaking();
+    stopListening();
     const threadId = activeThread.id;
     const history = messages
       .filter((message) => message.id !== "intro" && !message.failed && message.content.trim())
@@ -661,6 +885,8 @@ function ChatPanel({ identityKey }: { identityKey: string }) {
 
   function startNewChat() {
     if (pending) return;
+    stopSpeaking();
+    stopListening();
     const thread = createChatThread();
     setThreads((current) => [thread, ...current].slice(0, CHAT_THREAD_LIMIT));
     setActiveThreadId(thread.id);
@@ -671,6 +897,8 @@ function ChatPanel({ identityKey }: { identityKey: string }) {
 
   function selectThread(id: string) {
     if (id !== activeThread?.id) {
+      stopSpeaking();
+      stopListening();
       setActiveThreadId(id);
       setQuestion("");
       setReaction(null);
@@ -680,6 +908,10 @@ function ChatPanel({ identityKey }: { identityKey: string }) {
 
   function deleteThread(id: string) {
     if (pending) return;
+    if (id === activeThread?.id) {
+      stopSpeaking();
+      stopListening();
+    }
     const remaining = orderedThreads.filter((thread) => thread.id !== id);
     setThreads((current) => current.filter((thread) => thread.id !== id));
     if (id === activeThread?.id) {
@@ -691,6 +923,7 @@ function ChatPanel({ identityKey }: { identityKey: string }) {
 
   const hasUserMessage = messages.some((message) => message.role === "user");
   const hasAnswer = messages.some((message) => message.id !== "intro" && message.role === "assistant" && !message.failed && message.content.trim());
+  const streamingMessageId = pending ? messages[messages.length - 1]?.id ?? null : null;
   const canChat = Boolean(activeThread);
   const suggestions = ["晚餐怎么搭配更合适？", "今天适合做什么训练？", "怎么记录才算准确？"];
   const activeReaction = chatReactions.find((item) => item.id === reaction);
@@ -788,6 +1021,18 @@ function ChatPanel({ identityKey }: { identityKey: string }) {
                       ))}
                     </div>
                   )}
+                  {ttsSupported && message.role === "assistant" && !message.failed && message.content.trim() && message.id !== streamingMessageId && (
+                    <button
+                      type="button"
+                      className={`message-speak${speakingId === message.id ? " is-speaking" : ""}`}
+                      aria-label={speakingId === message.id ? "停止朗读这条回答" : "朗读这条回答"}
+                      aria-pressed={speakingId === message.id}
+                      onClick={() => toggleSpeak(message)}
+                    >
+                      {speakingId === message.id ? <Square size={9} aria-hidden="true" /> : <Volume2 size={11} aria-hidden="true" />}
+                      <span>{speakingId === message.id ? "停止" : "朗读"}</span>
+                    </button>
+                  )}
                   {message.failed && (message.retry || message.reaction) && (
                     <button type="button" className="chat-retry" onClick={() => void send(message.retry ?? "", { appendUser: false, reaction: message.reaction })} disabled={pending}>重新发送</button>
                   )}
@@ -822,8 +1067,22 @@ function ChatPanel({ identityKey }: { identityKey: string }) {
           </div>
           <form className="chat-input" onSubmit={submit}>
             <span className="chat-input-tag" aria-hidden="true">你的问题 →</span>
+            {voiceHint && <span className="chat-voice-hint" role="status">{voiceHint}</span>}
             <label className="sr-only" htmlFor="coach-question">输入你的问题</label>
-            <input id="coach-question" value={question} onChange={(event) => setQuestion(event.target.value)} placeholder={canChat ? "问问你的健康搭子…" : "先新建一个对话"} maxLength={1000} disabled={!canChat} />
+            <input id="coach-question" value={question} onChange={(event) => setQuestion(event.target.value)} placeholder={listening ? "正在听，请说话…" : canChat ? "问问你的健康搭子…" : "先新建一个对话"} maxLength={1000} disabled={!canChat} />
+            {speechSupported && (
+              <button
+                type="button"
+                className={`chat-mic${listening ? " is-listening" : ""}`}
+                aria-label={listening ? "停止语音输入" : "语音输入"}
+                aria-pressed={listening}
+                title={listening ? "停止语音输入" : "语音输入"}
+                disabled={!canChat || pending}
+                onClick={toggleListening}
+              >
+                {listening ? <Square size={13} aria-hidden="true" /> : <Mic size={16} aria-hidden="true" />}
+              </button>
+            )}
             <Button aria-label="发送问题" disabled={!canChat || !question.trim() || pending}>{pending ? <Loader2 size={17} className="animate-spin" /> : <ChevronRight size={17} />}</Button>
           </form>
         </div>
@@ -991,7 +1250,7 @@ function CoachCubes() {
 }
 
 function OtherPage({ page, spaceProfile, hasStored, demo, identityKey }: { page: string; spaceProfile: SpaceProfile; hasStored: boolean; demo: boolean; identityKey: string }) {
-  const dashboardQuery = useQuery({ queryKey: ["dashboard"], queryFn: getDashboard });
+  const dashboardQuery = useQuery({ queryKey: ["dashboard"], queryFn: getDashboard, retry: authAwareRetry });
   const reviewTitleRef = React.useRef<HTMLHeadingElement | null>(null);
   if (page === "profile") {
     return <div className="app-content">
@@ -1068,13 +1327,14 @@ function CoreApp({ onHome }: { onHome: () => void }) {
   const storedSpaceProfile = useHealthStore((state) => state.spaceProfile);
   const setSpaceProfile = useHealthStore((state) => state.setSpaceProfile);
   const queryClient = useQueryClient();
-  const profileQuery = useQuery({ queryKey: ["profile"], queryFn: fetchProfile });
-  const dashboardQuery = useQuery({ queryKey: ["dashboard"], queryFn: getDashboard });
+  const profileQuery = useQuery({ queryKey: ["profile"], queryFn: fetchProfile, retry: authAwareRetry });
+  const dashboardQuery = useQuery({ queryKey: ["dashboard"], queryFn: getDashboard, retry: authAwareRetry });
   const scrollPositions = React.useRef<Record<string, number>>({});
   const activePageRef = React.useRef<Page>(page);
   const previousPageRef = React.useRef<Page>(page);
   const [slideOrigin, setSlideOrigin] = React.useState<Page>(page);
   const [slideFrom, setSlideFrom] = React.useState<Page | null>(null);
+  const [guestLoginOpen, setGuestLoginOpen] = React.useState(false);
   if (slideOrigin !== page) {
     setSlideFrom(slideOrigin);
     setSlideOrigin(page);
@@ -1083,16 +1343,20 @@ function CoreApp({ onHome }: { onHome: () => void }) {
   const slideDirection = slideFrom && pageOrder(page) < pageOrder(slideFrom) ? "backward" : "forward";
   const renderedPages = visitedPages.includes(page) ? visitedPages : [...visitedPages, page];
   const dashboard = dashboardQuery.data;
+  const authRequired = (!profileQuery.data && isAuthError(profileQuery.error)) || (!dashboardQuery.data && isAuthError(dashboardQuery.error));
   const profilePage = page === "profile";
   const pendingMeals = dashboard?.pendingMeals ?? 0;
   const activeNavIndex = Math.max(0, navigation.findIndex((item) => item.id === page));
-  const hasStoredSpace = Boolean(storedSpaceProfile?.savedAt);
+  const hasStoredSpace = Boolean(storedSpaceProfile?.savedAt) && !authRequired;
   const identityKey = profileQuery.data?.account?.email ?? (profileQuery.data?.demo ? "demo" : "pending");
   const spaceProfile = React.useMemo(() => {
     if (storedSpaceProfile) return storedSpaceProfile;
     const accountName = dashboard?.demo ? "" : dashboard?.displayName && dashboard.displayName !== "你" ? dashboard.displayName : "";
     return createEmptySpaceProfile(accountName);
   }, [storedSpaceProfile, dashboard]);
+  const guestSpaceProfile = React.useMemo(() => createEmptySpaceProfile(""), []);
+  const visibleSpaceProfile = authRequired ? guestSpaceProfile : spaceProfile;
+  const visibleProfileData = authRequired ? undefined : profileQuery.data;
 
   React.useEffect(() => {
     if (profileQuery.data?.profile) setSpaceProfile(profileQuery.data.profile);
@@ -1103,8 +1367,13 @@ function CoreApp({ onHome }: { onHome: () => void }) {
     setSpaceProfile(null);
     void queryClient.resetQueries({ queryKey: ["dashboard"] });
     void queryClient.resetQueries({ queryKey: ["meals"] });
-    void queryClient.invalidateQueries({ queryKey: ["profile"] });
+    void queryClient.resetQueries({ queryKey: ["profile"] });
   }, [queryClient, setSpaceProfile]);
+
+  const handleGuestLogin = React.useCallback(() => {
+    setGuestLoginOpen(false);
+    handleAccountChanged();
+  }, [handleAccountChanged]);
 
   React.useEffect(() => {
     const rememberScroll = () => {
@@ -1146,9 +1415,9 @@ function CoreApp({ onHome }: { onHome: () => void }) {
           </button>
         </div>
         <SpaceCard
-          profile={spaceProfile}
+          profile={visibleSpaceProfile}
           saved={hasStoredSpace}
-          demo={Boolean(dashboard?.demo)}
+          demo={!authRequired && Boolean(dashboard?.demo)}
           active={profilePage}
           shortcuts={navigation.filter((item) => item.id !== "profile")}
           onOpen={() => setPage("profile")}
@@ -1166,17 +1435,17 @@ function CoreApp({ onHome }: { onHome: () => void }) {
         <div className="topbar-actions">
           {dashboard?.demo && <span className="demo-chip">演示沙盒</span>}
           <span className="date-pill">{dashboard?.dateLabel ?? "今天"}</span>
-          <AccountPanel data={profileQuery.data} loading={profileQuery.isPending} onChanged={handleAccountChanged} />
+          <AccountPanel data={visibleProfileData} loading={authRequired ? false : profileQuery.isPending} onChanged={handleAccountChanged} />
         </div>
       </header>
       <div className="mobile-brand">
         <span className="brand-mark"><img src="/brand/icon-192.png" alt="" width={29} height={29} /></span><b>智养 AI</b>
         {dashboard?.demo && <span className="demo-chip">演示</span>}
-        <AccountPanel data={profileQuery.data} loading={profileQuery.isPending} onChanged={handleAccountChanged} compact />
+        <AccountPanel data={visibleProfileData} loading={authRequired ? false : profileQuery.isPending} onChanged={handleAccountChanged} compact />
         <button type="button" className="mobile-home" onClick={onHome}>首页</button>
       </div>
       <section className="page-content">
-        {renderedPages.map((visitedPage) => (
+        {authRequired ? <GuestGate onLogin={() => setGuestLoginOpen(true)} onHome={onHome} /> : renderedPages.map((visitedPage) => (
           <React.Activity key={visitedPage} mode={visitedPage === page ? "visible" : "hidden"}>
             <div className={`page-panel min-w-0${visitedPage === page ? " is-active" : ""}`} data-slide={visitedPage === page && slideFrom ? slideDirection : undefined}>
               {visitedPage === "dashboard" ? <Dashboard key={identityKey} identityKey={identityKey} /> : <OtherPage key={identityKey} page={visitedPage} spaceProfile={spaceProfile} hasStored={hasStoredSpace} demo={Boolean(profileQuery.data?.demo)} identityKey={identityKey} />}
@@ -1197,6 +1466,17 @@ function CoreApp({ onHome }: { onHome: () => void }) {
         );
       })}
     </nav>
+
+    {authRequired && (
+      <AccountPanel
+        data={undefined}
+        loading={false}
+        onChanged={handleGuestLogin}
+        forceOpen={guestLoginOpen}
+        onForceClose={() => setGuestLoginOpen(false)}
+        hideTrigger
+      />
+    )}
 
     <FloatingCompanion hidden={page === "coach" || page === "profile"} onOpen={() => setPage("coach")} />
     <BackToTop />
