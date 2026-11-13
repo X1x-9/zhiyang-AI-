@@ -1788,6 +1788,7 @@
 
 .space-hub.is-open .space-hub-item:hover,
 .space-hub.is-open .space-hub-item:focus-visible {
+  z-index: 6;
   scale: 1.1;
   background: #fff;
   border-color: color-mix(in srgb, var(--hub-accent) 34%, #dfe8d8);

@@ -1,10 +1,13 @@
 @import "tailwindcss";
+@import "./originkit-section-theme.css";
 @import "../css/styles.css";
 @import "../css/effects.css";
 @import "../css/plans.css";
 @import "../css/space.css";
 @import "../css/chat-loader.css";
 @import "../css/meal-camera.css";
+@import "../css/landing-hero.css";
+@import "../css/landing-sections.css";
 
 @font-face {
   font-family: "Lemi XiaoYu";

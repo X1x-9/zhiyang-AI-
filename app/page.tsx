@@ -5,6 +5,8 @@ import { motion } from "framer-motion";
 import { useQuery } from "@tanstack/react-query";
 import { Camera, ChartNoAxesCombined, ChevronRight, CircleHelp, Droplets, Dumbbell, LayoutDashboard, Leaf, Loader2, MessageCircle, Plus, Salad, Trash2, UserRound, Utensils, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import Hero38 from "@/components/originkit/hero-38";
+import { LandingSections } from "@/components/landing/landing-sections";
 import { DashboardHero } from "@/components/dashboard-hero";
 import { BackToTop, FloatingCompanion, GrowingLoader, HamsterLoader, HealthTipsCarousel, Reveal, ScrollProgress } from "@/components/experience";
 import { MealRecorder } from "@/components/meal-recorder";
@@ -1073,7 +1075,7 @@ function OtherPage({ page, spaceProfile, hasStored }: { page: string; spaceProfi
   </div>;
 }
 
-export default function HomePage() {
+function CoreApp({ onHome }: { onHome: () => void }) {
   const page = useHealthStore((state) => state.page);
   const visitedPages = useHealthStore((state) => state.visitedPages);
   const setPage = useHealthStore((state) => state.setPage);
@@ -1154,7 +1156,7 @@ export default function HomePage() {
     <main className="main-area">
       <header className="topbar">
         <div className="breadcrumb">
-          <span>我的空间</span><span className="slash">/</span>
+          <button type="button" className="breadcrumb-home" onClick={onHome}>返回首页</button><span className="slash">/</span>
           <strong>{page === "profile" ? "个人资料" : navigation.find((item) => item.id === page)?.label ?? "个人档案"}</strong>
         </div>
         <div className="topbar-actions">
@@ -1163,7 +1165,11 @@ export default function HomePage() {
           <span className="avatar avatar-small">{avatarText}</span>
         </div>
       </header>
-      <div className="mobile-brand"><span className="brand-mark"><Leaf size={19} /></span><b>智养 AI</b>{dashboard?.demo && <span className="demo-chip">演示</span>}</div>
+      <div className="mobile-brand">
+        <span className="brand-mark"><Leaf size={19} /></span><b>智养 AI</b>
+        {dashboard?.demo && <span className="demo-chip">演示</span>}
+        <button type="button" className="mobile-home" onClick={onHome}>首页</button>
+      </div>
       <section className="page-content">
         {renderedPages.map((visitedPage) => (
           <React.Activity key={visitedPage} mode={visitedPage === page ? "visible" : "hidden"}>
@@ -1190,4 +1196,49 @@ export default function HomePage() {
     <FloatingCompanion hidden={page === "coach" || page === "profile"} onOpen={() => setPage("coach")} />
     <BackToTop />
   </div>;
+}
+
+const landingAnchors: Partial<Record<Page, string>> = {
+  food: "module-food",
+  plans: "module-plans",
+  exercise: "module-exercise",
+  coach: "module-coach",
+  review: "module-review",
+};
+
+export default function HomePage() {
+  const [landing, setLanding] = React.useState(true);
+  const returnAnchor = React.useRef<string | null>(null);
+
+  const enterCore = React.useCallback((target: Page, anchor?: string) => {
+    returnAnchor.current = anchor ?? null;
+    useHealthStore.getState().setPage(target);
+    setLanding(false);
+  }, []);
+
+  React.useEffect(() => {
+    if (!landing) {
+      window.scrollTo(0, 0);
+      return;
+    }
+    const anchor = returnAnchor.current;
+    if (!anchor) {
+      window.scrollTo(0, 0);
+      return;
+    }
+    const raf = requestAnimationFrame(() => {
+      const target = document.getElementById(anchor);
+      const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      target?.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "start" });
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [landing]);
+
+  return <>
+    <main className="landing-shell" hidden={!landing}>
+      <Hero38 onEnter={(target: Page) => enterCore(target)} />
+      <LandingSections onEnter={(target: Page) => enterCore(target, landingAnchors[target])} />
+    </main>
+    {!landing && <CoreApp onHome={() => setLanding(true)} />}
+  </>;
 }
