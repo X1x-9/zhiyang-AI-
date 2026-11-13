@@ -6,7 +6,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Camera, ChartNoAxesCombined, ChevronRight, CircleHelp, Droplets, Dumbbell, LayoutDashboard, Leaf, Loader2, MessageCircle, Plus, Salad, UserRound, Utensils } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DashboardHero } from "@/components/dashboard-hero";
-import { BackToTop, FloatingCompanion, GrowingLoader, HealthTipsCarousel, Reveal, ScrollProgress } from "@/components/experience";
+import { BackToTop, FloatingCompanion, GrowingLoader, HamsterLoader, HealthTipsCarousel, Reveal, ScrollProgress } from "@/components/experience";
 import { MealRecorder } from "@/components/meal-recorder";
 import { MySpace } from "@/components/my-space";
 import { DietPlan, ExercisePlan, PlanSwitcher } from "@/components/plan-experience";
@@ -272,7 +272,7 @@ function Dashboard() {
 }
 
 function ReviewPanel({ data, loading }: { data?: DashboardData; loading: boolean }) {
-  if (loading) return <div className="empty-note" role="status">正在整理本周记录…</div>;
+  if (loading) return <GrowingLoader label="正在整理本周记录…" />;
   if (!data) return <div className="empty-note" role="alert">暂时无法载入复盘数据。</div>;
   const { week } = data;
   return <div className="review-layout">
@@ -379,6 +379,7 @@ function ChatPanel() {
 
   return <div className="coach-layout">
     <section className="surface chat-panel">
+      <span className="chat-flag" aria-hidden="true">AI 健康搭子</span>
       <div className="chat-head">
         <span className="coach-avatar"><MessageCircle size={17} /></span>
         <div><strong>你的健康搭子</strong><small>基于个人计划提供日常建议</small></div>
@@ -386,7 +387,7 @@ function ChatPanel() {
       <div className="chat-messages" ref={scrollRef} aria-live="polite" aria-busy={pending}>
         {messages.map((message) => (
           <div className={`message ${message.role === "user" ? "user" : "bot"}${message.failed ? " failed" : ""}`} key={message.id}>
-            {message.content || (pending ? <span className="typing"><Loader2 size={14} className="animate-spin" />正在思考…</span> : null)}
+            {message.content || (pending ? <HamsterLoader size="mini" label="正在思考…" /> : null)}
             {message.failed && message.retry && (
               <button type="button" className="chat-retry" onClick={() => void send(message.retry ?? "", false)} disabled={pending}>重新发送</button>
             )}
@@ -400,6 +401,7 @@ function ChatPanel() {
         </div>
       )}
       <form className="chat-input" onSubmit={submit}>
+        <span className="chat-input-tag" aria-hidden="true">你的问题 →</span>
         <label className="sr-only" htmlFor="coach-question">输入你的问题</label>
         <input id="coach-question" value={question} onChange={(event) => setQuestion(event.target.value)} placeholder="问问你的健康搭子…" maxLength={1000} />
         <Button aria-label="发送问题" disabled={!question.trim() || pending}>{pending ? <Loader2 size={17} className="animate-spin" /> : <ChevronRight size={17} />}</Button>
@@ -415,6 +417,22 @@ function ChatPanel() {
         <p>持续疼痛、明显不适、进食障碍风险、孕期或慢性病用药调整，请优先咨询医生或营养师。</p>
       </section>
     </aside>
+  </div>;
+}
+
+function CoachCubes() {
+  return <div className="coach-cubes" aria-hidden="true">
+    <div className="cube-field">
+      {[0, 1, 2].map((layer) => (
+        <div className="cube" key={layer}>
+          <div className="cube-plane">
+            {[0, 1, 2].map((y) => [0, 1, 2].map((x) => (
+              <span key={`${x}-${y}`} style={{ "--x": x, "--y": y, "--i": y * 3 + x + 1 } as React.CSSProperties} />
+            )))}
+          </div>
+        </div>
+      ))}
+    </div>
   </div>;
 }
 
@@ -440,7 +458,14 @@ function OtherPage({ page, spaceProfile, hasStored }: { page: string; spaceProfi
   };
   const item = content[page] ?? content.food;
   return <div className="app-content">
-    <div className="page-heading"><div className="eyebrow">{item.eyebrow}</div><h1>{item.title}</h1><p>{item.intro}</p></div>
+    <div className={`page-heading${page === "coach" ? " page-heading--coach" : ""}`}>
+      <div className="page-heading-copy">
+        <div className="eyebrow">{item.eyebrow}</div>
+        <h1>{item.title}</h1>
+        <p>{item.intro}</p>
+      </div>
+      {page === "coach" && <CoachCubes />}
+    </div>
     {page === "food" && <MealRecorder />}
     {page === "coach" && <ChatPanel />}
     {page === "review" && <ReviewPanel data={dashboardQuery.data} loading={dashboardQuery.isPending} />}

@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { motion, useReducedMotion } from "framer-motion";
+import { motion, useReducedMotion, useSpring } from "framer-motion";
 import {
   ArrowDown,
   ArrowRight,
@@ -12,8 +12,9 @@ import {
   ShieldCheck,
   Wallet,
 } from "lucide-react";
-import { Reveal } from "@/components/experience";
+import { GrowingLoader, Reveal } from "@/components/experience";
 import { GlitchButton } from "@/components/glitch-button";
+import HeroAccordion from "@/components/hero-accordion";
 import type { DashboardData } from "@/lib/dashboard";
 import {
   activityOptions,
@@ -38,6 +39,14 @@ import {
 import { useHealthStore } from "@/stores/health-store";
 
 const ease = [0.22, 1, 0.36, 1] as const;
+
+const heroGalleryItems = [
+  { image: "/images/plan-exercise-hero.webp", alt: "" },
+  { image: "/images/hero-accordion-water.webp", alt: "" },
+  { image: "/images/zhiyang-hero-garden.webp", alt: "" },
+  { image: "/images/plan-diet-hero.webp", alt: "" },
+  { image: "/images/hero-accordion-canopy.webp", alt: "" },
+];
 
 const genderOptions: Array<{ value: SpaceGender; label: string }> = [
   { value: "female", label: "女" },
@@ -125,8 +134,13 @@ export function MySpace({ data, loading, profile, hasStored }: MySpaceProps) {
   const setPage = useHealthStore((state) => state.setPage);
   const setSpaceProfile = useHealthStore((state) => state.setSpaceProfile);
   const reduce = useReducedMotion();
+  const heroStageRef = React.useRef<HTMLDivElement>(null);
   const formRef = React.useRef<HTMLFormElement>(null);
   const plansRef = React.useRef<HTMLDivElement>(null);
+  const rotateX = useSpring(0, { stiffness: 170, damping: 20, mass: 0.6 });
+  const rotateY = useSpring(0, { stiffness: 170, damping: 20, mass: 0.6 });
+  const heroScale = useSpring(1, { stiffness: 200, damping: 24 });
+  const heroChars = Array.from("我的空间。");
 
   const [draft, setDraft] = React.useState<SpaceProfile>(profile);
   const [draftBase, setDraftBase] = React.useState<SpaceProfile>(profile);
@@ -146,6 +160,28 @@ export function MySpace({ data, loading, profile, hasStored }: MySpaceProps) {
     if (!Object.values(errors).some(Boolean)) return;
     formRef.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus();
   }, [errors]);
+
+  const handleHeroTilt = (event: React.PointerEvent<HTMLDivElement>) => {
+    const stage = heroStageRef.current;
+    if (reduce || event.pointerType !== "mouse" || !stage) return;
+    if (!window.matchMedia("(hover: hover) and (min-width: 961px)").matches) return;
+    const rect = stage.getBoundingClientRect();
+    const x = (event.clientX - rect.left) / rect.width - 0.5;
+    const y = (event.clientY - rect.top) / rect.height - 0.5;
+    rotateX.set(-y * 2.8);
+    rotateY.set(x * 3.4);
+    heroScale.set(1.006);
+    stage.style.setProperty("--ms-glare-x", `${((x + 0.5) * 100).toFixed(1)}%`);
+    stage.style.setProperty("--ms-glare-y", `${((y + 0.5) * 100).toFixed(1)}%`);
+    stage.dataset.tilting = "true";
+  };
+
+  const resetHeroTilt = () => {
+    rotateX.set(0);
+    rotateY.set(0);
+    heroScale.set(1);
+    if (heroStageRef.current) delete heroStageRef.current.dataset.tilting;
+  };
 
   const completeness = spaceCompleteness(draft);
   const plans = buildSpacePlans(draft);
@@ -228,7 +264,7 @@ export function MySpace({ data, loading, profile, hasStored }: MySpaceProps) {
   }
 
   if (loading && !hasStored) {
-    return <div className="ms-shell"><div className="ms-loading" role="status">正在准备你的空间…</div></div>;
+    return <div className="ms-shell"><div className="ms-loading"><GrowingLoader label="正在准备你的空间…" /></div></div>;
   }
 
   const targets = plans.targets;
@@ -238,14 +274,47 @@ export function MySpace({ data, loading, profile, hasStored }: MySpaceProps) {
 
   return (
     <div className="ms-shell">
-      <section className="ms-hero" aria-labelledby="ms-title">
+      <div
+        ref={heroStageRef}
+        className="ms-hero-stage"
+        onPointerMove={handleHeroTilt}
+        onPointerLeave={resetHeroTilt}
+        onPointerCancel={resetHeroTilt}
+      >
+        <motion.section
+          className="ms-hero"
+          aria-labelledby="ms-title"
+          style={reduce ? undefined : { rotateX, rotateY, scale: heroScale }}
+        >
+        <div className="ms-hero-gallery">
+          <HeroAccordion
+            items={heroGalleryItems}
+            defaultIndex={2}
+            expandRatio={0.42}
+            duration={0.9}
+            autoPlayMs={9000}
+            reduced={!!reduce}
+          />
+        </div>
+        <span className="ms-hero-veil" aria-hidden="true" />
         <motion.div
           className="ms-hero-copy"
           initial={reduce ? false : { opacity: 0, y: 18 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: reduce ? 0 : 0.62, ease }}
         >
-          <h1 id="ms-title">我的空间。</h1>
+          <h1 id="ms-title" className="ms-title-3d" aria-label="我的空间。">
+            {heroChars.map((char, index) => (
+              <span
+                key={`${char}-${index}`}
+                className={`ms-char${char === "。" ? " ms-char-dot" : ""}`}
+                style={{ "--char-index": index } as React.CSSProperties}
+                aria-hidden="true"
+              >
+                {char}
+              </span>
+            ))}
+          </h1>
           <p className="ms-hero-lede">
             把身体的情况和生活的节奏写在这里。饮食与运动计划，会跟着你填的内容重新排；没填的部分，保持空白。
           </p>
@@ -255,7 +324,7 @@ export function MySpace({ data, loading, profile, hasStored }: MySpaceProps) {
             {savedMoment && <span>上次保存 {savedMoment}</span>}
           </div>
           <div className="ms-hero-actions">
-            <GlitchButton tone="cream" onClick={() => goTo(formRef)}>
+            <GlitchButton tone="cream" className="ms-hero-fill" onClick={() => goTo(formRef)}>
               填写资料 <ArrowDown size={15} aria-hidden="true" />
             </GlitchButton>
             <button type="button" className="ms-hero-link" onClick={() => goTo(plansRef)}>
@@ -264,13 +333,16 @@ export function MySpace({ data, loading, profile, hasStored }: MySpaceProps) {
           </div>
         </motion.div>
 
-        <motion.aside
-          className="ms-pass"
-          aria-label="个人档案摘要"
-          initial={reduce ? false : { opacity: 0, y: 24, rotate: -3 }}
-          animate={{ opacity: 1, y: 0, rotate: -1.2 }}
-          transition={{ duration: reduce ? 0 : 0.72, delay: reduce ? 0 : 0.1, ease }}
-        >
+        <div className="ms-stack">
+          <span className="ms-stack-layer ms-stack-one" aria-hidden="true" />
+          <span className="ms-stack-layer ms-stack-two" aria-hidden="true" />
+          <motion.aside
+            className="ms-pass"
+            aria-label="个人档案摘要"
+            initial={reduce ? false : { opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: reduce ? 0 : 0.72, delay: reduce ? 0 : 0.1, ease }}
+          >
           <div className="ms-pass-top">
             <span className="ms-pass-file">个人档案 / PROFILE</span>
             <span className="ms-pass-stamp" aria-hidden="true">{initial}</span>
@@ -297,8 +369,11 @@ export function MySpace({ data, loading, profile, hasStored }: MySpaceProps) {
             <ShieldCheck size={12} aria-hidden="true" />
             {hasStored ? "仅保存在本机浏览器" : "保存后只留在本机"}
           </p>
-        </motion.aside>
-      </section>
+          </motion.aside>
+        </div>
+        <span className="ms-hero-glare" aria-hidden="true" />
+        </motion.section>
+      </div>
 
       {isDemo && (
         <p className="ms-notice" role="note">

@@ -3,6 +3,7 @@
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Camera, Check, Loader2, Pencil, Plus, Sparkles, Trash2, X } from "lucide-react";
+import { HamsterLoader } from "@/components/experience";
 import { Button } from "@/components/ui/button";
 import { useHealthStore } from "@/stores/health-store";
 
@@ -188,7 +189,7 @@ function SameDayRecords() {
     onSuccess: invalidate,
   });
 
-  if (mealsQuery.isPending) return <p className="mt-4 text-sm text-[#58685d]" role="status">正在载入今日记录…</p>;
+  if (mealsQuery.isPending) return <div className="mt-4"><HamsterLoader size="compact" label="正在载入今日记录…" /></div>;
   if (mealsQuery.isError) return <p className="mt-4 text-sm text-red-800" role="alert">{(mealsQuery.error as Error).message}</p>;
 
   const meals = mealsQuery.data?.meals ?? [];
@@ -622,7 +623,7 @@ export function MealRecorder() {
           </div>
           <input ref={fileInput} className="sr-only" type="file" accept="image/*" aria-label="选择餐食照片" onChange={(event) => { void handleFile(event.target.files?.[0]); event.target.value = ""; }} />
           <input ref={cameraInput} className="sr-only" type="file" accept="image/*" capture="environment" aria-label="拍摄餐食照片" onChange={(event) => { void handleFile(event.target.files?.[0]); event.target.value = ""; }} />
-          {(preparing || analyze.isPending) && <p className="mt-3 flex items-center gap-2 text-sm text-[#58685d]" role="status"><Loader2 size={15} className="animate-spin" />{preparing ? "正在压缩照片…" : "正在识别与分析…"}</p>}
+          {(preparing || analyze.isPending) && <div className="mt-3"><HamsterLoader size="compact" label={preparing ? "正在压缩照片…" : "正在识别与分析…"} /></div>}
           <label className="mt-4 block text-sm font-medium" htmlFor="meal-note">餐食补充说明（可选）</label>
           <textarea id="meal-note" className="meal-note" value={note} onChange={(event) => setNote(event.target.value)} placeholder="例如：米饭只有半碗，鸡胸肉是煎的，少油…" />
           {preview && (
@@ -640,7 +641,7 @@ export function MealRecorder() {
       <div className="right-stack">
         <section className="surface food-result">
           <SectionTitle title="AI 的营养分析" />
-          {analyze.isPending && <p className="mt-4 flex items-center gap-2 text-sm text-[#58685d]"><Loader2 size={15} className="animate-spin" />正在分析照片中的食物与份量…</p>}
+          {analyze.isPending && <div className="mt-4"><HamsterLoader size="compact" label="正在分析照片中的食物与份量…" /></div>}
           {error && <p className="mt-4 text-sm text-red-800" role="alert">{error}</p>}
           {!analyze.isPending && !analysis && !error && <p className="mt-4 text-sm text-[#58685d]">上传一张照片后，这里会显示识别出的食物、份量和估算营养。</p>}
           {analysis && (
