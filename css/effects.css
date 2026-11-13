@@ -4601,7 +4601,7 @@ body.companion-dragging {
 
 .coach-layout.is-expanded {
   position: fixed;
-  inset: 0;
+  inset: 0 0 0 254px;
   z-index: 80;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -4624,8 +4624,13 @@ body.companion-dragging {
 
 .coach-layout.is-expanded .chat-aside { display: none; }
 
+@media (min-width: 801px) and (max-width: 1100px) {
+  .coach-layout.is-expanded { left: 220px; }
+}
+
 @media (max-width: 800px) {
   .coach-layout.is-expanded {
+    inset: 0;
     gap: 0;
     padding: 0;
     background: #fbfcf8;

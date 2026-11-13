@@ -3,7 +3,7 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "mysql"
 }
 
 enum MealStatus {
@@ -35,7 +35,7 @@ model HealthProfile {
   userId          String?       @unique
   displayName     String        @default("林同学")
   goal            String        @default("温和减脂")
-  dietaryNotes    String        @default("")
+  dietaryNotes    String        @default("") @db.VarChar(1000)
   data            Json?
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
@@ -58,7 +58,7 @@ model MealRecord {
   proteinG        Float?
   carbsG          Float?
   fatG            Float?
-  notes           String       @default("")
+  notes           String       @default("") @db.VarChar(1000)
   status          MealStatus   @default(PENDING)
   createdAt       DateTime     @default(now())
   updatedAt       DateTime     @updatedAt
@@ -86,7 +86,7 @@ model Feedback {
   profileId   String
   topic       String
   rating      Int?
-  note        String        @default("")
+  note        String        @default("") @db.VarChar(1000)
   createdAt   DateTime      @default(now())
   profile     HealthProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
 
@@ -94,13 +94,13 @@ model Feedback {
 }
 
 model KnowledgeChunk {
-  id          String                     @id @default(cuid())
+  id          String    @id @default(cuid())
   title       String
-  source      String
-  content     String
-  embedding   Unsupported("vector(1024)")?
+  source      String    @db.VarChar(512)
+  content     String    @db.LongText
+  embedding   Json?
   reviewedAt  DateTime?
-  createdAt   DateTime                   @default(now())
+  createdAt   DateTime  @default(now())
 
   @@index([source])
 }
