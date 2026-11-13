@@ -12,9 +12,10 @@ import {
   type SpaceProfile,
   type SpaceTargets,
 } from "./space";
+import type { PlanMealSummary } from "./plan-context";
 
-export const PLAN_SCHEMA_VERSION = 1;
-export const PLAN_ENGINE_VERSION = "2026-11.1";
+export const PLAN_SCHEMA_VERSION = 2;
+export const PLAN_ENGINE_VERSION = "2026-11.2";
 export const PLAN_ENGINE_NAME = "智养规则引擎";
 
 export type PlanMeal = DietSlot & { kcalHint: string | null };
@@ -28,7 +29,10 @@ export type PlanDataBasis = {
   source: "demo" | "local";
   usedFields: string[];
   missingFields: string[];
-  usesMealRecords: false;
+  usesMealRecords: boolean;
+  mealRecordCount: number;
+  mealRecordedDays: number;
+  mealMacroCompleteMeals: number;
   targetMethod: string | null;
   notes: string[];
 };
@@ -47,6 +51,87 @@ export type PlanProfileSnapshot = {
   targetWeightKg: string;
   avoid: string;
   budget: string;
+};
+
+export type PlanFocus = "none" | "protein_focus" | "portion_focus";
+export type PlanAgentStatus = "OK" | "SKIPPED" | "FAILED";
+export type PlanRagStatus = "OK" | "NO_MATCH" | "NOT_CONFIGURED" | "RETRIEVAL_FAILED" | "NOT_CALLED";
+
+export type PlanAgentReference = {
+  title: string;
+  source: string;
+  similarity: number;
+};
+
+export type PlanAgentToolLog = {
+  name: string;
+  status: "OK" | "REJECTED" | "ERROR";
+  summary: string;
+};
+
+export type PlanAgentAdjustment = {
+  area: string;
+  from: string;
+  to: string;
+  reason: string;
+};
+
+export type PlanInputSummary = {
+  profileFields: string[];
+  confirmedMeals: number;
+  recordedDays: number;
+  macroCompleteMeals: number;
+  completeDays: number;
+  mealWindowDays: number;
+  currentPlanVersion: number | null;
+};
+
+export type PlanAgentMeta = {
+  status: PlanAgentStatus;
+  model: string | null;
+  fallbackReason: string | null;
+  inputSummary: PlanInputSummary;
+  toolLog: PlanAgentToolLog[];
+  rationale: string[];
+  adjustments: PlanAgentAdjustment[];
+  references: PlanAgentReference[];
+  ragStatus: PlanRagStatus;
+};
+
+export type PlanVersionSummary = {
+  version: number;
+  createdAt: string;
+  active: boolean;
+  isLatest: boolean;
+  basedOnVersion: number | null;
+  summary: string;
+  inputSummary: PlanInputSummary | null;
+};
+
+export type PlanAgentDraft = {
+  status: PlanAgentStatus;
+  model: string | null;
+  fallbackReason: string | null;
+  focus: PlanFocus;
+  focusNote: string | null;
+  rationale: string[];
+  adjustments: PlanAgentAdjustment[];
+  references: PlanAgentReference[];
+  toolLog: PlanAgentToolLog[];
+  ragStatus: PlanRagStatus;
+};
+
+export type PlanCoaching = {
+  focus: PlanFocus;
+  focusLabel: string;
+  focusNote: string;
+  notes: string[];
+};
+
+export type PlanRevision = {
+  basedOnVersion: number | null;
+  changes: Array<{ area: string; before: string; after: string }>;
+  summary: string;
 };
 
 export type PlanDocument = {
@@ -70,6 +155,15 @@ export type PlanDocument = {
   };
   movement: ReturnType<typeof buildMovementPlan>;
   safety: PlanSafety;
+  coaching?: PlanCoaching;
+  agent?: PlanAgentMeta | null;
+  revision?: PlanRevision;
+};
+
+export type PlanBuildOptions = {
+  mealSummary?: PlanMealSummary | null;
+  agent?: PlanAgentDraft | null;
+  previousPlan?: PlanDocument | null;
 };
 
 function num(value: string) {
@@ -116,7 +210,7 @@ function buildMealHints(meals: DietSlot[], targets: SpaceTargets | null): PlanMe
   });
 }
 
-function buildSafety(profile: SpaceProfile, targets: SpaceTargets | null, targetsReason: string | null) {
+function buildSafety(profile: SpaceProfile, targets: SpaceTargets | null, targetsReason: string | null, mealSummary?: PlanMealSummary | null) {
   const flags = [
     "运动以无痛范围为限；胸痛、眩晕、异常气促或心悸时立即停止，必要时就医。",
     "如有慢性病、孕期、饮食障碍史或正在调整用药，先咨询医生或注册营养师。",
@@ -138,15 +232,17 @@ function buildSafety(profile: SpaceProfile, targets: SpaceTargets | null, target
     flags.push("按填写的身高体重计算，BMI 低于 18.5 的常见范围，不建议继续减脂；请先咨询医生或营养师。");
   }
   if (profile.goal === "lose") flags.push("热量参考设置了 1400 kcal 下限；下限不等于适合所有人，长期低于需求需要专业评估。");
+  if (mealSummary && mealSummary.recordCount > 0 && mealSummary.macroCompleteMeals < mealSummary.recordCount) {
+    flags.push(`近 ${mealSummary.windowDays} 天有 ${mealSummary.recordCount - mealSummary.macroCompleteMeals} 餐缺少完整蛋白质、碳水或脂肪字段；缺失不等于没吃，也不据此判断摄入是否达标。`);
+  }
 
   return {
     flags,
-    disclaimer: "本计划由固定规则按你填写的资料生成，不读取餐食记录、体重趋势或手环数据，也不构成医疗诊断、营养处方或效果承诺。",
+    disclaimer: "本计划由固定规则生成；AI 建议只在受约束范围内选择建议重点并解释，不计算营养数值。计划不构成医疗诊断、营养处方或效果承诺，也不替代医生或注册营养师。",
   };
 }
 
-function buildDataBasis(profile: SpaceProfile, targets: SpaceTargets | null): PlanDataBasis {
-  const completeness = spaceCompleteness(profile);
+function usedProfileFields(profile: SpaceProfile) {
   const usedFields: string[] = ["称呼", "健康目标", "活动水平", "每周次数", "每次时长", "训练环境", "饮食偏好"];
   if (profile.gender !== "unspecified") usedFields.unshift("性别");
   if (profile.age.trim()) usedFields.push("年龄");
@@ -155,29 +251,169 @@ function buildDataBasis(profile: SpaceProfile, targets: SpaceTargets | null): Pl
   if (profile.targetWeightKg.trim()) usedFields.push("目标体重");
   if (profile.avoid.trim()) usedFields.push("忌口");
   if (profile.budget.trim()) usedFields.push("预算");
+  return usedFields;
+}
+
+function buildDataBasis(profile: SpaceProfile, targets: SpaceTargets | null, mealSummary?: PlanMealSummary | null, agent?: PlanAgentDraft | null): PlanDataBasis {
+  const completeness = spaceCompleteness(profile);
+  const usedFields = usedProfileFields(profile);
+  if (mealSummary?.recordCount) usedFields.push("近 7 天已确认餐食");
+
+  const notes: string[] = [];
+  if (!mealSummary?.recordCount) {
+    notes.push("近 7 天没有读到已确认餐食；本次只按资料生成，不推断你的饮食情况，也不把缺失记录当成没吃。");
+  } else {
+    notes.push(`读取了 ${mealSummary.recordCount} 餐已确认记录，覆盖 ${mealSummary.recordedDays} 天；其中 ${mealSummary.macroCompleteMeals} 餐含完整蛋白质、碳水与脂肪字段。`);
+    if (mealSummary.macroCompleteMeals < mealSummary.recordCount) {
+      notes.push("缺少营养字段的餐食不进入宏量营养素汇总；缺失只代表记录不完整，不代表实际摄入。");
+    }
+    if (mealSummary.completeDayCount < 2) {
+      notes.push("记录较完整的天数不足 2 天，本次不根据单日数据调整计划。");
+    }
+  }
+  notes.push("热量与蛋白质是区间参考，不是精确消耗或处方；实际需求会随身体状况变化。");
+  notes.push("餐次结构和替换建议来自固定模板，会按饮食偏好与训练环境选择。");
+  if (agent?.status === "OK") {
+    notes.push("AI 只选择受约束的建议重点并解释；热量计算、营养汇总和安全边界由确定性规则完成。");
+  } else if (agent) {
+    notes.push("本次 AI 建议未完成，计划仍按确定性规则生成；不会用模型编造数据补齐。");
+  }
 
   return {
     source: profile.source,
     usedFields,
     missingFields: completeness.missing,
-    usesMealRecords: false,
+    usesMealRecords: Boolean(mealSummary?.recordCount),
+    mealRecordCount: mealSummary?.recordCount ?? 0,
+    mealRecordedDays: mealSummary?.recordedDays ?? 0,
+    mealMacroCompleteMeals: mealSummary?.macroCompleteMeals ?? 0,
     targetMethod: targets ? "Mifflin-St Jeor 公式 + 活动系数 + 目标偏移，热量下限 1400 kcal" : null,
-    notes: [
-      "只使用资料页填写的信息；没有读取今日餐食、体重记录或运动手环。",
-      "热量与蛋白质是区间参考，不是精确消耗或处方；实际需求会随身体状况变化。",
-      "餐次结构和替换建议来自固定模板，会按饮食偏好与训练环境选择。",
-    ],
+    notes,
   };
 }
 
-export function buildPlan(profile: SpaceProfile, version = 1, now = new Date()): PlanDocument {
+const focusLabels: Record<PlanFocus, string> = {
+  none: "无针对性调整",
+  protein_focus: "蛋白质重点",
+  portion_focus: "份量重点",
+};
+
+function buildCoaching(mealSummary?: PlanMealSummary | null, agent?: PlanAgentDraft | null): PlanCoaching {
+  const focus = agent?.focus ?? "none";
+  let focusNote = agent?.focusNote?.trim() || "";
+  if (!focusNote) {
+    if (!mealSummary?.recordCount) {
+      focusNote = "近 7 天没有已确认餐食，本次只按资料生成结构，不推断你的饮食情况。";
+    } else if (mealSummary.completeDayCount < 2) {
+      focusNote = "记录较完整的天数不足 2 天，本次不根据单日记录调整计划，保持资料生成的结构。";
+    } else {
+      focusNote = "已确认餐食中没有触发可安全执行的调整条件，本次保持资料生成的结构。";
+    }
+  }
+  return {
+    focus,
+    focusLabel: focusLabels[focus],
+    focusNote,
+    notes: agent?.rationale?.length ? agent.rationale : [focusNote],
+  };
+}
+
+function buildInputSummary(profile: SpaceProfile, mealSummary?: PlanMealSummary | null, currentPlanVersion?: number | null): PlanInputSummary {
+  return {
+    profileFields: usedProfileFields(profile),
+    confirmedMeals: mealSummary?.recordCount ?? 0,
+    recordedDays: mealSummary?.recordedDays ?? 0,
+    macroCompleteMeals: mealSummary?.macroCompleteMeals ?? 0,
+    completeDays: mealSummary?.completeDayCount ?? 0,
+    mealWindowDays: mealSummary?.windowDays ?? 7,
+    currentPlanVersion: currentPlanVersion ?? null,
+  };
+}
+
+function buildAgentMeta(agent: PlanAgentDraft, profile: SpaceProfile, mealSummary?: PlanMealSummary | null, currentPlanVersion?: number | null): PlanAgentMeta {
+  return {
+    status: agent.status,
+    model: agent.model,
+    fallbackReason: agent.fallbackReason,
+    inputSummary: buildInputSummary(profile, mealSummary, currentPlanVersion),
+    toolLog: agent.toolLog,
+    rationale: agent.rationale,
+    adjustments: agent.adjustments,
+    references: agent.references,
+    ragStatus: agent.ragStatus,
+  };
+}
+
+function targetsSignature(targets: SpaceTargets | null) {
+  return targets
+    ? `${targets.calorieLow}-${targets.calorieHigh} kcal · 蛋白质 ${targets.proteinLow}-${targets.proteinHigh} g · 饮水 ${targets.waterLow}-${targets.waterHigh} L`
+    : "未生成热量与蛋白质目标";
+}
+
+function mealSignature(plan: PlanDocument) {
+  return plan.diet.meals.map((meal) => `${meal.label}：${meal.title}`).join("；");
+}
+
+function movementSignature(plan: PlanDocument) {
+  return `每周 ${plan.movement.sessionCount} 次 · 约 ${plan.movement.totalMinutes} 分钟 · ${plan.movement.environmentLabel}`;
+}
+
+function revisionSummary(previous: PlanDocument | null, plan: PlanDocument, changes: PlanRevision["changes"]) {
+  if (!previous) return "首版：按资料建立热量、餐次与训练结构。";
+  if (changes.length === 0) return "本次未改动热量、餐次或训练结构；新增了基于记录的建议说明与版本依据。";
+  return `本次调整了 ${changes.map((change) => change.area).join("、")}；其余结构保持不变。`;
+}
+
+function buildRevision(previousPlan: PlanDocument | null | undefined, plan: PlanDocument): PlanRevision {
+  if (!previousPlan) {
+    return {
+      basedOnVersion: null,
+      changes: [],
+      summary: "首版：按资料建立热量、餐次与训练结构。",
+    };
+  }
+
+  const changes: PlanRevision["changes"] = [];
+  const previousTargets = targetsSignature(previousPlan.targets);
+  const nextTargets = targetsSignature(plan.targets);
+  if (previousTargets !== nextTargets) {
+    changes.push({ area: "热量与蛋白质", before: previousTargets, after: nextTargets });
+  }
+  const previousMeals = mealSignature(previousPlan);
+  const nextMeals = mealSignature(plan);
+  if (previousMeals !== nextMeals) {
+    changes.push({ area: "餐次结构", before: previousMeals, after: nextMeals });
+  }
+  const previousMovement = movementSignature(previousPlan);
+  const nextMovement = movementSignature(plan);
+  if (previousMovement !== nextMovement) {
+    changes.push({ area: "训练安排", before: previousMovement, after: nextMovement });
+  }
+  const previousFocus = previousPlan.coaching?.focusLabel ?? "无针对性调整";
+  const nextFocus = plan.coaching?.focusLabel ?? "无针对性调整";
+  if (previousFocus !== nextFocus) {
+    changes.push({ area: "建议重点", before: previousFocus, after: nextFocus });
+  }
+
+  return {
+    basedOnVersion: previousPlan.version,
+    changes,
+    summary: revisionSummary(previousPlan, plan, changes),
+  };
+}
+
+export function buildPlan(profile: SpaceProfile, version = 1, now = new Date(), options: PlanBuildOptions = {}): PlanDocument {
   const targetResult = buildSpaceTargets(profile);
   const diet = buildDietPlan(profile);
   const movement = buildMovementPlan(profile);
   const completeness = spaceCompleteness(profile);
   const targets = targetResult.targets;
+  const mealSummary = options.mealSummary;
+  const agent = options.agent;
+  const previousPlan = options.previousPlan ?? null;
+  const coaching = buildCoaching(mealSummary, agent);
 
-  return {
+  const plan: PlanDocument = {
     schemaVersion: PLAN_SCHEMA_VERSION,
     engineVersion: PLAN_ENGINE_VERSION,
     engineName: PLAN_ENGINE_NAME,
@@ -200,7 +436,7 @@ export function buildPlan(profile: SpaceProfile, version = 1, now = new Date()):
       budget: profile.budget,
     },
     completeness,
-    dataBasis: buildDataBasis(profile, targets),
+    dataBasis: buildDataBasis(profile, targets, mealSummary, agent),
     targets,
     targetsReason: targetResult.reason,
     goalLine: buildGoalLine(profile),
@@ -213,6 +449,16 @@ export function buildPlan(profile: SpaceProfile, version = 1, now = new Date()):
         : null,
     },
     movement,
-    safety: buildSafety(profile, targets, targetResult.reason),
+    safety: buildSafety(profile, targets, targetResult.reason, mealSummary),
+    coaching,
+    agent: agent ? buildAgentMeta(agent, profile, mealSummary, previousPlan?.version ?? null) : null,
+    revision: {
+      basedOnVersion: previousPlan?.version ?? null,
+      changes: [],
+      summary: "",
+    },
   };
+
+  plan.revision = buildRevision(previousPlan, plan);
+  return plan;
 }

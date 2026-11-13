@@ -33,7 +33,7 @@ export function SpaceCard({ profile, saved, demo, active, shortcuts, onOpen, onN
   const completeness = spaceCompleteness(profile);
   const name = profile.name.trim();
   const initial = name.slice(0, 1) || "你";
-  const source = saved ? "已保存到本机" : demo ? "演示资料 · 未保存" : "尚未填写";
+  const source = saved ? (demo ? "已保存到演示沙盒" : "已保存到账户") : demo ? "演示资料 · 未保存" : "尚未填写";
   const missing = completeness.missing;
   const missingText = missing.length === 0
     ? "资料已齐，计划会跟着你的修改更新。"

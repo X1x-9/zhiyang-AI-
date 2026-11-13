@@ -5,17 +5,23 @@ import Image from "next/image";
 import { AnimatePresence, motion, useInView, useReducedMotion } from "framer-motion";
 import {
   ArrowRight,
+  BookOpen,
   Check,
+  ChevronDown,
+  CircleAlert,
   Clock3,
   Dumbbell,
   Footprints,
   HeartPulse,
+  History,
   Info,
   Leaf,
+  ListChecks,
   Loader2,
   RotateCw,
   Salad,
   ShieldCheck,
+  Sparkles,
   Sun,
   Timer,
   Utensils,
@@ -25,7 +31,7 @@ import { FoodGuide } from "@/components/food-guide";
 import { Reveal } from "@/components/experience";
 import { GlitchButton } from "@/components/glitch-button";
 import type { DashboardData } from "@/lib/dashboard";
-import { planFingerprint, type PlanDocument } from "@/lib/plan-engine";
+import type { PlanDocument, PlanRagStatus, PlanVersionSummary } from "@/lib/plan-engine";
 import { createEmptySpaceProfile, spaceCompleteness, type SpaceProfile } from "@/lib/space";
 import { useHealthStore } from "@/stores/health-store";
 
@@ -215,97 +221,117 @@ export function PlanSwitcher({ page, profile, hasStored }: { page: "plans" | "ex
       </nav>
       <p className="pp-switch-note">
         <Info size={12} aria-hidden="true" />
-        {hasStored ? `资料已填 ${completeness.filled}/${completeness.total} 项 · 可在下方生成计划` : "还没有保存资料 · 先看示例结构"}
+        {hasStored ? `资料已填 ${completeness.filled}/${completeness.total} 项 · 可在下方生成计划` : "还没有保存资料 · 先补充资料再生成"}
       </p>
     </div>
   );
 }
 
-const PLAN_CACHE_KEY = "zhiyang-plan-cache-v1";
-
 type PlanState = {
   plan: PlanDocument | null;
+  activePlan: PlanDocument | null;
+  activeVersion: number | null;
+  versions: PlanVersionSummary[];
   persisted: boolean;
   loading: boolean;
+  activating: number | null;
   error: string | null;
   generate: () => Promise<void>;
+  activate: (version: number) => Promise<void>;
 };
 
-function readCachedPlan(fingerprint: string): { plan: PlanDocument; persisted: boolean } | null {
-  if (typeof window === "undefined") return null;
-  try {
-    const raw = window.localStorage.getItem(PLAN_CACHE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as { fingerprint?: string; plan?: PlanDocument; persisted?: boolean };
-    if (parsed.fingerprint !== fingerprint || !parsed.plan?.version) return null;
-    return { plan: parsed.plan, persisted: Boolean(parsed.persisted) };
-  } catch {
-    return null;
-  }
-}
+type PlanStateResponse = {
+  plan?: PlanDocument | null;
+  activePlan?: PlanDocument | null;
+  activeVersion?: number | null;
+  versions?: PlanVersionSummary[];
+  persisted?: boolean;
+  message?: string;
+};
 
-function writeCachedPlan(fingerprint: string, plan: PlanDocument, persisted: boolean) {
-  try {
-    window.localStorage.setItem(PLAN_CACHE_KEY, JSON.stringify({ fingerprint, plan, persisted }));
-  } catch {
-    // 本机缓存不可用时，页面仍然使用本次响应里的计划。
-  }
-}
-
-function useGeneratedPlan(profile: SpaceProfile, hasStored: boolean): PlanState {
-  const fingerprint = React.useMemo(() => planFingerprint(profile), [profile]);
-  const [result, setResult] = React.useState<{ key: string; plan: PlanDocument; persisted: boolean } | null>(null);
+function useGeneratedPlan(hasStored: boolean): PlanState {
+  const [plan, setPlan] = React.useState<PlanDocument | null>(null);
+  const [activePlan, setActivePlan] = React.useState<PlanDocument | null>(null);
+  const [activeVersion, setActiveVersion] = React.useState<number | null>(null);
+  const [versions, setVersions] = React.useState<PlanVersionSummary[]>([]);
+  const [persisted, setPersisted] = React.useState(false);
   const [loading, setLoading] = React.useState(false);
-  const [failure, setFailure] = React.useState<{ key: string; message: string } | null>(null);
+  const [activating, setActivating] = React.useState<number | null>(null);
+  const [error, setError] = React.useState<string | null>(null);
+
+  const applyState = React.useCallback((data: PlanStateResponse | null) => {
+    if (!data) return;
+    setPlan(data.plan ?? null);
+    setActivePlan(data.activePlan ?? null);
+    setActiveVersion(data.activeVersion ?? null);
+    setVersions(Array.isArray(data.versions) ? data.versions : []);
+    setPersisted(Boolean(data.persisted));
+  }, []);
 
   React.useEffect(() => {
     if (!hasStored) return;
     let cancelled = false;
     void (async () => {
-      const cached = readCachedPlan(fingerprint);
-      if (!cancelled && cached) setResult({ key: fingerprint, plan: cached.plan, persisted: cached.persisted });
       try {
-        const response = await fetch(`/api/plans/latest?fingerprint=${encodeURIComponent(fingerprint)}`);
+        const response = await fetch("/api/plans/latest");
         if (!response.ok) return;
-        const data = (await response.json()) as { plan?: PlanDocument | null; persisted?: boolean };
-        if (cancelled || !data.plan) return;
-        setResult({ key: fingerprint, plan: data.plan, persisted: Boolean(data.persisted) });
-        writeCachedPlan(fingerprint, data.plan, Boolean(data.persisted));
+        const data = (await response.json()) as PlanStateResponse;
+        if (cancelled) return;
+        applyState(data);
       } catch {
-        // 读取失败时保留本机缓存，不影响生成入口。
+        // 读取失败不影响生成入口，用户仍可手动生成。
       }
     })();
     return () => { cancelled = true; };
-  }, [fingerprint, hasStored]);
+  }, [hasStored, applyState]);
 
   const generate = React.useCallback(async () => {
-    if (!hasStored || loading) return;
+    if (!hasStored || loading || activating !== null) return;
     setLoading(true);
-    setFailure(null);
+    setError(null);
     try {
-      const response = await fetch("/api/plans/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ profile }),
-      });
-      const data = (await response.json().catch(() => null)) as { plan?: PlanDocument; persisted?: boolean; message?: string } | null;
+      const response = await fetch("/api/plans/generate", { method: "POST" });
+      const data = (await response.json().catch(() => null)) as PlanStateResponse | null;
       if (!response.ok || !data?.plan) throw new Error(data?.message ?? "计划生成失败，请稍后重试。");
-      setResult({ key: fingerprint, plan: data.plan, persisted: Boolean(data.persisted) });
-      writeCachedPlan(fingerprint, data.plan, Boolean(data.persisted));
+      applyState(data);
     } catch (err) {
-      setFailure({ key: fingerprint, message: err instanceof Error ? err.message : "计划生成失败，请稍后重试。" });
+      setError(err instanceof Error ? err.message : "计划生成失败，请稍后重试。");
     } finally {
       setLoading(false);
     }
-  }, [fingerprint, hasStored, loading, profile]);
+  }, [activating, applyState, hasStored, loading]);
 
-  const current = result && result.key === fingerprint && hasStored ? result : null;
+  const activate = React.useCallback(async (version: number) => {
+    if (!hasStored || activating !== null || loading) return;
+    setActivating(version);
+    setError(null);
+    try {
+      const response = await fetch("/api/plans/activate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ version }),
+      });
+      const data = (await response.json().catch(() => null)) as PlanStateResponse | null;
+      if (!response.ok || !data) throw new Error(data?.message ?? "这个版本暂时无法启用，请稍后重试。");
+      applyState(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "这个版本暂时无法启用，请稍后重试。");
+    } finally {
+      setActivating(null);
+    }
+  }, [activating, applyState, hasStored, loading]);
+
   return {
-    plan: current?.plan ?? null,
-    persisted: current?.persisted ?? false,
+    plan: hasStored ? plan : null,
+    activePlan: hasStored ? activePlan : null,
+    activeVersion: hasStored ? activeVersion : null,
+    versions: hasStored ? versions : [],
+    persisted: hasStored ? persisted : false,
     loading,
-    error: failure && failure.key === fingerprint ? failure.message : null,
+    activating,
+    error,
     generate,
+    activate,
   };
 }
 
@@ -515,7 +541,7 @@ function PlateInstrument() {
   );
 }
 
-function WeekInstrument({ plan }: { plan?: PlanDocument | null }) {
+function WeekInstrument({ plan, hasStored }: { plan?: PlanDocument | null; hasStored: boolean }) {
   const [today, setToday] = React.useState(-1);
   const sceneRef = React.useRef<HTMLDivElement>(null);
   const tilt = useTilt(sceneRef);
@@ -533,8 +559,21 @@ function WeekInstrument({ plan }: { plan?: PlanDocument | null }) {
         minutes: day.session?.minutes ?? 0,
         tone: day.session ? "session" : "rest",
       }))
-    : weekPlan.map((day) => ({ label: day.label, short: day.short, title: day.title, minutes: day.minutes, tone: day.tone }));
+    : hasStored
+      ? weekPlan.map((day) => ({ label: day.label, short: day.short, title: day.title, minutes: day.minutes, tone: day.tone }))
+      : weekPlan.map((day) => ({ label: day.label, short: day.short, title: "待生成", minutes: 0, tone: "rest" as const }));
   const spoken = days.filter((day) => day.minutes > 0).map((day) => `${day.label}${day.title}${day.minutes}分钟`).join("，");
+  const tag = plan ? "按资料生成" : hasStored ? "示例" : "待生成";
+  const ariaLabel = plan
+    ? `按资料生成的周节奏：${spoken}。`
+    : hasStored
+      ? "示例周节奏：周二力量二十五分钟，周四快走与活动度二十分钟，周六力量二十五分钟。"
+      : "还没有生成周节奏；保存资料后再生成。";
+  const foot = plan
+    ? `${plan.movement.sessionCount} 次活动 · 约 ${plan.movement.totalMinutes} 分钟`
+    : hasStored
+      ? "3 次活动 · 约 70 分钟"
+      : "保存资料后生成";
 
   return (
     <div className="pp-instrument-float">
@@ -542,12 +581,8 @@ function WeekInstrument({ plan }: { plan?: PlanDocument | null }) {
         <div className="pp-week-card">
           <span className="pp-plate-glass" aria-hidden="true" />
           <div className="pp-week-body">
-            <div className="pp-instrument-head"><span>本周节奏</span><span className="pp-mini-tag">{plan ? "按资料生成" : "示例"}</span></div>
-            <div
-              className="pp-week-mini"
-              role="img"
-              aria-label={plan ? `按资料生成的周节奏：${spoken}。` : "示例周节奏：周二力量二十五分钟，周四快走与活动度二十分钟，周六力量二十五分钟。"}
-            >
+            <div className="pp-instrument-head"><span>本周节奏</span><span className="pp-mini-tag">{tag}</span></div>
+            <div className="pp-week-mini" role="img" aria-label={ariaLabel}>
               {days.map((day, index) => (
                 <div key={day.label} className={`pp-week-mini-day ${day.tone === "session" ? "has-session" : ""} ${index === today ? "is-today" : ""}`} aria-hidden="true">
                   <span>{day.short}</span>
@@ -556,7 +591,7 @@ function WeekInstrument({ plan }: { plan?: PlanDocument | null }) {
                 </div>
               ))}
             </div>
-            <div className="pp-week-mini-foot"><Footprints size={13} aria-hidden="true" /> {plan ? `${plan.movement.sessionCount} 次活动 · 约 ${plan.movement.totalMinutes} 分钟` : "3 次活动 · 约 70 分钟"} · {todayLabel(today)}</div>
+            <div className="pp-week-mini-foot"><Footprints size={13} aria-hidden="true" /> {foot} · {todayLabel(today)}</div>
           </div>
         </div>
       </div>
@@ -596,17 +631,23 @@ function PlanHero({ kind, data, plan, hasStored }: { kind: PlanKind; data?: Dash
             <span>{diet ? "DIET" : "MOVEMENT"}</span>
             <i aria-hidden="true" />
             <span>{diet ? "饮食计划" : "运动计划"}</span>
-            <span className="pp-mini-tag">{plan ? "按资料生成" : diet ? "示例结构" : "示例安排"}</span>
+            <span className="pp-mini-tag">{plan ? (plan.dataBasis.usesMealRecords ? "按资料与记录生成" : "按资料生成") : diet ? "示例结构" : hasStored ? "示例安排" : "待生成"}</span>
           </div>
           <h1 id={`pp-${kind}-title`}>{diet ? "吃得刚刚好，\n比吃得完美更重要。" : "把训练，\n放回风里。"}</h1>
           <p className="pp-hero-lede">
             {plan
               ? diet
-                ? "下面是按你填写的资料生成的餐次结构、热量区间和替换思路；份量可以按饥饿感微调。"
-                : "下面是按你填写的资料生成的每周节奏；状态一般时，先减量，再谈完成。"
+                ? plan.dataBasis.usesMealRecords
+                  ? "下面是按你填写的资料，并结合近 7 天已确认餐食生成的餐次结构、热量区间和替换思路；份量可以按饥饿感微调。"
+                  : "下面是按你填写的资料生成的餐次结构、热量区间和替换思路；份量可以按饥饿感微调。"
+                : plan.dataBasis.usesMealRecords
+                  ? "下面是按你填写的资料，并结合近 7 天已确认餐食生成的每周节奏；状态一般时，先减量，再谈完成。"
+                  : "下面是按你填写的资料生成的每周节奏；状态一般时，先减量，再谈完成。"
               : diet
                 ? "先保证每一餐有蛋白质、蔬菜和主食，再谈份量和细节。时间和搭配都可以换。"
-                : "每周三次、每次约二十五分钟的示例节奏：力量、快走和拉伸轮流出现。忙的时候，走十分钟也算。"}
+                : hasStored
+                  ? "每周三次、每次约二十五分钟的示例节奏：力量、快走和拉伸轮流出现。忙的时候，走十分钟也算。"
+                  : "先保存年龄、体重、活动量和训练环境；保存之前，这里不会用示例替你安排每周计划。"}
           </p>
           <div className="pp-meta-row">
             {diet ? (
@@ -643,9 +684,9 @@ function PlanHero({ kind, data, plan, hasStored }: { kind: PlanKind; data?: Dash
               </>
             ) : (
               <>
-                <span className="pp-chip">示例 · 每周 3 次</span>
-                <span className="pp-chip">示例 · 每次约 25 分钟</span>
-                <span className="pp-chip">示例 · 居家无器械</span>
+                <span className="pp-chip">资料未保存</span>
+                <span className="pp-chip">保存后生成每周节奏</span>
+                <span className="pp-chip">环境按资料</span>
               </>
             )}
           </div>
@@ -656,15 +697,19 @@ function PlanHero({ kind, data, plan, hasStored }: { kind: PlanKind; data?: Dash
           animate={{ opacity: 1, y: 0, scale: 1 }}
           transition={{ duration: reduce ? 0 : 0.85, delay: reduce ? 0 : 0.14, ease }}
         >
-          {diet ? <PlateInstrument /> : <WeekInstrument plan={plan} />}
+          {diet ? <PlateInstrument /> : <WeekInstrument plan={plan} hasStored={hasStored} />}
         </motion.div>
       </div>
       <p className="pp-hero-credit">
         {plan
-          ? "照片为氛围示意；生成计划按填写资料计算，仍是通用结构，不是个体营养或医疗处方。"
+          ? plan.dataBasis.usesMealRecords
+            ? "照片为氛围示意；生成计划按填写资料与已确认餐食汇总计算，仍是通用结构，不是个体营养或医疗处方。"
+            : "照片为氛围示意；生成计划按填写资料计算，仍是通用结构，不是个体营养或医疗处方。"
           : diet
-            ? "照片为氛围示意；餐盘结构与餐次均为示例，不是个体营养处方。"
-            : "照片为氛围示意；训练安排为示例，不记录心率或动作数据。"}
+            ? "照片为氛围示意；餐盘结构为示例，保存资料并生成后才会得到餐次安排。"
+            : hasStored
+              ? "照片为氛围示意；训练安排为示例，不记录心率或动作数据。"
+              : "照片为氛围示意；保存资料后才会生成训练安排，不记录心率或动作数据。"}
       </p>
     </section>
   );
@@ -680,25 +725,32 @@ function SectionHead({ eyebrow, title, copy }: { eyebrow: string; title: string;
   );
 }
 
+const mealTones = ["amber", "sage", "clay", "forest"] as const;
+
 function GeneratedDiet({ plan }: { plan: PlanDocument }) {
   return (
     <div className="pp-generated-block">
       <div className="pp-generated-subhead">
         <strong>一天的吃法</strong>
-        <span>{plan.profileSnapshot.dietLabel} · 按资料生成</span>
+        <span>
+          {plan.profileSnapshot.dietLabel} · {plan.dataBasis.usesMealRecords ? "资料 + 近 7 天已确认餐食" : "按资料生成"}
+        </span>
       </div>
-      <div className="pp-generated-meals">
-        {plan.diet.meals.map((meal) => (
-          <article key={`${meal.time}-${meal.label}`}>
-            <div className="pp-generated-meal-top">
-              <span>{meal.time}</span>
-              <b>{meal.label}</b>
-              {meal.kcalHint && <em>{meal.kcalHint}</em>}
-            </div>
-            <h3>{meal.title}</h3>
-            <p>{meal.detail}</p>
-            <small>替换：{meal.swap}</small>
-          </article>
+      <div className="pp-meal-grid">
+        {plan.diet.meals.map((meal, index) => (
+          <MealCard
+            key={`${meal.time}-${meal.label}`}
+            meal={{
+              time: meal.time,
+              label: meal.label,
+              title: meal.title,
+              detail: meal.detail,
+              swap: meal.swap,
+              tags: [meal.kcalHint, plan.profileSnapshot.dietLabel].filter((tag): tag is string => Boolean(tag)),
+              tone: mealTones[index % mealTones.length],
+              badge: "按资料",
+            }}
+          />
         ))}
       </div>
       <div className="pp-generated-notes">
@@ -739,6 +791,271 @@ function GeneratedMovement({ plan }: { plan: PlanDocument }) {
   );
 }
 
+function formatPlanTime(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "时间未知";
+  return new Intl.DateTimeFormat("zh-CN", {
+    month: "numeric",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(date);
+}
+
+const agentStatusLabels = {
+  OK: "AI 建议已完成",
+  SKIPPED: "本次未运行 AI 建议",
+  FAILED: "AI 建议已回退",
+} as const;
+
+const agentStatusShort = {
+  OK: "建议已完成",
+  SKIPPED: "未运行",
+  FAILED: "已回退",
+} as const;
+
+const ragStatusLabels: Record<PlanRagStatus, string> = {
+  OK: "已引用审核指南",
+  NO_MATCH: "未命中审核指南",
+  NOT_CONFIGURED: "指南检索未配置",
+  RETRIEVAL_FAILED: "指南检索失败",
+  NOT_CALLED: "本次未检索指南",
+};
+
+const ragEmptyCopy: Record<PlanRagStatus, string> = {
+  OK: "检索状态正常，但本次没有保留引用。",
+  NO_MATCH: "知识库里没有足够相似的审核指南，本次不展示来源，也不编造引用。",
+  NOT_CONFIGURED: "当前没有可用的指南检索配置，本次不展示来源。",
+  RETRIEVAL_FAILED: "指南检索暂时失败，本次不展示来源，也不编造引用。",
+  NOT_CALLED: "本次没有检索指南。",
+};
+
+const toolLabels: Record<string, string> = {
+  getRecentMealSummary: "读取餐食汇总",
+  getNutritionTargets: "读取营养目标",
+  searchGuidelines: "检索审核指南",
+  applyFocus: "应用建议重点",
+  addCoachNote: "添加调整说明",
+};
+
+function PlanStatusBanner({ plan, activeVersion, activating, activate }: {
+  plan: PlanDocument;
+  activeVersion: number | null;
+  activating: number | null;
+  activate: (version: number) => Promise<void>;
+}) {
+  const active = plan.version === activeVersion;
+  return (
+    <div className={`pp-plan-status ${active ? "is-active" : "is-pending"}`} role="status">
+      <span className="pp-plan-status-icon" aria-hidden="true">
+        {active ? <Check size={16} /> : <Info size={16} />}
+      </span>
+      <div className="pp-plan-status-copy">
+        <strong>{active ? `v${plan.version} 已启用为当前计划` : `v${plan.version} 是建议版本，尚未启用`}</strong>
+        <p>
+          {active
+            ? "后续生成的新版本会先作为建议，只有你确认后才会替换当前计划。"
+            : activeVersion !== null
+              ? `当前启用的是 v${activeVersion}。下面保留了本次的输入摘要、工具调用与调整差异；确认后再决定是否启用。`
+              : "这是第一版建议。确认依据后启用，它会成为当前计划；不启用也不影响你的餐食记录。"}
+        </p>
+      </div>
+      {!active && (
+        <button type="button" className="pp-plan-activate" onClick={() => void activate(plan.version)} disabled={activating !== null}>
+          {activating === plan.version ? <Loader2 size={15} className="pp-spin" aria-hidden="true" /> : <Check size={15} aria-hidden="true" />}
+          {activating === plan.version ? "启用中…" : "启用这个版本"}
+        </button>
+      )}
+    </div>
+  );
+}
+
+function PlanRevisionBlock({ plan }: { plan: PlanDocument }) {
+  const revision = plan.revision;
+  if (!revision) return null;
+  return (
+    <div className="pp-plan-revision">
+      <div className="pp-generated-subhead">
+        <strong>本版变化</strong>
+        <span>{revision.basedOnVersion === null ? "首版，无前版可对比" : `对比 v${revision.basedOnVersion}`}</span>
+      </div>
+      <p className="pp-plan-revision-summary">{revision.summary}</p>
+      {revision.changes.length > 0 && (
+        <ul>
+          {revision.changes.map((change) => (
+            <li key={change.area}>
+              <strong>{change.area}</strong>
+              <span>{change.before}</span>
+              <ArrowRight size={12} aria-hidden="true" />
+              <span>{change.after}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function AgentInsight({ plan }: { plan: PlanDocument }) {
+  const agent = plan.agent;
+  if (!agent) {
+    return (
+      <div className="pp-agent">
+        <div className="pp-agent-head">
+          <div>
+            <div className="pp-sec-eyebrow">AI 建议 · 旧版记录</div>
+            <h3>这一版没有 Agent 记录。</h3>
+          </div>
+        </div>
+        <p className="pp-agent-legacy">
+          这是升级前生成的计划：只保留了规则计算与数据依据，没有保存当时的工具调用和引用。重新生成会得到带依据的新版本。
+        </p>
+      </div>
+    );
+  }
+
+  const input = agent.inputSummary;
+  const coaching = plan.coaching;
+
+  return (
+    <div className="pp-agent">
+      <div className="pp-agent-head">
+        <div>
+          <div className="pp-sec-eyebrow">AI 建议 · 受约束 Agent</div>
+          <h3>模型选重点，规则算数字。</h3>
+        </div>
+        <span className={`pp-agent-status is-${agent.status.toLowerCase()}`}>
+          {agent.status === "OK" ? <Sparkles size={13} aria-hidden="true" /> : agent.status === "FAILED" ? <CircleAlert size={13} aria-hidden="true" /> : <Info size={13} aria-hidden="true" />}
+          {agentStatusLabels[agent.status]}
+        </span>
+      </div>
+      <p className="pp-agent-desc">
+        模型只调用受约束的工具、选择建议重点并解释；热量与蛋白质计算、餐食汇总、禁忌与安全边界都由确定性规则完成。
+      </p>
+      {agent.fallbackReason && <p className="pp-agent-error">{agent.fallbackReason}</p>}
+
+      <div className="pp-agent-chips">
+        <span>资料字段 {input.profileFields.length} 项</span>
+        <span>已确认餐食 {input.confirmedMeals} 餐</span>
+        <span>记录 {input.recordedDays} 天</span>
+        <span>较完整 {input.completeDays} 天</span>
+        <span>{input.currentPlanVersion === null ? "首版建议" : `基于 v${input.currentPlanVersion}`}</span>
+        {agent.model && <span>模型 {agent.model}</span>}
+      </div>
+
+      {agent.rationale.length > 0 && (
+        <div className="pp-agent-rationale">
+          <span><ListChecks size={13} aria-hidden="true" />调整说明</span>
+          <ul>
+            {agent.rationale.map((note) => <li key={note}>{note}</li>)}
+          </ul>
+        </div>
+      )}
+
+      <div className="pp-agent-adjust">
+        <span>本版调整</span>
+        {agent.adjustments.length === 0 ? (
+          <p>{coaching && coaching.focus !== "none" ? coaching.focusNote : "没有改动热量、餐次或训练结构；本次只补充了依据与说明。"}</p>
+        ) : (
+          <ul>
+            {agent.adjustments.map((item) => (
+              <li key={`${item.area}-${item.to}`}>
+                <strong>{item.area}</strong>
+                <span className="pp-agent-adjust-flow">{item.from} <ArrowRight size={12} aria-hidden="true" /> {item.to}</span>
+                <p>{item.reason}</p>
+              </li>
+            ))}
+          </ul>
+        )}
+        {coaching && coaching.focus !== "none" && (
+          <p className="pp-agent-focus">建议重点：{coaching.focusLabel} · {coaching.focusNote}</p>
+        )}
+      </div>
+
+      <div className="pp-agent-refs">
+        <span><BookOpen size={13} aria-hidden="true" />指南引用 · {ragStatusLabels[agent.ragStatus]}</span>
+        {agent.references.length > 0 ? (
+          <ul>
+            {agent.references.map((reference) => (
+              <li key={`${reference.title}-${reference.source}`}>
+                <strong>{reference.title}</strong>
+                <small>{reference.source}</small>
+                <em>相似度 {reference.similarity.toFixed(2)}</em>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p>{ragEmptyCopy[agent.ragStatus]}</p>
+        )}
+      </div>
+
+      {agent.toolLog.length > 0 && (
+        <details className="pp-agent-tools">
+          <summary><ChevronDown size={13} aria-hidden="true" />工具调用记录 · {agent.toolLog.length} 条</summary>
+          <ul>
+            {agent.toolLog.map((entry, index) => (
+              <li key={`${entry.name}-${index}`} className={`is-${entry.status.toLowerCase()}`}>
+                <span>{toolLabels[entry.name] ?? entry.name}</span>
+                <small>{entry.summary}</small>
+                <em>{entry.status === "OK" ? "通过" : entry.status === "REJECTED" ? "被规则拒绝" : "失败"}</em>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+    </div>
+  );
+}
+
+function PlanHistory({ versions, activating, activate }: {
+  versions: PlanVersionSummary[];
+  activating: number | null;
+  activate: (version: number) => Promise<void>;
+}) {
+  if (versions.length === 0) return null;
+  return (
+    <div className="pp-plan-history">
+      <div className="pp-generated-subhead">
+        <strong>版本历史</strong>
+        <span>共 {versions.length} 版 · 旧版本可追溯</span>
+      </div>
+      <ul>
+        {versions.map((item) => (
+          <li key={item.version} className={item.active ? "is-active" : item.isLatest ? "is-latest" : ""}>
+            <div className="pp-plan-history-version">
+              <strong>v{item.version}</strong>
+              {item.active && <span className="pp-plan-history-badge">当前启用</span>}
+              {!item.active && item.isLatest && <span className="pp-plan-history-badge is-suggest">最新建议</span>}
+            </div>
+            <div className="pp-plan-history-copy">
+              <p>{item.summary}</p>
+              <small>
+                {formatPlanTime(item.createdAt)}
+                {item.basedOnVersion !== null ? ` · 基于 v${item.basedOnVersion}` : " · 首版"}
+                {item.inputSummary ? ` · 已确认餐食 ${item.inputSummary.confirmedMeals} 餐 / ${item.inputSummary.recordedDays} 天` : ""}
+              </small>
+            </div>
+            {item.active ? (
+              <span className="pp-plan-history-current"><Check size={13} aria-hidden="true" />正在使用</span>
+            ) : (
+              <button
+                type="button"
+                className="pp-plan-history-activate"
+                onClick={() => void activate(item.version)}
+                disabled={activating !== null}
+              >
+                {activating === item.version ? <Loader2 size={13} className="pp-spin" aria-hidden="true" /> : <History size={13} aria-hidden="true" />}
+                {activating === item.version ? "启用中…" : "启用此版"}
+              </button>
+            )}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function GeneratedPlanPanel({ kind, profile, hasStored, planState }: {
   kind: PlanKind;
   profile: SpaceProfile;
@@ -746,7 +1063,7 @@ function GeneratedPlanPanel({ kind, profile, hasStored, planState }: {
   planState: PlanState;
 }) {
   const setPage = useHealthStore((state) => state.setPage);
-  const { plan, persisted, loading, error, generate } = planState;
+  const { plan, activeVersion, versions, persisted, loading, activating, error, generate, activate } = planState;
   const completeness = hasStored ? spaceCompleteness(profile) : spaceCompleteness(createEmptySpaceProfile());
 
   if (!hasStored) {
@@ -757,7 +1074,7 @@ function GeneratedPlanPanel({ kind, profile, hasStored, planState }: {
             <div>
               <div className="pp-sec-eyebrow">你的计划 · 尚未生成</div>
               <h2 id="pp-generated-title">先有资料，才有数字。</h2>
-              <p>计划会按你填写的年龄、身高、体重、目标、活动量和训练环境计算。没有资料时，这里不会给出热量目标，只保留下方示例结构。</p>
+              <p>计划会按你填写的年龄、身高、体重、目标、活动量和训练环境计算。没有资料时，这里不会给出热量目标，也不会用示例{kind === "diet" ? "餐单" : "训练安排"}代替你的计划。</p>
             </div>
             <span className="pp-generated-stamp">未保存资料</span>
           </header>
@@ -779,24 +1096,32 @@ function GeneratedPlanPanel({ kind, profile, hasStored, planState }: {
         <header className="pp-generated-head">
           <div>
             <div className="pp-sec-eyebrow">你的生成计划{plan ? ` · 版本 v${plan.version}` : ""}</div>
-            <h2 id="pp-generated-title">{plan ? "按资料生成，不靠猜。" : "资料已就位，生成第一版。"}</h2>
+            <h2 id="pp-generated-title">
+              {plan
+                ? plan.dataBasis.usesMealRecords
+                  ? "按资料与记录生成，不靠猜。"
+                  : "按资料生成，不靠猜。"
+                : "资料已就位，生成第一版。"}
+            </h2>
             <p>
               {plan
-                ? "热量、蛋白质、餐次和训练安排都由固定规则计算；每次重新生成会留下新的版本号，不会覆盖旧记录。"
-                : "生成后会显示热量与蛋白质区间、餐次分配和每周训练节奏，并标明使用了哪些资料。"}
+                ? "热量、蛋白质、餐次和训练安排都由固定规则计算；AI 只在受约束范围内选择建议重点。每次生成都会留下新版本，确认后才会替换当前计划。"
+                : "生成后会显示热量与蛋白质区间、餐次分配和每周训练节奏，并标明使用了哪些资料与已确认餐食。"}
             </p>
           </div>
-          <button type="button" className="pp-generated-regen" onClick={() => void generate()} disabled={loading}>
+          <button type="button" className="pp-generated-regen" onClick={() => void generate()} disabled={loading || activating !== null}>
             {loading ? <Loader2 size={15} className="pp-spin" aria-hidden="true" /> : <RotateCw size={15} aria-hidden="true" />}
-            {loading ? "生成中…" : plan ? "重新生成" : "生成我的计划"}
+            {loading ? "生成中…" : plan ? "生成新版本" : "生成我的计划"}
           </button>
         </header>
+
+        {plan && <PlanStatusBanner plan={plan} activeVersion={activeVersion} activating={activating} activate={activate} />}
 
         {error && <p className="pp-generated-error" role="alert">{error}</p>}
         {loading && !plan && (
           <div className="pp-generated-loading">
             <Loader2 size={18} className="pp-spin" aria-hidden="true" />
-            <span>正在按资料计算计划…</span>
+            <span>正在汇总已确认餐食、调用工具并计算计划…</span>
           </div>
         )}
 
@@ -804,9 +1129,11 @@ function GeneratedPlanPanel({ kind, profile, hasStored, planState }: {
           <>
             <div className="pp-generated-meta">
               <span>v{plan.version}</span>
-              <span>{new Intl.DateTimeFormat("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(plan.generatedAt))}</span>
+              <span>{formatPlanTime(plan.generatedAt)}</span>
               <span>资料 {plan.completeness.filled}/{plan.completeness.total}</span>
-              <span>{plan.dataBasis.source === "demo" ? "演示资料" : "本机填写"}</span>
+              <span>{plan.dataBasis.source === "demo" ? "演示资料" : "资料页填写"}</span>
+              {plan.dataBasis.usesMealRecords && <span>已确认餐食 {plan.dataBasis.mealRecordCount} 餐</span>}
+              {plan.agent && <span>AI {agentStatusShort[plan.agent.status]}</span>}
               <span>{plan.engineName} · {plan.engineVersion}</span>
             </div>
 
@@ -827,17 +1154,24 @@ function GeneratedPlanPanel({ kind, profile, hasStored, planState }: {
 
             {kind === "diet" ? <GeneratedDiet plan={plan} /> : <GeneratedMovement plan={plan} />}
 
+            <PlanRevisionBlock plan={plan} />
+            <AgentInsight plan={plan} />
+
             <div className="pp-generated-basis">
               <div>
                 <span>数据依据</span>
                 <p>使用：{plan.dataBasis.usedFields.join("、")}。</p>
                 {plan.dataBasis.missingFields.length > 0 && <p>未填：{plan.dataBasis.missingFields.join("、")}。</p>}
-                <p>没有读取餐食记录、体重趋势或手环数据。</p>
+                <p>
+                  {plan.dataBasis.usesMealRecords
+                    ? `读取了近 7 天 ${plan.dataBasis.mealRecordCount} 餐已确认餐食，覆盖 ${plan.dataBasis.mealRecordedDays} 天；其中 ${plan.dataBasis.mealMacroCompleteMeals} 餐营养字段完整。没有读取体重趋势或手环数据。`
+                    : "没有读取餐食记录、体重趋势或手环数据。"}
+                </p>
                 {plan.dataBasis.targetMethod && <p>热量算法：{plan.dataBasis.targetMethod}。</p>}
               </div>
               <div>
                 <span>版本与来源</span>
-                <p>{persisted ? "本次版本已写入计划历史，可按版本号追溯。" : "当前为演示或临时存储，版本保存在当前会话与本机缓存中。"}</p>
+                <p>{persisted ? "本次版本已写入计划历史，可按版本号追溯。" : "当前为演示沙盒，版本只保存在这次浏览会话中。"}</p>
                 {plan.dataBasis.notes.map((note) => <p key={note}>{note}</p>)}
               </div>
             </div>
@@ -847,6 +1181,8 @@ function GeneratedPlanPanel({ kind, profile, hasStored, planState }: {
               <ul>{plan.safety.flags.map((flag) => <li key={flag}>{flag}</li>)}</ul>
               <p>{plan.safety.disclaimer}</p>
             </div>
+
+            <PlanHistory versions={versions} activating={activating} activate={activate} />
           </>
         )}
       </section>
@@ -863,11 +1199,11 @@ function ExampleDivider({ kind }: { kind: PlanKind }) {
   );
 }
 
-function MacroRow({ label, value, goal, tone }: { label: string; value: number; goal: number; tone: string }) {
-  const percent = goal > 0 ? Math.min(100, Math.round((value / goal) * 100)) : 0;
+function MacroRow({ label, value, goal, tone }: { label: string; value: number; goal: number | null; tone: string }) {
+  const percent = goal && goal > 0 ? Math.min(100, Math.round((value / goal) * 100)) : 0;
   return (
     <div className="pp-macro">
-      <div className="pp-macro-head"><span>{label}</span><b>{Math.round(value)} <small>/ {goal} g</small></b></div>
+      <div className="pp-macro-head"><span>{label}</span><b>{Math.round(value)} <small>/ {goal === null ? "—" : `${goal} g`}</small></b></div>
       <div className="pp-macro-track" role="progressbar" aria-label={`${label}参考目标进度`} aria-valuenow={percent} aria-valuemin={0} aria-valuemax={100}>
         <span className={tone} style={{ width: `${percent}%` }} />
       </div>
@@ -875,7 +1211,18 @@ function MacroRow({ label, value, goal, tone }: { label: string; value: number; 
   );
 }
 
-function MealCard({ meal }: { meal: (typeof planMeals)[number] }) {
+type MealCardData = {
+  time: string;
+  label: string;
+  title: string;
+  detail?: string;
+  swap: string;
+  tags: readonly string[];
+  tone: "amber" | "sage" | "clay" | "forest";
+  badge: string;
+};
+
+function MealCard({ meal }: { meal: MealCardData }) {
   const [flipped, setFlipped] = React.useState(false);
   return (
     <button
@@ -891,9 +1238,10 @@ function MealCard({ meal }: { meal: (typeof planMeals)[number] }) {
       <span className="pp-meal-sheet pp-meal-sheet-mid" aria-hidden="true" />
       <span className="pp-meal-inner">
         <span className="pp-meal-face pp-meal-front" aria-hidden={flipped}>
-          <span className="pp-meal-top"><span className="pp-meal-time">{meal.time}</span><span className="pp-meal-badge">示例</span></span>
+          <span className="pp-meal-top"><span className="pp-meal-time">{meal.time}</span><span className="pp-meal-badge">{meal.badge}</span></span>
           <span className="pp-meal-kicker">{meal.label}</span>
           <strong>{meal.title}</strong>
+          {meal.detail && <span className="pp-meal-detail">{meal.detail}</span>}
           <span className="pp-meal-tags">{meal.tags.map((tag) => <span key={tag}>{tag}</span>)}</span>
           <span className="pp-meal-hint">
             <span className="pp-meal-hint-hover">悬停翻看替换思路</span>
@@ -902,7 +1250,7 @@ function MealCard({ meal }: { meal: (typeof planMeals)[number] }) {
           </span>
         </span>
         <span className="pp-meal-face pp-meal-back" aria-hidden={!flipped}>
-          <span className="pp-meal-back-top"><span>替换思路 · 示例</span><RotateCw size={12} aria-hidden="true" /></span>
+          <span className="pp-meal-back-top"><span>替换思路 · {meal.badge}</span><RotateCw size={12} aria-hidden="true" /></span>
           <span className="pp-meal-swap">{meal.swap}</span>
           <span className="pp-meal-hint">
             <span className="pp-meal-hint-hover">移开鼠标翻回</span>
@@ -970,7 +1318,7 @@ function DietPlanMeals() {
           copy="时间是示例，按自己的作息平移；每一餐都有蛋白质、蔬菜和主食的思路。"
         />
         <div className="pp-meal-grid">
-          {planMeals.map((meal) => <MealCard meal={meal} key={meal.time} />)}
+          {planMeals.map((meal) => <MealCard meal={{ ...meal, badge: "示例" }} key={meal.time} />)}
         </div>
         <p className="pp-section-note">翻卡内容是搭配示例，不是个体营养处方；份量按自己的情况调整。</p>
       </section>
@@ -1008,13 +1356,13 @@ function HonestyPanel({ generated, hasStored }: { generated: boolean; hasStored:
       <section className="pp-dark pp-honest" aria-labelledby="pp-honest-title">
         <div className="pp-dark-copy">
           <div className="pp-sec-eyebrow">计划的边界</div>
-          <h2 id="pp-honest-title">{generated ? "示例只补充结构，不替代你的计划。" : "这份示例，不会替你做决定。"}</h2>
+          <h2 id="pp-honest-title">{generated ? "示例只补充结构，不替代你的计划。" : hasStored ? "这份示例，不会替你做决定。" : "没有资料，就没有你的计划。"}</h2>
           <p>
             {generated
               ? "上方的生成计划按你填写的资料计算，并保留版本号和数据依据；本页其余部分仍是通用示例，不会覆盖生成结果，也不是医疗或营养处方。"
               : hasStored
                 ? "还没有生成计划。下方仍是通用示例结构；生成后会按资料计算热量与蛋白质区间，但不构成医疗处方。"
-                : "它只展示结构，没有根据你的真实资料自动生成，也不会悄悄改变目标。目标范围需要结合年龄、身高、体重、活动量和医生建议确定；这里不做个体医疗营养处方。"}
+                : "你还没有保存资料。这里只提供一般饮食与活动建议，不会用示例替你生成计划，也不会悄悄改变目标。目标范围需要结合年龄、身高、体重、活动量和医生建议确定；这里不做个体医疗营养处方。"}
           </p>
         </div>
         <div className="pp-dark-actions">
@@ -1027,7 +1375,7 @@ function HonestyPanel({ generated, hasStored }: { generated: boolean; hasStored:
 }
 
 export function DietPlan({ data, loading, profile, hasStored }: { data?: DashboardData; loading: boolean; profile: SpaceProfile; hasStored: boolean }) {
-  const planState = useGeneratedPlan(profile, hasStored);
+  const planState = useGeneratedPlan(hasStored);
   return (
     <div className="pp-page">
       <PlanHero kind="diet" data={data} plan={planState.plan} hasStored={hasStored} />
@@ -1035,7 +1383,7 @@ export function DietPlan({ data, loading, profile, hasStored }: { data?: Dashboa
       {!hasStored && <DietTargets data={data} loading={loading} />}
       {planState.plan && <ExampleDivider kind="diet" />}
       <FoodGuide />
-      <DietPlanMeals />
+      {hasStored && <DietPlanMeals />}
       <DietFlex />
       <HonestyPanel generated={Boolean(planState.plan)} hasStored={hasStored} />
     </div>
@@ -1267,7 +1615,7 @@ function SafetyPanel() {
 
 export function ExercisePlan({ data, profile, hasStored }: { data?: DashboardData; loading?: boolean; profile: SpaceProfile; hasStored: boolean }) {
   const [today, setToday] = React.useState(-1);
-  const planState = useGeneratedPlan(profile, hasStored);
+  const planState = useGeneratedPlan(hasStored);
 
   React.useEffect(() => {
     const frame = requestAnimationFrame(() => setToday(shanghaiWeekdayIndex()));
@@ -1278,13 +1626,14 @@ export function ExercisePlan({ data, profile, hasStored }: { data?: DashboardDat
     <div className="pp-page">
       <PlanHero kind="exercise" data={data} plan={planState.plan} hasStored={hasStored} />
       <GeneratedPlanPanel kind="exercise" profile={profile} hasStored={hasStored} planState={planState} />
-      {planState.plan ? <ExampleDivider kind="exercise" /> : <ExerciseWeek today={today} />}
-      <SessionDeck />
+      {planState.plan && <ExampleDivider kind="exercise" />}
+      {hasStored && !planState.plan && <ExerciseWeek today={today} />}
+      {hasStored && <SessionDeck />}
       <IntensityMeter />
       <ExerciseLife />
       <SafetyPanel />
       <p className="pp-endnote">
-        <Leaf size={12} aria-hidden="true" /> 智养 AI · {planState.plan ? `生成计划 v${planState.plan.version} + 示例结构` : "示例计划"} · 今天做到一点点，就已经在往前。
+        <Leaf size={12} aria-hidden="true" /> 智养 AI · {planState.plan ? `${planState.activeVersion === planState.plan.version ? "计划已启用" : "建议版本待启用"} v${planState.plan.version} + 示例结构` : hasStored ? "资料已保存 · 示例结构" : "尚未生成计划"} · 今天做到一点点，就已经在往前。
       </p>
     </div>
   );

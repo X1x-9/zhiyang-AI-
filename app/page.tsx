@@ -2,8 +2,9 @@
 
 import * as React from "react";
 import { motion } from "framer-motion";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Camera, ChartNoAxesCombined, ChevronRight, Droplets, Dumbbell, LayoutDashboard, Leaf, Loader2, MessageCircle, Plus, Salad, Trash2, UserRound, Utensils, X } from "lucide-react";
+import { AccountPanel } from "@/components/account-panel";
 import { Button } from "@/components/ui/button";
 import Hero38 from "@/components/originkit/hero-38";
 import { LandingSections } from "@/components/landing/landing-sections";
@@ -14,6 +15,7 @@ import { MySpace } from "@/components/my-space";
 import { DietPlan, ExercisePlan, PlanSwitcher } from "@/components/plan-experience";
 import { SpaceCard } from "@/components/space-card";
 import { getDashboard, type DashboardData, type WeekSummary, type WeightPoint } from "@/lib/dashboard";
+import { fetchProfile } from "@/lib/profile-client";
 import { createDemoSpaceProfile, createEmptySpaceProfile, type SpaceProfile } from "@/lib/space";
 import { useHealthStore, type Page } from "@/stores/health-store";
 
@@ -84,8 +86,8 @@ function WeightChart({ series }: { series: WeightPoint[] }) {
 function DemoNotice({ notice }: { notice?: string }) {
   return (
     <div className="demo-banner" role="note">
-      <span className="demo-badge">演示模式</span>
-      <p>当前展示示例数据，用于体验产品流程；数据只保存在服务器内存中，所有访问者共享，请勿填写真实健康信息。{notice ? ` ${notice}` : ""}</p>
+      <span className="demo-badge">演示沙盒</span>
+      <p>当前是只属于这个浏览器会话的演示沙盒，示例数据不会与其他访客混在一起，请勿填写真实健康信息；登录后会切换到你的账户数据。{notice ? ` ${notice}` : ""}</p>
     </div>
   );
 }
@@ -94,18 +96,13 @@ function Dashboard() {
   const setPage = useHealthStore((state) => state.setPage);
   const addWater = useHealthStore((state) => state.addWater);
   const waterAdded = useHealthStore((state) => state.waterAdded);
-  const setDemoData = useHealthStore((state) => state.setDemoData);
   const { data, isPending, isError, error, refetch } = useQuery({ queryKey: ["dashboard"], queryFn: getDashboard });
   const [trainingStarted, setTrainingStarted] = React.useState(false);
-
-  React.useEffect(() => {
-    if (data) setDemoData(data.demo);
-  }, [data, setDemoData]);
 
   if (isPending) return <GrowingLoader label="正在整理今天的健康记录…" />;
   if (isError || !data) return <div className="empty-note" role="alert">暂时无法载入今日数据。{error instanceof Error ? ` ${error.message}` : ""} <button className="link-button" onClick={() => void refetch()}>重试</button></div>;
 
-  const percent = data.calorieGoal > 0 ? Math.round((data.calories / data.calorieGoal) * 100) : 0;
+  const percent = data.calorieGoal && data.calorieGoal > 0 ? Math.round((data.calories / data.calorieGoal) * 100) : 0;
   const water = data.waterMl + waterAdded;
   const waterPercent = data.waterGoal > 0 ? Math.min(100, (water / data.waterGoal) * 100) : 0;
   const revealHydration = () => {
@@ -355,6 +352,10 @@ const knownSources = [
 const CHAT_INTRO = "你好，我是你的健康搭子。可以问我饮食搭配、训练安排，或怎么记录更准确。营养数字都是估算，身体不适请优先咨询医生。";
 const CHAT_THREADS_KEY = "zhiyang-chat-threads-v1";
 const CHAT_THREAD_LIMIT = 30;
+
+function chatThreadsKey(identityKey: string) {
+  return identityKey === "pending" ? null : `${CHAT_THREADS_KEY}:${identityKey}`;
+}
 const EMPTY_CHAT_MESSAGES: ChatMessage[] = [];
 
 function chatMessageId(prefix: string) {
@@ -383,10 +384,10 @@ function createChatThread(): ChatThread {
   };
 }
 
-function loadChatThreads(): ChatThread[] {
-  if (typeof window === "undefined") return [createChatThread()];
+function loadChatThreads(storageKey: string | null): ChatThread[] {
+  if (typeof window === "undefined" || !storageKey) return [createChatThread()];
   try {
-    const raw = window.localStorage.getItem(CHAT_THREADS_KEY);
+    const raw = window.localStorage.getItem(storageKey);
     if (!raw) return [createChatThread()];
     const stored = JSON.parse(raw) as unknown;
     if (!Array.isArray(stored)) return [createChatThread()];
@@ -504,8 +505,9 @@ function splitAnswer(content: string) {
   return { body, urls };
 }
 
-function ChatPanel() {
-  const [threads, setThreads] = React.useState<ChatThread[]>(loadChatThreads);
+function ChatPanel({ identityKey }: { identityKey: string }) {
+  const storageKey = chatThreadsKey(identityKey);
+  const [threads, setThreads] = React.useState<ChatThread[]>(() => loadChatThreads(storageKey));
   const [activeThreadId, setActiveThreadId] = React.useState(() => threads[0]?.id ?? "");
   const [question, setQuestion] = React.useState("");
   const [pending, setPending] = React.useState(false);
@@ -518,15 +520,16 @@ function ChatPanel() {
   const messages = activeThread?.messages ?? EMPTY_CHAT_MESSAGES;
 
   React.useEffect(() => {
+    if (!storageKey) return;
     const timer = window.setTimeout(() => {
       try {
-        window.localStorage.setItem(CHAT_THREADS_KEY, JSON.stringify(threads));
+        window.localStorage.setItem(storageKey, JSON.stringify(threads));
       } catch {
         // 存储不可用或已满时，当前会话仍可继续使用。
       }
     }, 400);
     return () => window.clearTimeout(timer);
-  }, [threads]);
+  }, [threads, storageKey]);
 
   React.useEffect(() => {
     if (messages.length < 2) return;
@@ -727,7 +730,7 @@ function ChatPanel() {
               </div>
             ))}
           </div>
-          <p className="chat-history-note">对话只保存在本机浏览器；清除站点数据后会消失。</p>
+          <p className="chat-history-note">对话按账号分别保存在本机浏览器；切换账号不会看到其他账号的记录，清除站点数据后会消失。</p>
         </aside>
         <div className="chat-main">
           <div className="chat-head">
@@ -975,11 +978,11 @@ function CoachCubes() {
   </div>;
 }
 
-function OtherPage({ page, spaceProfile, hasStored }: { page: string; spaceProfile: SpaceProfile; hasStored: boolean }) {
+function OtherPage({ page, spaceProfile, hasStored, demo, identityKey }: { page: string; spaceProfile: SpaceProfile; hasStored: boolean; demo: boolean; identityKey: string }) {
   const dashboardQuery = useQuery({ queryKey: ["dashboard"], queryFn: getDashboard });
   if (page === "profile") {
     return <div className="app-content">
-      <MySpace data={dashboardQuery.data} loading={dashboardQuery.isPending} profile={spaceProfile} hasStored={hasStored} />
+      <MySpace data={dashboardQuery.data} loading={dashboardQuery.isPending} profile={spaceProfile} hasStored={hasStored} demo={demo} />
     </div>;
   }
   if (page === "plans" || page === "exercise") {
@@ -1018,7 +1021,7 @@ function OtherPage({ page, spaceProfile, hasStored }: { page: string; spaceProfi
       )}
     </div>
     {page === "food" && <MealRecorder />}
-    {page === "coach" && <ChatPanel />}
+    {page === "coach" && <ChatPanel identityKey={identityKey} />}
     {page === "review" && <ReviewPanel data={dashboardQuery.data} loading={dashboardQuery.isPending} />}
   </div>;
 }
@@ -1028,7 +1031,9 @@ function CoreApp({ onHome }: { onHome: () => void }) {
   const visitedPages = useHealthStore((state) => state.visitedPages);
   const setPage = useHealthStore((state) => state.setPage);
   const storedSpaceProfile = useHealthStore((state) => state.spaceProfile);
-  const hydrateSpaceProfile = useHealthStore((state) => state.hydrateSpaceProfile);
+  const setSpaceProfile = useHealthStore((state) => state.setSpaceProfile);
+  const queryClient = useQueryClient();
+  const profileQuery = useQuery({ queryKey: ["profile"], queryFn: fetchProfile });
   const dashboardQuery = useQuery({ queryKey: ["dashboard"], queryFn: getDashboard });
   const scrollPositions = React.useRef<Record<string, number>>({});
   const activePageRef = React.useRef<Page>(page);
@@ -1036,10 +1041,9 @@ function CoreApp({ onHome }: { onHome: () => void }) {
   const renderedPages = visitedPages.includes(page) ? visitedPages : [...visitedPages, page];
   const dashboard = dashboardQuery.data;
   const profilePage = page === "profile";
-  const displayName = dashboard?.displayName ?? "你";
-  const avatarText = displayName.slice(0, 1);
   const pendingMeals = dashboard?.pendingMeals ?? 0;
   const hasStoredSpace = Boolean(storedSpaceProfile);
+  const identityKey = profileQuery.data?.account?.email ?? (profileQuery.data?.demo ? "demo" : "pending");
   const spaceProfile = React.useMemo(() => {
     if (storedSpaceProfile) return storedSpaceProfile;
     if (dashboard?.demo) return createDemoSpaceProfile(dashboard.displayName, dashboard.weightKg);
@@ -1047,8 +1051,16 @@ function CoreApp({ onHome }: { onHome: () => void }) {
   }, [storedSpaceProfile, dashboard]);
 
   React.useEffect(() => {
-    hydrateSpaceProfile();
-  }, [hydrateSpaceProfile]);
+    if (profileQuery.data) setSpaceProfile(profileQuery.data.profile);
+  }, [profileQuery.data, setSpaceProfile]);
+
+  const handleAccountChanged = React.useCallback(() => {
+    useHealthStore.setState({ waterAdded: 0, page: "dashboard" });
+    setSpaceProfile(null);
+    void queryClient.resetQueries({ queryKey: ["dashboard"] });
+    void queryClient.resetQueries({ queryKey: ["meals"] });
+    void queryClient.invalidateQueries({ queryKey: ["profile"] });
+  }, [queryClient, setSpaceProfile]);
 
   React.useEffect(() => {
     const rememberScroll = () => {
@@ -1092,7 +1104,7 @@ function CoreApp({ onHome }: { onHome: () => void }) {
         <SpaceCard
           profile={spaceProfile}
           saved={hasStoredSpace}
-          demo={!hasStoredSpace && Boolean(dashboard?.demo)}
+          demo={Boolean(dashboard?.demo)}
           active={profilePage}
           shortcuts={navigation.filter((item) => item.id !== "profile")}
           onOpen={() => setPage("profile")}
@@ -1108,21 +1120,22 @@ function CoreApp({ onHome }: { onHome: () => void }) {
           <strong>{page === "profile" ? "个人资料" : navigation.find((item) => item.id === page)?.label ?? "个人档案"}</strong>
         </div>
         <div className="topbar-actions">
-          {dashboard?.demo && <span className="demo-chip">演示模式</span>}
+          {dashboard?.demo && <span className="demo-chip">演示沙盒</span>}
           <span className="date-pill">{dashboard?.dateLabel ?? "今天"}</span>
-          <span className="avatar avatar-small">{avatarText}</span>
+          <AccountPanel data={profileQuery.data} loading={profileQuery.isPending} onChanged={handleAccountChanged} />
         </div>
       </header>
       <div className="mobile-brand">
         <span className="brand-mark"><Leaf size={19} /></span><b>智养 AI</b>
         {dashboard?.demo && <span className="demo-chip">演示</span>}
+        <AccountPanel data={profileQuery.data} loading={profileQuery.isPending} onChanged={handleAccountChanged} compact />
         <button type="button" className="mobile-home" onClick={onHome}>首页</button>
       </div>
       <section className="page-content">
         {renderedPages.map((visitedPage) => (
           <React.Activity key={visitedPage} mode={visitedPage === page ? "visible" : "hidden"}>
             <div className={`page-panel min-w-0${visitedPage === page ? " is-active" : ""}`}>
-              {visitedPage === "dashboard" ? <Dashboard /> : <OtherPage page={visitedPage} spaceProfile={spaceProfile} hasStored={hasStoredSpace} />}
+              {visitedPage === "dashboard" ? <Dashboard key={identityKey} /> : <OtherPage key={identityKey} page={visitedPage} spaceProfile={spaceProfile} hasStored={hasStoredSpace} demo={Boolean(profileQuery.data?.demo)} identityKey={identityKey} />}
             </div>
           </React.Activity>
         ))}

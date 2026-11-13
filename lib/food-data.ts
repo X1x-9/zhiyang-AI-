@@ -1,4 +1,4 @@
-export const FOOD_DATA_VERSION = "2026-11.1";
+export const FOOD_DATA_VERSION = "2026-11.2";
 export const FOOD_DATA_SOURCE = "USDA FoodData Central 与《中国食物成分表》参考值";
 
 export type FoodCategory = "staple" | "protein" | "vegetable" | "fruit" | "dairy" | "fat" | "drink" | "dish";
@@ -61,6 +61,9 @@ export const FOOD_REFERENCE: readonly FoodReference[] = [
   { id: "blueberry", name: "蓝莓", aliases: ["蓝梅", "蓝莓果"], category: "fruit", per100: { kcal: 57, proteinG: 0.7, carbsG: 14, fatG: 0.3 }, portionGrams: 100, portionLabel: "一小盒约 100g", source },
   { id: "avocado", name: "牛油果", aliases: ["鳄梨"], category: "fruit", per100: { kcal: 160, proteinG: 2, carbsG: 9, fatG: 15 }, portionGrams: 100, portionLabel: "半个约 100g", source },
   { id: "mixed-nuts", name: "混合坚果", aliases: ["坚果", "每日坚果", "一小把坚果"], category: "fat", per100: { kcal: 607, proteinG: 20, carbsG: 21, fatG: 54 }, portionGrams: 20, portionLabel: "一小把约 20g", source },
+  { id: "chia-seed", name: "奇亚籽", aliases: ["奇亚子", "chia"], category: "fat", per100: { kcal: 486, proteinG: 16.5, carbsG: 42.1, fatG: 30.7 }, portionGrams: 10, portionLabel: "一勺约 10g", source },
+  { id: "honey", name: "蜂蜜", aliases: ["蜜糖", "洋槐蜜"], category: "fat", per100: { kcal: 304, proteinG: 0.3, carbsG: 82.4, fatG: 0 }, portionGrams: 5, portionLabel: "一小勺约 5g", source, note: "按可食用糖参考，计入添加糖" },
+  { id: "whole-wheat-cracker", name: "全麦饼干", aliases: ["全麦苏打饼干", "消化饼干"], category: "staple", per100: { kcal: 440, proteinG: 8.5, carbsG: 68, fatG: 15 }, portionGrams: 15, portionLabel: "两块约 15g", source },
   { id: "olive-oil", name: "橄榄油", aliases: ["食用油", "烹调油"], category: "fat", per100: { kcal: 884, proteinG: 0, carbsG: 0, fatG: 100 }, portionGrams: 10, portionLabel: "一勺约 10g", source, note: "估算用油时请按实际用量" },
   { id: "peanut-butter", name: "花生酱", aliases: ["无糖花生酱"], category: "fat", per100: { kcal: 588, proteinG: 25, carbsG: 20, fatG: 50 }, portionGrams: 15, portionLabel: "一勺约 15g", source },
   { id: "tomato-egg", name: "番茄炒蛋", aliases: ["西红柿炒鸡蛋", "番茄炒鸡蛋", "西红柿炒蛋"], category: "dish", per100: { kcal: 98, proteinG: 5.5, carbsG: 4.5, fatG: 6.5 }, portionGrams: 200, portionLabel: "一份约 200g", source, note: "菜品参考值，用油量会影响结果" },

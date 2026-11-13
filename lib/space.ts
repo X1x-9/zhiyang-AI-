@@ -161,8 +161,6 @@ export function createEmptySpaceProfile(name = ""): SpaceProfile {
   };
 }
 
-export const SPACE_PROFILE_KEY = "zhiyang-space-profile-v1";
-
 export function normalizeSpaceProfile(raw: unknown): SpaceProfile | null {
   if (!raw || typeof raw !== "object") return null;
   const value = raw as Partial<SpaceProfile>;
@@ -184,27 +182,6 @@ export function normalizeSpaceProfile(raw: unknown): SpaceProfile | null {
     source: value.source === "demo" ? "demo" : "local",
     ...(typeof value.savedAt === "string" ? { savedAt: value.savedAt } : {}),
   };
-}
-
-export function readStoredSpaceProfile(): SpaceProfile | null {
-  if (typeof window === "undefined") return null;
-  try {
-    const raw = window.localStorage.getItem(SPACE_PROFILE_KEY);
-    if (!raw) return null;
-    return normalizeSpaceProfile(JSON.parse(raw));
-  } catch {
-    return null;
-  }
-}
-
-export function writeStoredSpaceProfile(profile: SpaceProfile) {
-  if (typeof window === "undefined") return false;
-  try {
-    window.localStorage.setItem(SPACE_PROFILE_KEY, JSON.stringify(profile));
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 function numeric(value: string) {

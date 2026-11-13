@@ -33,12 +33,27 @@ type Analysis = {
   nutritionSummary?: { foodTableItems: number; modelEstimateItems: number };
 };
 
+type MealItemRecord = {
+  name: string;
+  amountGrams?: number;
+  calories?: number;
+  foodId?: string;
+  dataSource?: MealDataSource;
+  matchedName?: string;
+  proteinG?: number;
+  carbsG?: number;
+  fatG?: number;
+};
+
 type MealRecord = {
   id: string;
   title: string;
   mealType: string;
-  items: Array<{ name: string; amountGrams?: number; calories?: number; foodId?: string; dataSource?: MealDataSource; matchedName?: string }>;
+  items: MealItemRecord[];
   estimatedKcal: number | null;
+  proteinG: number | null;
+  carbsG: number | null;
+  fatG: number | null;
   status: string;
   eatenAt: string;
   notes: string;
@@ -169,12 +184,6 @@ function guessMealType() {
   return "OTHER";
 }
 
-function demoHeaders(hasJsonBody = false) {
-  const headers: Record<string, string> = hasJsonBody ? { "Content-Type": "application/json" } : {};
-  if (useHealthStore.getState().demoData) headers["x-demo-mode"] = "true";
-  return headers;
-}
-
 function mealDisplayTitle(meal: MealRecord) {
   const label = mealTypeLabel[meal.mealType] ?? "其他";
   return meal.title.includes(label) ? meal.title : `${label} · ${meal.title}`;
@@ -182,7 +191,6 @@ function mealDisplayTitle(meal: MealRecord) {
 
 function SameDayRecords() {
   const queryClient = useQueryClient();
-  const setDemoData = useHealthStore((state) => state.setDemoData);
   const [editingId, setEditingId] = React.useState<string | null>(null);
   const [draft, setDraft] = React.useState<{ title: string; kcal: number; mealType: string }>({ title: "", kcal: 0, mealType: "OTHER" });
 
@@ -195,20 +203,16 @@ function SameDayRecords() {
     },
   });
 
-  React.useEffect(() => {
-    if (mealsQuery.data) setDemoData(mealsQuery.data.demo);
-  }, [mealsQuery.data, setDemoData]);
-
   const invalidate = () => {
     void queryClient.invalidateQueries({ queryKey: ["meals"] });
     void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
   };
 
   const update = useMutation({
-    mutationFn: async ({ id, title, mealType, status, items, notes }: { id: string; title?: string; mealType?: string; status?: string; items?: Array<{ name: string; amountGrams: number; calories: number; foodId?: string; dataSource?: MealDataSource; matchedName?: string }>; notes?: string }) => {
+    mutationFn: async ({ id, title, mealType, status, items, notes }: { id: string; title?: string; mealType?: string; status?: string; items?: Array<MealItemRecord & { amountGrams: number; calories: number }>; notes?: string }) => {
       const response = await fetch(`/api/meals/${id}`, {
         method: "PATCH",
-        headers: demoHeaders(true),
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ...(title !== undefined ? { title } : {}), ...(mealType !== undefined ? { mealType } : {}), ...(status !== undefined ? { status } : {}), ...(items !== undefined ? { items } : {}), ...(notes !== undefined ? { notes } : {}) }),
       });
       if (!response.ok) {
@@ -222,7 +226,7 @@ function SameDayRecords() {
 
   const remove = useMutation({
     mutationFn: async (id: string) => {
-      const response = await fetch(`/api/meals/${id}`, { method: "DELETE", headers: demoHeaders() });
+      const response = await fetch(`/api/meals/${id}`, { method: "DELETE" });
       if (!response.ok) throw new Error("删除失败，请重试。");
       return response.json();
     },
@@ -233,7 +237,7 @@ function SameDayRecords() {
   if (mealsQuery.isError) return <p className="mt-4 text-sm text-red-800" role="alert">{(mealsQuery.error as Error).message}</p>;
 
   const meals = mealsQuery.data?.meals ?? [];
-  const notice = mealsQuery.data?.notice ?? (mealsQuery.data?.demo ? "演示记录由所有访问者共享；新增、修改或删除只影响演示数据，请勿填写真实信息。" : null);
+  const notice = mealsQuery.data?.notice ?? (mealsQuery.data?.demo ? "演示记录保存在当前浏览会话的独立沙盒中，不会影响其他访问者；请勿填写真实信息。" : null);
 
   return (
     <div className="mt-4">
@@ -266,7 +270,17 @@ function SameDayRecords() {
                     className="flex-1"
                     disabled={update.isPending || !draft.title.trim()}
                     onClick={() => {
-                      const items = meal.items.map((item) => ({ name: item.name, amountGrams: item.amountGrams ?? 0, calories: item.calories ?? 0, ...(item.foodId ? { foodId: item.foodId } : {}), ...(item.dataSource ? { dataSource: item.dataSource } : {}), ...(item.matchedName ? { matchedName: item.matchedName } : {}) }));
+                      const items = meal.items.map((item) => ({
+                        name: item.name,
+                        amountGrams: item.amountGrams ?? 0,
+                        calories: item.calories ?? 0,
+                        ...(item.foodId ? { foodId: item.foodId } : {}),
+                        ...(item.dataSource ? { dataSource: item.dataSource } : {}),
+                        ...(item.matchedName ? { matchedName: item.matchedName } : {}),
+                        ...(item.proteinG !== undefined && item.carbsG !== undefined && item.fatG !== undefined
+                          ? { proteinG: item.proteinG, carbsG: item.carbsG, fatG: item.fatG }
+                          : {}),
+                      }));
                       const original = items.reduce((sum, item) => sum + item.calories, 0);
                       const scale = original > 0 ? draft.kcal / original : 1;
                       update.mutate({
@@ -274,7 +288,17 @@ function SameDayRecords() {
                         title: draft.title.trim(),
                         mealType: draft.mealType,
                         notes: meal.notes,
-                        items: items.map((item) => ({ ...item, calories: Math.round(item.calories * scale) })),
+                        items: items.map((item) => ({
+                          ...item,
+                          calories: Math.round(item.calories * scale),
+                          ...(item.proteinG !== undefined && item.carbsG !== undefined && item.fatG !== undefined
+                            ? {
+                                proteinG: formatNutrition(item.proteinG * scale),
+                                carbsG: formatNutrition(item.carbsG * scale),
+                                fatG: formatNutrition(item.fatG * scale),
+                              }
+                            : {}),
+                        })),
                       });
                     }}
                   >
@@ -307,6 +331,11 @@ function SameDayRecords() {
                   {new Date(meal.eatenAt).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}
                   {meal.items.length > 0 ? ` · ${meal.items.map((item) => `${item.name}${item.amountGrams ? ` ${item.amountGrams}g` : ""}`).join(" · ")}` : ""}
                 </p>
+                {meal.proteinG !== null && meal.carbsG !== null && meal.fatG !== null && (
+                  <p className="mt-1 text-xs text-[#84908a]">
+                    蛋白质 {formatNutrition(meal.proteinG)} g · 碳水 {formatNutrition(meal.carbsG)} g · 脂肪 {formatNutrition(meal.fatG)} g
+                  </p>
+                )}
                 {recordSource && (
                   <p className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-[#84908a]">
                     <span className={`food-source-badge is-${recordSource.tone}`}>{recordSource.label}</span>
@@ -330,13 +359,17 @@ function ManualEntry({ onSaved }: { onSaved: () => void }) {
   const [eatenAt, setEatenAt] = React.useState(() => { const now = new Date(); now.setMinutes(now.getMinutes() - now.getTimezoneOffset()); return now.toISOString().slice(0, 16); });
   const [grams, setGrams] = React.useState("");
   const [kcal, setKcal] = React.useState("");
+  const [protein, setProtein] = React.useState("");
+  const [carbs, setCarbs] = React.useState("");
+  const [fat, setFat] = React.useState("");
   const [estimateSource, setEstimateSource] = React.useState<{ source: "food_table" | "model_estimate"; foodId?: string; foodName?: string } | null>(null);
 
   const create = useMutation({
     mutationFn: async () => {
+      const macrosFilled = protein.trim() !== "" && carbs.trim() !== "" && fat.trim() !== "";
       const response = await fetch("/api/meals", {
         method: "POST",
-        headers: demoHeaders(true),
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           title: name.trim(),
           mealType,
@@ -345,6 +378,9 @@ function ManualEntry({ onSaved }: { onSaved: () => void }) {
             name: name.trim(),
             amountGrams: Number(grams) || 0,
             calories: Number(kcal) || 0,
+            ...(macrosFilled
+              ? { proteinG: Math.max(0, Number(protein) || 0), carbsG: Math.max(0, Number(carbs) || 0), fatG: Math.max(0, Number(fat) || 0) }
+              : {}),
             ...(estimateSource
               ? { dataSource: estimateSource.source, ...(estimateSource.foodId ? { foodId: estimateSource.foodId, matchedName: estimateSource.foodName } : {}) }
               : { dataSource: "manual" }),
@@ -360,7 +396,7 @@ function ManualEntry({ onSaved }: { onSaved: () => void }) {
       return data;
     },
     onSuccess: () => {
-      setName(""); setGrams(""); setKcal(""); setEstimateSource(null);
+      setName(""); setGrams(""); setKcal(""); setProtein(""); setCarbs(""); setFat(""); setEstimateSource(null);
       onSaved();
     },
   });
@@ -383,8 +419,10 @@ function ManualEntry({ onSaved }: { onSaved: () => void }) {
     },
     onSuccess: (data) => {
       const g = Number(grams) || 100;
-      const value = Math.round(data.per100.kcal * g / 100);
-      setKcal(String(value));
+      setKcal(String(Math.round(data.per100.kcal * g / 100)));
+      setProtein(String(formatNutrition(data.per100.proteinG * g / 100)));
+      setCarbs(String(formatNutrition(data.per100.carbsG * g / 100)));
+      setFat(String(formatNutrition(data.per100.fatG * g / 100)));
       setEstimateSource({ source: data.source, foodId: data.foodId, foodName: data.foodName });
     },
   });
@@ -430,8 +468,20 @@ function ManualEntry({ onSaved }: { onSaved: () => void }) {
                 </Button>
               </div>
             </div>
+            <div>
+              <label className="block text-sm font-medium" htmlFor="manual-protein">蛋白质 (g)</label>
+              <input id="manual-protein" className="mt-1 w-full rounded-md border border-[#e7ece5] bg-white px-2 py-2 text-right text-sm" type="number" min="0" max="1000" value={protein} onChange={(event) => setProtein(event.target.value)} placeholder="可选" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium" htmlFor="manual-carbs">碳水 (g)</label>
+              <input id="manual-carbs" className="mt-1 w-full rounded-md border border-[#e7ece5] bg-white px-2 py-2 text-right text-sm" type="number" min="0" max="1500" value={carbs} onChange={(event) => setCarbs(event.target.value)} placeholder="可选" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium" htmlFor="manual-fat">脂肪 (g)</label>
+              <input id="manual-fat" className="mt-1 w-full rounded-md border border-[#e7ece5] bg-white px-2 py-2 text-right text-sm" type="number" min="0" max="500" value={fat} onChange={(event) => setFat(event.target.value)} placeholder="可选" />
+            </div>
           </div>
-          <p className="mt-2 text-xs text-[#84908a]">份量和热量至少填一项；填好名称和份量后可点「AI 估算」自动算热量，也可手动填写。</p>
+          <p className="mt-2 text-xs text-[#84908a]">份量和热量至少填一项；填好名称和份量后可点「AI 估算」自动填入热量与三大营养素，也可手动填写。三项营养素都留空时，只统计热量。</p>
           {estimateSource && (
             <p className={`food-source-note ${estimateSource.source === "food_table" ? "is-table" : "is-model"}`}>
               {estimateSource.source === "food_table"
@@ -442,7 +492,7 @@ function ManualEntry({ onSaved }: { onSaved: () => void }) {
           {estimateCalories.isError && <p className="mt-2 text-xs text-red-800" role="alert">{estimateCalories.error.message}</p>}
           <div className="mt-3 flex gap-2">
             <Button className="flex-1" disabled={!valid || create.isPending} onClick={() => create.mutate()}>{create.isPending ? "正在保存…" : <><Check size={15} />保存记录</>}</Button>
-            <Button variant="secondary" onClick={() => { setOpen(false); setName(""); setGrams(""); setKcal(""); setEstimateSource(null); }}>收起</Button>
+            <Button variant="secondary" onClick={() => { setOpen(false); setName(""); setGrams(""); setKcal(""); setProtein(""); setCarbs(""); setFat(""); setEstimateSource(null); }}>收起</Button>
           </div>
           {create.isError && <p className="mt-2 text-sm text-red-800" role="alert">{create.error.message}</p>}
         </>
@@ -499,7 +549,7 @@ export function MealRecorder() {
       if (!analysis) throw new Error("还没有可保存的识别结果。");
       const response = await fetch("/api/meals", {
         method: "POST",
-        headers: demoHeaders(true),
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           title: analysis.dish || "一餐记录",
           mealType,
@@ -508,6 +558,9 @@ export function MealRecorder() {
             name: item.name,
             amountGrams: item.grams,
             calories: item.kcal,
+            proteinG: item.nutrition.proteinG,
+            carbsG: item.nutrition.carbsG,
+            fatG: item.nutrition.fatG,
             ...(item.dataSource ? { dataSource: item.dataSource } : {}),
             ...(item.foodId ? { foodId: item.foodId } : {}),
             ...(item.matchedName ? { matchedName: item.matchedName } : {}),

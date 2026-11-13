@@ -2,8 +2,8 @@ import { generateText, Output } from "ai";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getModel } from "@/lib/ai-tools";
-import { isDemoMode } from "@/lib/demo-data";
 import { FOOD_DATA_SOURCE, FOOD_DATA_VERSION, matchFood } from "@/lib/food-data";
+import { IdentityError, resolveIdentity } from "@/lib/identity";
 import { clientKey, rateLimit } from "@/lib/rate-limit";
 
 export const maxDuration = 60;
@@ -16,7 +16,13 @@ const nutritionSchema = z.object({
 });
 
 export async function POST(request: Request) {
-  if (process.env.NODE_ENV === "production" && !isDemoMode()) return NextResponse.json({ message: "请登录后使用营养估算。" }, { status: 401 });
+  try {
+    const identity = await resolveIdentity();
+    if (!identity) return NextResponse.json({ message: "请登录后使用营养估算。" }, { status: 401 });
+  } catch (error) {
+    if (error instanceof IdentityError) return NextResponse.json({ message: "数据服务暂时不可用，请稍后重试。" }, { status: 503 });
+    throw error;
+  }
   const parsed = input.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ message: "请输入 1–80 字的食物名称。" }, { status: 400 });
 

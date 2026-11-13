@@ -2,9 +2,10 @@
 
 import * as React from "react";
 import Image from "next/image";
-import { motion, useReducedMotion } from "framer-motion";
+import { motion, useReducedMotion, useScroll, useTransform } from "framer-motion";
 import { ArrowDown, ArrowUp, ArrowUpRight } from "lucide-react";
 import type { Page } from "@/stores/health-store";
+import GlimmerVale from "@/components/originkit/ui/hero-59/glimmer-vale";
 import SphereGallery3D from "./sphere-gallery-3d";
 
 type LandingSectionsProps = {
@@ -34,6 +35,21 @@ function useReveal() {
   );
 }
 
+function useParallax() {
+  const reduce = useReducedMotion();
+  const [enabled, setEnabled] = React.useState(false);
+
+  React.useEffect(() => {
+    const query = window.matchMedia("(min-width: 561px)");
+    const sync = () => setEnabled(query.matches && !reduce);
+    sync();
+    query.addEventListener("change", sync);
+    return () => query.removeEventListener("change", sync);
+  }, [reduce]);
+
+  return enabled;
+}
+
 function ModuleSection({
   meta,
   title,
@@ -54,15 +70,32 @@ function ModuleSection({
   children: React.ReactNode;
 }) {
   const reveal = useReveal();
+  const parallax = useParallax();
+  const sectionRef = React.useRef<HTMLElement | null>(null);
+  const { scrollYProgress } = useScroll({
+    target: sectionRef,
+    offset: ["start end", "end start"],
+  });
+  const ghostY = useTransform(scrollYProgress, [0, 1], [-80, 80]);
+  const copyY = useTransform(scrollYProgress, [0, 1], [-10, 10]);
+  const mediaY = useTransform(scrollYProgress, [0, 1], [36, -36]);
 
   return (
     <section
+      ref={sectionRef}
       className={`module-section${reverse ? " is-reverse" : ""}`}
       id={meta.id}
       aria-labelledby={`${meta.id}-title`}
     >
+      <motion.div
+        className="module-ghost"
+        aria-hidden="true"
+        style={parallax ? { y: ghostY } : undefined}
+      >
+        {meta.index}
+      </motion.div>
       <div className="module-shell">
-        <div className="module-copy">
+        <motion.div className="module-copy" style={parallax ? { y: copyY } : undefined}>
           <motion.p className="module-eyebrow" {...reveal(0)}>
             <span>{meta.index}</span>
             {meta.label}
@@ -84,9 +117,11 @@ function ModuleSection({
               <ArrowUpRight size={16} aria-hidden="true" />
             </button>
           </motion.div>
-        </div>
-        <motion.div className="module-media" {...reveal(0.1)}>
-          {children}
+        </motion.div>
+        <motion.div className="module-media" style={parallax ? { y: mediaY } : undefined}>
+          <motion.div className="module-media__inner" {...reveal(0.1)}>
+            {children}
+          </motion.div>
         </motion.div>
       </div>
     </section>
@@ -107,31 +142,119 @@ const WEEK_PHOTOS = [
   "/images/landing/week/week-skate.webp",
   "/images/landing/week/week-wall-run.webp",
   "/images/landing/week/week-longboard.webp",
+  "/images/landing/week/week-mushrooms.webp",
+  "/images/landing/week/week-road-runner.webp",
+  "/images/landing/week/week-sunset.webp",
+  "/images/landing/week/week-leg-press.webp",
+  "/images/landing/week/week-avenue-run.webp",
+  "/images/landing/week/week-forest-glow.webp",
+  "/images/landing/week/week-forest-rays.webp",
+  "/images/landing/week/week-leaves-rays.webp",
+  "/images/landing/week/week-heart-produce.webp",
+  "/images/landing/week/week-produce-choice.webp",
+  "/images/landing/week/week-swim.webp",
+  "/images/landing/week/week-run-legs.webp",
+  "/images/landing/week/week-boxer.webp",
+  "/images/landing/week/week-cyclist.webp",
+  "/images/landing/week/week-run-overhead.webp",
 ].map((image) => ({ image }));
 
 function WeeklySphere() {
   return (
     <div className="ls-orb">
-      <div className="ls-orb__head">
-        <span className="ls-orb__title">这周的样子</span>
-        <span className="ls-orb__stamp">示意照片</span>
-      </div>
-      <div className="ls-orb__stage">
-        <SphereGallery3D
-          images={WEEK_PHOTOS}
-          branches={WEEK_PHOTOS.length}
-          background="transparent"
-          scale={100}
-          size={32}
-          scatter={4}
-          speed={9}
-          direction="counterclockwise"
-          hover={150}
-          rounded={12}
-          core={{ coreSize: 10, coreColor: "#8ea87f59", lineColor: "#4a684c59" }}
-        />
-        <span className="ls-orb__hint">拖动旋转</span>
-      </div>
+      <SphereGallery3D
+        images={WEEK_PHOTOS}
+        branches={WEEK_PHOTOS.length}
+        background="transparent"
+        scale={72}
+        size={34}
+        scatter={3}
+        speed={9}
+        direction="counterclockwise"
+        hover={150}
+        rounded={12}
+        core={{ coreSize: 17, coreColor: "#8ea87f59", lineColor: "#4a684c59" }}
+        style={{
+          position: "absolute",
+          inset: 0,
+          width: "calc(100% + var(--orb-pad-x) * 2)",
+          height: "calc(100% + var(--orb-pad-y) * 2)",
+          margin: "auto",
+        }}
+      />
+    </div>
+  );
+}
+
+const FINAL_SCENE = {
+  speed: 100,
+  density: 60,
+  sparkle: 60,
+  background: "#f6f3e8",
+  skyTop: "#f3f0e2",
+  skyHorizon: "#f9f7ea",
+  style: { minWidth: 0, minHeight: 0 },
+  advanced: {
+    loopSec: 9,
+    waveHeight: 30,
+    waveLength: 82,
+    crestBright: 100,
+    slopeBright: 98,
+    pointSize: 95,
+    twinkleSharp: 7,
+    prismShare: 15,
+    crestColor: "#f8f6e8",
+    slopeColor: "#bcd1a7",
+    slopeDeep: "#93b17f",
+    hillShadow: "#5f7d52",
+    glowColor: "#eef4e1",
+    glowStrength: 55,
+    hotspotX: 50,
+    hotspotStrength: 60,
+    skyMid: "#e6ecd4",
+    horizonGlow: "#fdfbf0",
+    horizonGlowStrength: 40,
+    petalColor: "#fdfcf2",
+    petalTip: "#e4ecd6",
+    flowerCore: "#d6bd8a",
+    flowerSize: 72,
+    flowerBlur: 50,
+    fringe: 15,
+    sway: 35,
+    midCount: 0,
+    bokehCount: 0,
+    grassCount: 340,
+    glintCount: 0,
+    grain: 10,
+    vignette: 0,
+    hover: 0,
+    seed: 4,
+  },
+};
+
+function FinalScene() {
+  const hostRef = React.useRef<HTMLDivElement>(null);
+  const [awake, setAwake] = React.useState(false);
+
+  React.useEffect(() => {
+    const node = hostRef.current;
+    if (!node || awake) return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          setAwake(true);
+          io.disconnect();
+        }
+      },
+      { rootMargin: "480px 0px" }
+    );
+    io.observe(node);
+    return () => io.disconnect();
+  }, [awake]);
+
+  return (
+    <div className="landing-final__scene" ref={hostRef} aria-hidden="true">
+      {awake ? <GlimmerVale {...FINAL_SCENE} /> : null}
     </div>
   );
 }
@@ -590,6 +713,7 @@ export function LandingSections({ onEnter }: LandingSectionsProps) {
       </ModuleSection>
 
       <section className="landing-final" aria-labelledby="landing-final-title">
+        <FinalScene />
         <p className="landing-final__kicker">从今天开始</p>
         <h2 id="landing-final-title">先记一餐，<br />其余慢慢来。</h2>
         <div className="landing-final__actions">

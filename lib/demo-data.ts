@@ -1,4 +1,7 @@
 import type { DashboardData, WeekDaySummary, WeightPoint } from "./dashboard";
+import { readDemoProfile } from "./demo-session";
+import { matchFood, scaleNutrition } from "./food-data";
+import { DEMO_NUTRITION_TARGETS, deriveNutritionTargets, roundMacro } from "./nutrition-goal";
 
 export type DemoMealType = "BREAKFAST" | "LUNCH" | "DINNER" | "SNACK" | "OTHER";
 export type DemoMealStatus = "PENDING" | "CONFIRMED" | "REJECTED";
@@ -9,6 +12,9 @@ export type DemoMealItem = {
   foodId?: string;
   dataSource?: "food_table" | "model_estimate" | "manual";
   matchedName?: string;
+  proteinG?: number;
+  carbsG?: number;
+  fatG?: number;
 };
 export type DemoMeal = {
   id: string;
@@ -16,6 +22,9 @@ export type DemoMeal = {
   mealType: DemoMealType;
   items: DemoMealItem[];
   estimatedKcal: number;
+  proteinG: number | null;
+  carbsG: number | null;
+  fatG: number | null;
   status: DemoMealStatus;
   eatenAt: string;
   notes: string;
@@ -129,12 +138,52 @@ function buildDemoWeekDays(todayMeals: number, todayCalories: number): WeekDaySu
   });
 }
 
-export function createDemoDashboard(notice?: string): DashboardData {
+function nutritionTotals(items: DemoMealItem[]) {
+  const withMacros = items.filter(
+    (item) => item.proteinG !== undefined && item.carbsG !== undefined && item.fatG !== undefined,
+  );
+  if (withMacros.length === 0) return null;
+  return {
+    proteinG: roundMacro(withMacros.reduce((sum, item) => sum + (item.proteinG ?? 0), 0)),
+    carbsG: roundMacro(withMacros.reduce((sum, item) => sum + (item.carbsG ?? 0), 0)),
+    fatG: roundMacro(withMacros.reduce((sum, item) => sum + (item.fatG ?? 0), 0)),
+  };
+}
+
+function enrichItem(item: DemoMealItem): DemoMealItem {
+  if (item.proteinG !== undefined) return item;
+  const match = matchFood(item.name);
+  if (!match) return item;
+  const scaled = scaleNutrition(match.food.per100, item.amountGrams);
+  return {
+    ...item,
+    calories: scaled.kcal,
+    foodId: match.food.id,
+    dataSource: "food_table",
+    matchedName: match.food.name,
+    proteinG: scaled.proteinG,
+    carbsG: scaled.carbsG,
+    fatG: scaled.fatG,
+  };
+}
+
+export function createDemoDashboard(sessionId: string, notice?: string): DashboardData {
   const labels = lastSevenDayLabels();
   const weightSeries: WeightPoint[] = labels.map((label, index) => ({ label, kg: demoWeightValues[index] }));
-  const todayAll = listDemoMeals();
+  const profile = readDemoProfile(sessionId);
+  const targets = profile ? deriveNutritionTargets(profile) : DEMO_NUTRITION_TARGETS;
+  const todayAll = listDemoMeals(sessionId);
   const todayMeals = todayAll.filter((meal) => meal.status === "CONFIRMED");
   const calories = todayMeals.reduce((sum, meal) => sum + meal.estimatedKcal, 0);
+  const macroMeals = todayMeals.filter((meal) => meal.proteinG !== null && meal.carbsG !== null && meal.fatG !== null);
+  const macros = macroMeals.length > 0
+    ? {
+        protein: { consumed: Math.round(macroMeals.reduce((sum, meal) => sum + (meal.proteinG ?? 0), 0)), goal: targets.proteinGoal },
+        carbs: { consumed: Math.round(macroMeals.reduce((sum, meal) => sum + (meal.carbsG ?? 0), 0)), goal: targets.carbsGoal },
+        fat: { consumed: Math.round(macroMeals.reduce((sum, meal) => sum + (meal.fatG ?? 0), 0)), goal: targets.fatGoal },
+        partial: macroMeals.length < todayMeals.length,
+      }
+    : null;
   const weekDays = buildDemoWeekDays(todayMeals.length, calories);
   const recordedDays = weekDays.filter((day) => day.meals > 0).length;
   const weekMeals = weekDays.reduce((sum, day) => sum + day.meals, 0);
@@ -150,20 +199,13 @@ export function createDemoDashboard(notice?: string): DashboardData {
     ...(notice ? { notice } : {}),
     dateLabel: chinaDateLabel(),
     greeting: chinaGreeting(),
-    displayName: "林同学",
+    displayName: profile?.name.trim() || "林同学",
     calories,
-    calorieGoal: 2250,
-    macros:
-      todayMeals.length === 4
-        ? {
-            protein: { consumed: 82, goal: 125 },
-            carbs: { consumed: 150, goal: 230 },
-            fat: { consumed: 52, goal: 74 },
-          }
-        : null,
+    calorieGoal: targets.calorieGoal,
+    macros,
     waterMl: 1100,
     waterGoal: 2000,
-    weightKg: 63.4,
+    weightKg: profile?.weightKg ? Number(profile.weightKg) || null : 63.4,
     weightChangeKg: -0.6,
     weightSeries,
     pendingMeals: todayAll.filter((meal) => meal.status === "PENDING").length,
@@ -188,7 +230,7 @@ export function createDemoDashboard(notice?: string): DashboardData {
 }
 
 function createDemoMeals(): DemoMeal[] {
-  return [
+  const raw: Array<Omit<DemoMeal, "items" | "proteinG" | "carbsG" | "fatG"> & { items: DemoMealItem[] }> = [
     {
       id: "demo-breakfast",
       title: "燕麦酸奶碗",
@@ -249,28 +291,48 @@ function createDemoMeals(): DemoMeal[] {
       notes: "",
     },
   ];
+
+  return raw.map((meal) => {
+    const items = meal.items.map(enrichItem);
+    const totals = nutritionTotals(items);
+    return {
+      ...meal,
+      items,
+      proteinG: totals?.proteinG ?? null,
+      carbsG: totals?.carbsG ?? null,
+      fatG: totals?.fatG ?? null,
+    };
+  });
 }
 
-let demoMeals: DemoMeal[] = [];
-let demoSeedDate = "";
+type DemoSessionState = { seedDate: string; meals: DemoMeal[] };
 
-function ensureDemoMeals() {
+const globalForDemoMeals = globalThis as unknown as { demoMealSessions?: Map<string, DemoSessionState> };
+
+function sessionState(sessionId: string): DemoSessionState {
+  if (!globalForDemoMeals.demoMealSessions) globalForDemoMeals.demoMealSessions = new Map();
+  const sessions = globalForDemoMeals.demoMealSessions;
   const today = chinaDateKey();
-  if (demoSeedDate !== today) {
-    demoMeals = createDemoMeals();
-    demoSeedDate = today;
+  let state = sessions.get(sessionId);
+  if (!state || state.seedDate !== today) {
+    state = { seedDate: today, meals: createDemoMeals() };
+    sessions.set(sessionId, state);
+    if (sessions.size > 200) {
+      const oldest = sessions.keys().next().value;
+      if (oldest && oldest !== sessionId) sessions.delete(oldest);
+    }
   }
-  return demoMeals;
+  return state;
 }
 
-export function listDemoMeals() {
+export function listDemoMeals(sessionId: string) {
   const today = chinaDateKey();
-  return [...ensureDemoMeals()]
+  return [...sessionState(sessionId).meals]
     .filter((meal) => chinaDateKey(new Date(meal.eatenAt)) === today)
     .sort((a, b) => new Date(b.eatenAt).getTime() - new Date(a.eatenAt).getTime());
 }
 
-export function addDemoMeal(input: {
+export function addDemoMeal(sessionId: string, input: {
   title: string;
   mealType?: DemoMealType;
   items: DemoMealItem[];
@@ -278,13 +340,18 @@ export function addDemoMeal(input: {
   status?: DemoMealStatus;
   eatenAt?: string;
 }) {
-  const meals = ensureDemoMeals();
+  const meals = sessionState(sessionId).meals;
+  const items = input.items.map((item) => ({ ...item }));
+  const totals = nutritionTotals(items);
   const meal: DemoMeal = {
     id: `demo-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     title: input.title.trim(),
     mealType: input.mealType ?? "OTHER",
-    items: input.items,
-    estimatedKcal: input.items.reduce((sum, item) => sum + item.calories, 0),
+    items,
+    estimatedKcal: items.reduce((sum, item) => sum + item.calories, 0),
+    proteinG: totals?.proteinG ?? null,
+    carbsG: totals?.carbsG ?? null,
+    fatG: totals?.fatG ?? null,
     status: input.status ?? "CONFIRMED",
     eatenAt: input.eatenAt ?? new Date().toISOString(),
     notes: input.notes ?? "",
@@ -294,6 +361,7 @@ export function addDemoMeal(input: {
 }
 
 export function updateDemoMeal(
+  sessionId: string,
   id: string,
   patch: {
     title?: string;
@@ -303,7 +371,7 @@ export function updateDemoMeal(
     notes?: string;
   },
 ) {
-  const meals = ensureDemoMeals();
+  const meals = sessionState(sessionId).meals;
   const meal = meals.find((item) => item.id === id);
   if (!meal) return null;
   if (patch.title !== undefined) meal.title = patch.title;
@@ -312,13 +380,17 @@ export function updateDemoMeal(
   if (patch.items !== undefined) {
     meal.items = patch.items;
     meal.estimatedKcal = patch.items.reduce((sum, item) => sum + item.calories, 0);
+    const totals = nutritionTotals(patch.items);
+    meal.proteinG = totals?.proteinG ?? null;
+    meal.carbsG = totals?.carbsG ?? null;
+    meal.fatG = totals?.fatG ?? null;
   }
   if (patch.notes !== undefined) meal.notes = patch.notes;
   return meal;
 }
 
-export function deleteDemoMeal(id: string) {
-  const meals = ensureDemoMeals();
+export function deleteDemoMeal(sessionId: string, id: string) {
+  const meals = sessionState(sessionId).meals;
   const index = meals.findIndex((item) => item.id === id);
   if (index === -1) return false;
   meals.splice(index, 1);

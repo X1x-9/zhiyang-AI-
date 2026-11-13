@@ -416,6 +416,14 @@
   font-size: 9px;
 }
 
+.hero-energy .macro-note {
+  grid-column: 1 / -1;
+  margin: -2px 0 0;
+  color: #8a978d;
+  font-size: 9.5px;
+  line-height: 1.55;
+}
+
 .hero-garden .hero-art { grid-column: 3; grid-row: 1; z-index: 0; }
 .hero-garden .hero-art-halo { width: 100%; height: 100%; }
 
@@ -1317,7 +1325,9 @@
 }
 
 .companion-bubble {
-  position: relative;
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 10px);
   width: 238px;
   padding: 13px 15px 12px;
   border: 1px solid #dfe8d7;
@@ -1353,6 +1363,35 @@
 }
 
 .companion-bubble span { display: block; padding-right: 10px; }
+
+.companion--below .companion-bubble {
+  top: calc(100% + 10px);
+  bottom: auto;
+  border-radius: 15px 4px 15px 15px;
+}
+
+.companion--below .companion-bubble::after {
+  top: -7px;
+  bottom: auto;
+  border: 0;
+  border-top: 1px solid #dfe8d7;
+  border-left: 1px solid #dfe8d7;
+}
+
+.companion--align-left .companion-bubble {
+  left: 0;
+  right: auto;
+  border-radius: 15px 15px 15px 4px;
+}
+
+.companion--align-left .companion-bubble::after {
+  left: 18px;
+  right: auto;
+}
+
+.companion--below.companion--align-left .companion-bubble {
+  border-radius: 4px 15px 15px 15px;
+}
 
 .companion-close {
   position: absolute;
@@ -1397,6 +1436,11 @@
   background: linear-gradient(145deg, #f9fbf4, #e5efdd);
   box-shadow: 0 14px 30px rgba(55, 88, 62, .2);
   transition: transform .2s ease, box-shadow .2s ease;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .companion-button::before {
@@ -1413,9 +1457,24 @@
   box-shadow: 0 18px 34px rgba(55, 88, 62, .24);
 }
 
+.companion.is-dragging .companion-button {
+  cursor: grabbing;
+  transform: scale(.94);
+  box-shadow: 0 10px 22px rgba(55, 88, 62, .22);
+}
+
+.companion.is-dragging .mascot-svg {
+  animation-play-state: paused;
+}
+
+body.companion-dragging {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
 .mascot-svg {
-  width: 50px;
-  height: 50px;
+  width: 52px;
+  height: 52px;
   animation: heroFloat 4.6s ease-in-out infinite;
 }
 

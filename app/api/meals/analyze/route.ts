@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { analyzeMeal, parseDataUrl } from "@/lib/meal-vision";
 import { isVisionConfigured } from "@/lib/ai-tools";
-import { isDemoMode } from "@/lib/demo-data";
+import { IdentityError, resolveIdentity } from "@/lib/identity";
 import { clientKey, rateLimit } from "@/lib/rate-limit";
 
 export const maxDuration = 60;
@@ -13,8 +13,16 @@ const bodySchema = z.object({
 });
 
 export async function POST(request: Request) {
-  if (process.env.NODE_ENV === "production" && !isDemoMode()) {
-    return NextResponse.json({ error: "AUTH_REQUIRED", message: "正式环境需要认证与限流后再开放图片识别。" }, { status: 401 });
+  try {
+    const identity = await resolveIdentity();
+    if (!identity) {
+      return NextResponse.json({ error: "AUTH_REQUIRED", message: "请先登录后再使用图片识别。" }, { status: 401 });
+    }
+  } catch (error) {
+    if (error instanceof IdentityError) {
+      return NextResponse.json({ error: "DATABASE_UNAVAILABLE", message: "数据服务暂时不可用，请稍后重试。" }, { status: 503 });
+    }
+    throw error;
   }
   if (!isVisionConfigured()) {
     return NextResponse.json({ error: "MODEL_NOT_CONFIGURED", message: "当前环境还没有配置视觉模型，照片识别暂不可用。" }, { status: 503 });

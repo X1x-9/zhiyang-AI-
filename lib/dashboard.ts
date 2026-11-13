@@ -1,4 +1,10 @@
-export type MacroProgress = { consumed: number; goal: number };
+export type MacroProgress = { consumed: number; goal: number | null };
+export type MacroSummary = {
+  protein: MacroProgress;
+  carbs: MacroProgress;
+  fat: MacroProgress;
+  partial: boolean;
+};
 export type WeightPoint = { label: string; kg: number };
 export type WorkoutSummary = { title: string; durationMinutes: number; exercises: string[] };
 export type WeekDaySummary = {
@@ -28,12 +34,8 @@ export type DashboardData = {
   greeting: string;
   displayName: string;
   calories: number;
-  calorieGoal: number;
-  macros: {
-    protein: MacroProgress;
-    carbs: MacroProgress;
-    fat: MacroProgress;
-  } | null;
+  calorieGoal: number | null;
+  macros: MacroSummary | null;
   waterMl: number;
   waterGoal: number;
   weightKg: number | null;

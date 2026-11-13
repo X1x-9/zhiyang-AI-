@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { motion, useReducedMotion, useSpring } from "framer-motion";
 import {
   ArrowDown,
@@ -30,7 +31,6 @@ import {
   minuteOptions,
   spaceCompleteness,
   validateSpaceProfile,
-  writeStoredSpaceProfile,
   type SpaceFieldErrorKey,
   type SpaceFieldErrors,
   type SpaceGender,
@@ -59,6 +59,7 @@ type MySpaceProps = {
   loading: boolean;
   profile: SpaceProfile;
   hasStored: boolean;
+  demo: boolean;
 };
 
 type ChoiceOption<T extends string> = { value: T; label: string };
@@ -130,9 +131,10 @@ function formatMoment(value?: string) {
   return `${date.getMonth() + 1}月${date.getDate()}日 ${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
-export function MySpace({ data, loading, profile, hasStored }: MySpaceProps) {
+export function MySpace({ data, loading, profile, hasStored, demo }: MySpaceProps) {
   const setPage = useHealthStore((state) => state.setPage);
   const setSpaceProfile = useHealthStore((state) => state.setSpaceProfile);
+  const queryClient = useQueryClient();
   const reduce = useReducedMotion();
   const heroStageRef = React.useRef<HTMLDivElement>(null);
   const formRef = React.useRef<HTMLFormElement>(null);
@@ -187,9 +189,11 @@ export function MySpace({ data, loading, profile, hasStored }: MySpaceProps) {
   const completeness = spaceCompleteness(draft);
   const plans = buildSpacePlans(draft);
   const goalLine = plans.goalLine;
-  const isDemo = !hasStored && Boolean(data?.demo);
+  const isDemo = demo;
   const savedMoment = hasStored ? formatMoment(draft.savedAt) : "";
-  const sourceLabel = hasStored ? "已保存到本机" : isDemo ? "演示资料 · 尚未保存" : "尚未填写";
+  const sourceLabel = hasStored
+    ? isDemo ? "演示沙盒 · 已保存" : "已保存到账户"
+    : isDemo ? "演示资料 · 尚未保存" : "尚未填写";
   const sourceClass = hasStored ? "is-saved" : isDemo ? "is-demo" : "is-empty";
   const name = draft.name.trim();
   const initial = name.slice(0, 1) || "你";
@@ -220,10 +224,10 @@ export function MySpace({ data, loading, profile, hasStored }: MySpaceProps) {
   }
 
   function fillDemo() {
-    if (!data?.demo) return;
+    if (!demo || !data) return;
     setDraft(createDemoSpaceProfile(data.displayName, data.weightKg));
     setErrors({});
-    setStatus({ kind: "idle", text: "已填入演示资料；修改后保存，才会留在本机。" });
+    setStatus({ kind: "idle", text: "已填入演示资料；修改后点击保存，才会进入你的资料。" });
   }
 
   function resetDraft() {
@@ -250,32 +254,48 @@ export function MySpace({ data, loading, profile, hasStored }: MySpaceProps) {
       targetWeightKg: draft.targetWeightKg.trim(),
       avoid: draft.avoid.trim(),
       budget: draft.budget.trim(),
-      source: "local",
+      source: isDemo ? "demo" : "local",
       savedAt: new Date().toISOString(),
     };
-    const stored = writeStoredSpaceProfile(saved);
-    setSpaceProfile(saved);
-    setDraft(saved);
-    setErrors({});
-    if (!stored) {
-      setStatus({ kind: "error", text: "已更新当前页面，但浏览器存储不可用；刷新后会丢失。" });
-      return;
-    }
+
     setSaving(true);
-    setStatus({ kind: "idle", text: "资料已保存，正在按资料生成计划…" });
+    setStatus({ kind: "idle", text: "正在保存资料…" });
+    let persisted: SpaceProfile = saved;
     try {
-      const response = await fetch("/api/plans/generate", {
-        method: "POST",
+      const response = await fetch("/api/profile", {
+        method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ profile: saved }),
       });
+      const result = (await response.json().catch(() => null)) as { profile?: SpaceProfile; message?: string } | null;
+      if (!response.ok || !result?.profile) throw new Error(result?.message ?? "资料没有保存成功，请稍后重试。");
+      persisted = result.profile;
+    } catch (error) {
+      setStatus({ kind: "error", text: error instanceof Error ? error.message : "资料没有保存成功，请稍后重试。" });
+      setSaving(false);
+      return;
+    }
+
+    setSpaceProfile(persisted);
+    setDraft(persisted);
+    setErrors({});
+    void queryClient.invalidateQueries({ queryKey: ["profile"] });
+    void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+    setStatus({ kind: "idle", text: "资料已保存，正在按资料生成计划…" });
+
+    try {
+      const response = await fetch("/api/plans/generate", { method: "POST" });
       const result = (await response.json().catch(() => null)) as { plan?: { version?: number }; message?: string } | null;
       if (!response.ok || !result?.plan?.version) throw new Error(result?.message ?? "计划生成失败，请稍后重试。");
-      setStatus({ kind: "saved", text: `已保存到本机 · ${formatMoment(saved.savedAt)}。饮食与运动计划已生成（v${result.plan.version}）。` });
+      void queryClient.invalidateQueries({ queryKey: ["plan"] });
+      setStatus({
+        kind: "saved",
+        text: `已保存到${isDemo ? "演示沙盒" : "你的账户"} · ${formatMoment(persisted.savedAt)}。饮食与运动计划已生成（v${result.plan.version}）。`,
+      });
     } catch (error) {
       setStatus({
         kind: "saved",
-        text: `已保存到本机 · ${formatMoment(saved.savedAt)}。${error instanceof Error ? error.message : "计划生成失败，请稍后重试。"}可在计划页重试。`,
+        text: `已保存到${isDemo ? "演示沙盒" : "你的账户"} · ${formatMoment(persisted.savedAt)}。${error instanceof Error ? error.message : "计划生成失败，请稍后重试。"}可在计划页重试。`,
       });
     } finally {
       setSaving(false);
@@ -386,7 +406,7 @@ export function MySpace({ data, loading, profile, hasStored }: MySpaceProps) {
           </div>
           <p className="ms-pass-foot">
             <ShieldCheck size={12} aria-hidden="true" />
-            {hasStored ? "仅保存在本机浏览器" : "保存后只留在本机"}
+            {hasStored ? (isDemo ? "保存在演示沙盒" : "已保存到你的账户") : (isDemo ? "保存后进入演示沙盒" : "保存后进入你的账户")}
           </p>
           </motion.aside>
         </div>
@@ -397,7 +417,7 @@ export function MySpace({ data, loading, profile, hasStored }: MySpaceProps) {
       {isDemo && (
         <p className="ms-notice" role="note">
           <Info size={14} aria-hidden="true" />
-          当前填入的是演示资料，可以按自己的情况修改；保存后只留在本机，不会上传。
+          当前填入的是演示资料，可以按自己的情况修改；保存后写入当前浏览会话的独立沙盒，不会进入其他访问者的数据。
         </p>
       )}
 
@@ -406,10 +426,10 @@ export function MySpace({ data, loading, profile, hasStored }: MySpaceProps) {
           <div className="ms-form-head">
             <div>
               <h2>把你的情况写下来。</h2>
-              <p>称呼必填；其余留空时，相关估算会显示“待补充”，不会用示例值补齐。保存后的资料只留在当前浏览器。</p>
+              <p>称呼必填；其余留空时，相关估算会显示“待补充”，不会用示例值补齐。保存后写入你的账户，演示模式下写入当前浏览会话。</p>
             </div>
             <span className="ms-form-state">
-              {hasStored ? `本机资料${savedMoment ? ` · ${savedMoment}` : ""}` : "尚未保存"}
+              {hasStored ? `${isDemo ? "演示资料" : "账户资料"}${savedMoment ? ` · ${savedMoment}` : ""}` : "尚未保存"}
             </span>
           </div>
 
@@ -581,7 +601,7 @@ export function MySpace({ data, loading, profile, hasStored }: MySpaceProps) {
                 : status.kind === "error"
                   ? <CircleAlert size={13} aria-hidden="true" />
                   : <ShieldCheck size={13} aria-hidden="true" />}
-              <span>{status.text || "资料只保存在本机浏览器，不会上传服务器。"}</span>
+              <span>{status.text || "资料会写入你的账户；演示模式下只写入当前浏览会话。"}</span>
             </p>
             <div className="ms-form-actions">
               {isDemo && <button type="button" className="ms-ghost-btn" onClick={fillDemo}>填入演示资料</button>}
@@ -645,7 +665,7 @@ export function MySpace({ data, loading, profile, hasStored }: MySpaceProps) {
       <div className="ms-plans-wrap" ref={plansRef} tabIndex={-1} aria-label="按当前资料生成的饮食与运动计划">
         <header className="ms-plans-head">
           <h2>饮食与运动，先各排一版。</h2>
-          <p>以下内容按当前填写即时生成；保存后资料留在本机。它们是一般结构，不是个体营养或医疗处方。</p>
+          <p>以下内容按当前填写即时生成；保存后资料写入你的账户或演示沙盒。它们是一般结构，不是个体营养或医疗处方。</p>
         </header>
 
         <div className="ms-plans">
@@ -746,8 +766,8 @@ export function MySpace({ data, loading, profile, hasStored }: MySpaceProps) {
               <dd>热量与蛋白质是估算区间，不是个体营养处方。有慢性病、孕期、进食障碍风险或正在调整用药，请先咨询医生或营养师。</dd>
             </div>
             <div>
-              <dt>只存本机</dt>
-              <dd>资料保存在浏览器 localStorage；清除站点数据、换设备或换浏览器后不会自动同步。</dd>
+              <dt>存到账户</dt>
+              <dd>资料保存在你的账户下，换设备登录后可同步；演示模式下只保存在当前浏览会话。</dd>
             </div>
             <div>
               <dt>不猜缺失</dt>

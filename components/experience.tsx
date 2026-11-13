@@ -127,69 +127,232 @@ export function HealthTipsCarousel() {
 }
 
 function Mascot() {
+  const body =
+    "M17.09 4H46.91C55.78 4 58 6.22 58 15.09V45.6C58 54.47 55.78 56.69 46.91 56.69H17.09C8.22 56.69 6 54.47 6 45.6V15.09C6 6.22 8.22 4 17.09 4Z";
+
   return (
     <svg viewBox="0 0 64 64" className="mascot-svg" aria-hidden="true" focusable="false">
       <defs>
-        <linearGradient id="mascot-body" x1="14" y1="10" x2="50" y2="56" gradientUnits="userSpaceOnUse">
-          <stop offset="0" stopColor="#eaf3e2" />
-          <stop offset="1" stopColor="#c6dcb9" />
-        </linearGradient>
+        <radialGradient id="mascot-body" cx="0.34" cy="0.14" r="0.98">
+          <stop offset="0" stopColor="#fffef8" />
+          <stop offset="0.28" stopColor="#fbfbef" />
+          <stop offset="0.52" stopColor="#f2f7e2" />
+          <stop offset="0.74" stopColor="#e2ecd0" />
+          <stop offset="0.9" stopColor="#d0dcb4" />
+          <stop offset="1" stopColor="#c2d0a4" />
+        </radialGradient>
+        <radialGradient id="mascot-glow">
+          <stop offset="0" stopColor="#ffffff" stopOpacity=".85" />
+          <stop offset="1" stopColor="#ffffff" stopOpacity="0" />
+        </radialGradient>
+        <radialGradient id="mascot-bottom">
+          <stop offset="0" stopColor="#5d6a55" stopOpacity=".3" />
+          <stop offset="1" stopColor="#5d6a55" stopOpacity="0" />
+        </radialGradient>
+        <clipPath id="mascot-clip">
+          <path d={body} />
+        </clipPath>
       </defs>
-      <ellipse cx="32" cy="59.5" rx="16" ry="3.2" fill="#355b4614" />
-      <path d="M32 9c0-4 3-7 8-8 1 5-3 8-8 8Z" fill="#6f9676" />
-      <path d="M32 9c0-3-2-6-6-7 0 4 2 7 6 7Z" fill="#8fb08a" />
-      <path d="M32 9C19.3 9 9 19.3 9 32c0 13.3 10.3 23 23 23s23-9.7 23-23C55 19.3 44.7 9 32 9Z" fill="url(#mascot-body)" />
-      <circle cx="24" cy="31" r="2.3" fill="#355b46" />
-      <circle cx="40" cy="31" r="2.3" fill="#355b46" />
-      <circle cx="24.8" cy="30.2" r=".7" fill="#fff" />
-      <circle cx="40.8" cy="30.2" r=".7" fill="#fff" />
-      <circle cx="18.5" cy="37" r="3.1" fill="#d9a77e" opacity=".42" />
-      <circle cx="45.5" cy="37" r="3.1" fill="#d9a77e" opacity=".42" />
-      <path d="M27 38c2 2.6 8 2.6 10 0" fill="none" stroke="#355b46" strokeWidth="2" strokeLinecap="round" />
+      <ellipse cx="32" cy="60.4" rx="13.5" ry="2" fill="#3e5647" opacity=".14" />
+      <path d={body} fill="url(#mascot-body)" />
+      <g clipPath="url(#mascot-clip)">
+        <ellipse cx="23" cy="12" rx="16" ry="11" fill="url(#mascot-glow)" />
+        <ellipse cx="32" cy="56" rx="28" ry="11" fill="url(#mascot-bottom)" />
+      </g>
+      <path d={body} fill="none" stroke="#a9bb99" strokeOpacity=".55" strokeWidth=".7" />
+      <rect x="21.6" y="23.3" width="4.15" height="7.2" rx="2.08" fill="#1f2a22" />
+      <rect x="38.24" y="23.3" width="4.15" height="7.2" rx="2.08" fill="#1f2a22" />
+      <circle cx="22.62" cy="25.4" r=".66" fill="#fffdf6" />
+      <circle cx="39.26" cy="25.4" r=".66" fill="#fffdf6" />
     </svg>
   );
 }
 
+function clampCompanionPosition(element: HTMLElement | null, x: number, y: number) {
+  const width = element?.offsetWidth ?? 58;
+  const height = element?.offsetHeight ?? 58;
+  const margin = 8;
+  const viewportWidth = document.documentElement.clientWidth;
+  const viewportHeight = document.documentElement.clientHeight;
+  return {
+    x: Math.min(Math.max(x, margin), Math.max(margin, viewportWidth - width - margin)),
+    y: Math.min(Math.max(y, margin), Math.max(margin, viewportHeight - height - margin)),
+  };
+}
+
+type CompanionDrag = {
+  pointerId: number;
+  startX: number;
+  startY: number;
+  originX: number;
+  originY: number;
+  moved: boolean;
+};
+
 export function FloatingCompanion({ hidden, onOpen }: { hidden: boolean; onOpen: () => void }) {
-  const [open, setOpen] = React.useState(false);
+  const [introOpen, setIntroOpen] = React.useState(false);
+  const [hovered, setHovered] = React.useState(false);
   const [dismissed, setDismissed] = React.useState(false);
+  const [pos, setPos] = React.useState<{ x: number; y: number } | null>(null);
+  const [dragging, setDragging] = React.useState(false);
+  const introDone = React.useRef(false);
+  const dragRef = React.useRef<CompanionDrag | null>(null);
+  const suppressClick = React.useRef(false);
+  const leaveTimer = React.useRef<number | null>(null);
+  const rootRef = React.useRef<HTMLDivElement>(null);
+  const positioned = pos !== null;
 
   React.useEffect(() => {
-    if (hidden || dismissed) return;
-    const timer = window.setTimeout(() => setOpen(true), 2400);
-    return () => window.clearTimeout(timer);
-  }, [hidden, dismissed]);
-
-  React.useEffect(() => {
-    if (!open) return;
+    if (hidden || introDone.current) return;
     const timer = window.setTimeout(() => {
-      setOpen(false);
-      setDismissed(true);
-    }, 7000);
+      introDone.current = true;
+      setIntroOpen(true);
+    }, 2400);
     return () => window.clearTimeout(timer);
-  }, [open]);
+  }, [hidden]);
+
+  React.useEffect(() => {
+    if (!introOpen) return;
+    const timer = window.setTimeout(() => setIntroOpen(false), 7000);
+    return () => window.clearTimeout(timer);
+  }, [introOpen]);
+
+  React.useEffect(() => {
+    if (!positioned) return;
+    const handleResize = () => {
+      setPos((current) => (current ? clampCompanionPosition(rootRef.current, current.x, current.y) : current));
+    };
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, [positioned]);
+
+  React.useEffect(
+    () => () => {
+      if (leaveTimer.current !== null) window.clearTimeout(leaveTimer.current);
+      document.body.classList.remove("companion-dragging");
+    },
+    [],
+  );
+
+  const clearLeave = () => {
+    if (leaveTimer.current !== null) {
+      window.clearTimeout(leaveTimer.current);
+      leaveTimer.current = null;
+    }
+  };
+
+  const dismiss = () => {
+    introDone.current = true;
+    setIntroOpen(false);
+    setHovered(false);
+    setDismissed(true);
+  };
 
   const openCoach = () => {
-    setDismissed(true);
-    setOpen(false);
+    setIntroOpen(false);
+    setHovered(false);
     onOpen();
+  };
+
+  const handleClick = () => {
+    if (suppressClick.current) {
+      suppressClick.current = false;
+      return;
+    }
+    openCoach();
+  };
+
+  const handlePointerDown = (event: React.PointerEvent<HTMLButtonElement>) => {
+    if (event.pointerType === "mouse" && event.button !== 0) return;
+    const root = rootRef.current;
+    if (!root) return;
+    const rect = root.getBoundingClientRect();
+    dragRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      originX: rect.left,
+      originY: rect.top,
+      moved: false,
+    };
+    suppressClick.current = false;
+    if (!pos) setPos({ x: rect.left, y: rect.top });
+    event.currentTarget.setPointerCapture(event.pointerId);
+    clearLeave();
+    setDismissed(false);
+    setHovered(true);
+    setDragging(true);
+  };
+
+  const handlePointerMove = (event: React.PointerEvent<HTMLButtonElement>) => {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    const dx = event.clientX - drag.startX;
+    const dy = event.clientY - drag.startY;
+    if (!drag.moved) {
+      if (Math.hypot(dx, dy) < 4) return;
+      drag.moved = true;
+      suppressClick.current = true;
+      document.body.classList.add("companion-dragging");
+    }
+    setPos(clampCompanionPosition(rootRef.current, drag.originX + dx, drag.originY + dy));
+  };
+
+  const endDrag = (event: React.PointerEvent<HTMLButtonElement>) => {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    dragRef.current = null;
+    setDragging(false);
+    document.body.classList.remove("companion-dragging");
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
   };
 
   if (hidden) return null;
 
+  const showBubble = !dismissed && !dragging && (introOpen || hovered);
+  const alignLeft = positioned && pos.x < 200;
+  const below = positioned && pos.y < 150;
+  const className = [
+    "companion",
+    dragging ? "is-dragging" : "",
+    below ? "companion--below" : "",
+    alignLeft ? "companion--align-left" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
   return (
-    <div className="companion">
-      {open && !dismissed && (
+    <div
+      ref={rootRef}
+      className={className}
+      style={pos ? { left: pos.x, top: pos.y, right: "auto", bottom: "auto" } : undefined}
+      onPointerEnter={() => {
+        clearLeave();
+        setDismissed(false);
+        setHovered(true);
+      }}
+      onPointerLeave={() => {
+        clearLeave();
+        leaveTimer.current = window.setTimeout(() => {
+          leaveTimer.current = null;
+          setDismissed(false);
+          setHovered(false);
+        }, 160);
+      }}
+      onFocus={() => {
+        clearLeave();
+        setDismissed(false);
+        setHovered(true);
+      }}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setHovered(false);
+      }}
+    >
+      {showBubble && (
         <div className="companion-bubble" role="status">
-          <button
-            type="button"
-            className="companion-close"
-            aria-label="收起健康搭子的提示"
-            onClick={() => {
-              setOpen(false);
-              setDismissed(true);
-            }}
-          >
+          <button type="button" className="companion-close" aria-label="收起健康搭子的提示" onClick={dismiss}>
             <X size={12} />
           </button>
           <strong>健康搭子在这儿</strong>
@@ -197,7 +360,16 @@ export function FloatingCompanion({ hidden, onOpen }: { hidden: boolean; onOpen:
           <button type="button" className="companion-cta" onClick={openCoach}>去聊聊 <ChevronRight size={12} /></button>
         </div>
       )}
-      <button type="button" className="companion-button" aria-label="打开 AI 健康助手" onClick={openCoach}>
+      <button
+        type="button"
+        className="companion-button"
+        aria-label="打开 AI 健康助手，可拖动调整位置"
+        onClick={handleClick}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={endDrag}
+        onPointerCancel={endDrag}
+      >
         <Mascot />
       </button>
     </div>

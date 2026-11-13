@@ -139,15 +139,15 @@ function TodayMosaic({ data, water, percent, onNavigate, onHydration }: TodayMos
   );
 }
 
-function Macro({ label, value, goal }: { label: string; value: number; goal: number }) {
-  const percent = goal > 0 ? Math.min(100, Math.round((value / goal) * 100)) : 0;
+function Macro({ label, value, goal }: { label: string; value: number; goal: number | null }) {
+  const percent = goal && goal > 0 ? Math.min(100, Math.round((value / goal) * 100)) : 0;
   return (
     <div className="macro-line">
       <span>{label}</span>
       <div className="macro-track" role="progressbar" aria-label={`${label}目标完成度`} aria-valuenow={percent} aria-valuemin={0} aria-valuemax={100}>
         <div className="macro-fill" style={{ width: `${percent}%` }} />
       </div>
-      <b>{Math.round(value)} / {goal}g</b>
+      <b>{Math.round(value)} / {goal === null ? "—" : `${goal}g`}</b>
     </div>
   );
 }
@@ -155,7 +155,7 @@ function Macro({ label, value, goal }: { label: string; value: number; goal: num
 function HeroEnergy({ data, percent }: { data: DashboardData; percent: number }) {
   const reduce = useReducedMotion();
   const ringDeg = Math.min(100, percent) * 3.6;
-  const remaining = data.calorieGoal - data.calories;
+  const remaining = data.calorieGoal === null ? null : data.calorieGoal - data.calories;
   const macros = data.macros;
 
   return (
@@ -167,7 +167,7 @@ function HeroEnergy({ data, percent }: { data: DashboardData; percent: number })
       transition={{ duration: 0.58, delay: 0.08, ease }}
     >
       <div className="energy-body">
-        <div className="ring" role="img" aria-label={`今日热量目标完成 ${percent}%`} style={{ background: `conic-gradient(#6e9678 0deg ${ringDeg}deg, #eaf0e9 ${ringDeg}deg 360deg)` }}>
+        <div className="ring" role="img" aria-label={data.calorieGoal === null ? "还没有参考热量目标" : `今日热量目标完成 ${percent}%`} style={{ background: `conic-gradient(#6e9678 0deg ${ringDeg}deg, #eaf0e9 ${ringDeg}deg 360deg)` }}>
           <div className="ring-center"><strong>{percent}<small>%</small></strong></div>
         </div>
         <div className="energy-side">
@@ -176,12 +176,14 @@ function HeroEnergy({ data, percent }: { data: DashboardData; percent: number })
             <div className="kcal-number">
               <b>{data.calories.toLocaleString("zh-CN")}</b>
               <span>kcal</span>
-              <em>/ {data.calorieGoal.toLocaleString("zh-CN")} kcal</em>
+              <em>{data.calorieGoal === null ? "/ 目标待建档" : `/ ${data.calorieGoal.toLocaleString("zh-CN")} kcal`}</em>
             </div>
             <div className="remain">
-              {remaining >= 0
-                ? <>距离参考目标还有 <strong>{remaining.toLocaleString("zh-CN")} kcal</strong></>
-                : <>已超过参考目标 <strong>{Math.abs(remaining).toLocaleString("zh-CN")} kcal</strong>，明天慢慢调整</>}
+              {remaining === null
+                ? <>先在「我的空间」补齐年龄、身高和体重，才会给出参考目标。</>
+                : remaining >= 0
+                  ? <>距离参考目标还有 <strong>{remaining.toLocaleString("zh-CN")} kcal</strong></>
+                  : <>已超过参考目标 <strong>{Math.abs(remaining).toLocaleString("zh-CN")} kcal</strong>，明天慢慢调整</>}
             </div>
           </div>
           {macros && (
@@ -189,6 +191,7 @@ function HeroEnergy({ data, percent }: { data: DashboardData; percent: number })
               <Macro label="蛋白质" value={macros.protein.consumed} goal={macros.protein.goal} />
               <Macro label="碳水" value={macros.carbs.consumed} goal={macros.carbs.goal} />
               <Macro label="脂肪" value={macros.fat.consumed} goal={macros.fat.goal} />
+              {macros.partial && <p className="macro-note">部分餐次缺少营养素明细，合计只统计有数据的餐次。</p>}
             </div>
           )}
         </div>

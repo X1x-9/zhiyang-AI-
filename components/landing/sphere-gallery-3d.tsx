@@ -214,7 +214,7 @@ void main() {
 const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5))
 const BASE_SPIN = 0.22 // rad/sec at Auto Rotate 100
 const SPRING_STIFFNESS = 70 // 1/sec^2 pull toward the magnetic target
-const HOVER_POP = 0.3 // extra scale on a fully captured node
+const HOVER_POP = 0.18 // extra scale on a fully captured node
 // 0 = pure radial, 1 = pure billboard. Measured: at 0.45 a node on the FAR
 // side (radial normal ~180° from the camera) still lands ~81° off face-on and
 // renders as a razor sliver. 0.75 caps the worst case near 45°, so every node
@@ -233,11 +233,11 @@ const ZOOM_GAIN = 1 // wheel gain
 const ORBIT_SPEED = 0.25 // ° of camera swing per dragged pixel
 const ORBIT_DAMPING = 0.6 // how fast the orbit settles after release
 const ORBIT_LIMIT = 70 // ° pitch clamp either side of level
-const DEPTH_FLOOR = 0.32 // how dark the far side of the shell goes
+const DEPTH_FLOOR = 0.42 // how dark the far side of the shell goes
 const ZOOM_RATE = 9 // 1/sec camera dolly damping
 const CLICK_SLOP_PX = 5
 const CLICK_MS = 450
-const PLACEHOLDER = "#1b1b20"
+const PLACEHOLDER = "#e6ecd8"
 const SPHERE_W = 32 // core tessellation, matching the shipped look
 const SPHERE_H = 24
 const NEAR = 0.1
@@ -758,7 +758,7 @@ export default function SphereGallery3D(props: SphereGallery3DProps) {
     const {
         images = DEFAULT_ITEMS,
         branches: branchesProp = 34,
-        background = "#000000",
+        background = "transparent",
         scale = 60,
         size = 28,
         scatter = 0,
@@ -1027,21 +1027,13 @@ export default function SphereGallery3D(props: SphereGallery3DProps) {
             // v = 1 is the top of the quad, and must therefore be the top of
             // the image — three's texture.flipY default, spelled out
             gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true)
-            // SRGB8_ALPHA8, matching the internal format three picked for a
-            // texture tagged SRGBColorSpace: the sampler decodes sRGB -> linear
-            // in hardware, and because this shader writes its result straight
-            // out with no encode, the photos land on screen linearised —
-            // darker and more contrasty than the source file.
-            //
-            // That is the look this component has always shipped, and it is
-            // reproduced here on purpose (measured: mean |delta| 0.18/255
-            // against the three build; with a plain gl.RGBA upload it was
-            // 6.10/255). To show the photos at true sRGB instead, pass
-            // gl.RGBA as the internal format below — nothing else changes.
+            // plain RGBA upload: the shader writes straight to the framebuffer
+            // with no encode, so a hardware sRGB->linear decode would darken
+            // the photos against the cream card
             gl.texImage2D(
                 gl.TEXTURE_2D,
                 0,
-                isGL2 ? (gl as any).SRGB8_ALPHA8 : gl.RGBA,
+                gl.RGBA,
                 gl.RGBA,
                 gl.UNSIGNED_BYTE,
                 img
@@ -1286,21 +1278,61 @@ export default function SphereGallery3D(props: SphereGallery3DProps) {
             if (!pointer.dragging) pointer.inside = false
         }
 
-        const onWheel = (e: WheelEvent) => {
-            e.preventDefault()
+        // reduced motion freezes the auto-spin and the magnetic pull; drag and
+        // arrow keys still move the rig under direct control
+        const reduceQuery = window.matchMedia("(prefers-reduced-motion: reduce)")
+        let reducedMotion = reduceQuery.matches
+        const onReduceChange = () => {
+            reducedMotion = reduceQuery.matches
+        }
+        reduceQuery.addEventListener?.("change", onReduceChange)
+
+        // offscreen the rAF loop skips every GL call, so a long landing page
+        // does not keep uploading and drawing behind the fold
+        let visible = true
+        const io = new IntersectionObserver(
+            (entries) => {
+                visible = entries[0]?.isIntersecting ?? true
+            },
+            { threshold: 0.01 }
+        )
+        io.observe(host)
+
+        canvas.tabIndex = 0
+        canvas.setAttribute("role", "img")
+        canvas.setAttribute(
+            "aria-label",
+            "本周生活片段组成的三维照片球，可拖动或使用方向键旋转"
+        )
+
+        const onKeyDown = (e: KeyboardEvent) => {
             const L = live.current
-            orbit.zoomTarget = clamp(
-                orbit.zoomTarget + e.deltaY * 0.02 * L.zoomGain,
-                L.minZoom,
-                L.maxZoom
-            )
+            const step = (8 * Math.PI) / 180
+            const lim = (L.orbitLimit * Math.PI) / 180
+            if (e.key === "ArrowLeft") {
+                orbit.yaw -= step
+                orbit.yawVel = 0
+            } else if (e.key === "ArrowRight") {
+                orbit.yaw += step
+                orbit.yawVel = 0
+            } else if (e.key === "ArrowUp") {
+                orbit.pitch = clamp(orbit.pitch - step, -lim, lim)
+                orbit.pitchVel = 0
+            } else if (e.key === "ArrowDown") {
+                orbit.pitch = clamp(orbit.pitch + step, -lim, lim)
+                orbit.pitchVel = 0
+            } else {
+                return
+            }
+            e.preventDefault()
         }
 
         canvas.style.cursor = "grab"
-        canvas.style.touchAction = "none"
+        // vertical swipes keep scrolling the page; horizontal drags orbit
+        canvas.style.touchAction = "pan-y"
         canvas.addEventListener("pointerdown", onPointerDown)
         canvas.addEventListener("pointerleave", onLeave)
-        canvas.addEventListener("wheel", onWheel, { passive: false })
+        canvas.addEventListener("keydown", onKeyDown)
         // move/up on window: a pointer that leaves the host mid-drag must still
         // orbit, and must still release (rule 8)
         window.addEventListener("pointermove", onPointerMove)
@@ -1333,6 +1365,7 @@ export default function SphereGallery3D(props: SphereGallery3DProps) {
             const now = performance.now()
             const dt = Math.min(0.05, (now - prev) / 1000)
             prev = now
+            if (!visible) return
 
             const L = live.current
             const media = mediaRef.current
@@ -1392,7 +1425,7 @@ export default function SphereGallery3D(props: SphereGallery3DProps) {
                 const lim = (L.orbitLimit * Math.PI) / 180
                 orbit.pitch = clamp(orbit.pitch, -lim, lim)
             }
-            orbit.spin += L.spin * dt
+            orbit.spin += (reducedMotion ? 0 : L.spin) * dt
             if (orbit.spin > Math.PI * 2) orbit.spin -= Math.PI * 2
 
             const yaw = orbit.spin + orbit.yaw
@@ -1467,7 +1500,7 @@ export default function SphereGallery3D(props: SphereGallery3DProps) {
                 // additive premultiplied — what makes the halo bloom rather
                 // than sit as a flat grey mesh over the nucleus
                 gl.blendFunc(gl.ONE, gl.ONE)
-                gl.uniform1f(sLoc.uScale, coreR * 1.45)
+                gl.uniform1f(sLoc.uScale, coreR * 1.8)
                 gl.uniform4f(sLoc.uColor, c[0], c[1], c[2], L.coreGlow)
                 gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ballEdge)
                 gl.drawElements(
@@ -1490,7 +1523,7 @@ export default function SphereGallery3D(props: SphereGallery3DProps) {
 
             /* -------------------------------------------- magnetic ray */
             const hovering =
-                pointer.inside && L.force > 0 && L.hoverDist > 0
+                pointer.inside && !reducedMotion && L.force > 0 && L.hoverDist > 0
             if (hovering) buildRay(camDist, fovRad, aspect)
 
             /* ------------------------------------------------- layout */
@@ -1754,9 +1787,11 @@ export default function SphereGallery3D(props: SphereGallery3DProps) {
         return () => {
             cancelAnimationFrame(raf)
             ro.disconnect()
+            io.disconnect()
+            reduceQuery.removeEventListener?.("change", onReduceChange)
             canvas.removeEventListener("pointerdown", onPointerDown)
             canvas.removeEventListener("pointerleave", onLeave)
-            canvas.removeEventListener("wheel", onWheel)
+            canvas.removeEventListener("keydown", onKeyDown)
             window.removeEventListener("pointermove", onPointerMove)
             window.removeEventListener("pointerup", release)
             window.removeEventListener("pointercancel", release)
@@ -1792,10 +1827,7 @@ export default function SphereGallery3D(props: SphereGallery3DProps) {
                 position: "relative",
                 width: "100%",
                 height: "100%",
-                // Framer Fit Content collapses a 100% root to 0x0 — floor it
-                // BEFORE the spread, so an explicit instance size still wins
-                minWidth: 1200,
-                minHeight: 800,
+                minHeight: 240,
                 overflow: "hidden",
                 background,
                 isolation: "isolate",
@@ -1804,6 +1836,7 @@ export default function SphereGallery3D(props: SphereGallery3DProps) {
         >
             <canvas
                 ref={canvasRef}
+                className="sphere-gallery__canvas"
                 style={{
                     position: "absolute",
                     inset: 0,
