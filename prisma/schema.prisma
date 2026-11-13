@@ -42,7 +42,9 @@ model HealthProfile {
   user            User?         @relation(fields: [userId], references: [id], onDelete: Cascade)
   meals           MealRecord[]
   planVersions    PlanVersion[]
+  planAdjustments PlanAdjustment[]
   feedback        Feedback[]
+  weightRecords   WeightRecord[]
 }
 
 model MealRecord {
@@ -81,6 +83,21 @@ model PlanVersion {
   @@index([profileId, activeAt])
 }
 
+model PlanAdjustment {
+  id          String        @id @default(cuid())
+  profileId   String
+  dayKey      String        @db.VarChar(10)
+  nextDayKey  String        @db.VarChar(10)
+  baseVersion Int
+  adjustment  Json
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  profile     HealthProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@unique([profileId, dayKey])
+  @@index([profileId, updatedAt])
+}
+
 model Feedback {
   id          String        @id @default(cuid())
   profileId   String
@@ -91,6 +108,20 @@ model Feedback {
   profile     HealthProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
 
   @@index([profileId, createdAt])
+}
+
+model WeightRecord {
+  id        String        @id @default(cuid())
+  profileId String
+  dateKey   String        @db.VarChar(10)
+  kg        Float
+  note      String        @default("") @db.VarChar(100)
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+  profile   HealthProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@unique([profileId, dateKey])
+  @@index([profileId, dateKey])
 }
 
 model KnowledgeChunk {

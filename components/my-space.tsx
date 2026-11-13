@@ -255,9 +255,17 @@ export function MySpace({ data, loading, profile, hasStored, demo }: MySpaceProp
     if (heroStageRef.current) delete heroStageRef.current.dataset.tilting;
   };
 
-  const completeness = spaceCompleteness(draft);
-  const plans = buildSpacePlans(draft);
-  const hasRhythm = hasRhythmChoices(draft);
+  const latestWeight = data?.weightKg ?? null;
+  const weightFromProfile = data?.weightSource === "profile";
+  const syncedWeightKg = latestWeight !== null ? latestWeight.toFixed(1) : draft.weightKg;
+  const syncedDraft: SpaceProfile = { ...draft, weightKg: syncedWeightKg };
+  const displayWeight = latestWeight !== null
+    ? latestWeight.toFixed(1)
+    : syncedWeightKg.trim() && Number.isFinite(Number(syncedWeightKg)) ? Number(syncedWeightKg).toFixed(1) : "";
+
+  const completeness = spaceCompleteness(syncedDraft);
+  const plans = buildSpacePlans(syncedDraft);
+  const hasRhythm = hasRhythmChoices(syncedDraft);
   const goalLine = plans.goalLine;
   const isDemo = demo;
   const savedMoment = hasStored ? formatMoment(draft.savedAt) : "";
@@ -269,8 +277,8 @@ export function MySpace({ data, loading, profile, hasStored, demo }: MySpaceProp
   const initial = name.slice(0, 1) || "你";
 
   const height = Number(draft.heightCm);
-  const weight = Number(draft.weightKg);
-  const bmi = draft.heightCm.trim() && draft.weightKg.trim()
+  const weight = Number(syncedWeightKg);
+  const bmi = draft.heightCm.trim() && syncedWeightKg.trim()
     && Number.isFinite(height) && Number.isFinite(weight)
     && height >= 130 && height <= 220 && weight >= 35 && weight <= 200
     ? weight / (height / 100) ** 2
@@ -357,21 +365,21 @@ export function MySpace({ data, loading, profile, hasStored, demo }: MySpaceProp
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (saving || clearing) return;
-    const nextErrors = validateSpaceProfile(draft);
+    const nextErrors = validateSpaceProfile(syncedDraft);
     if (Object.keys(nextErrors).length > 0) {
       setErrors(nextErrors);
       setStatus({ kind: "error", text: "还有几项需要确认，已标在对应字段下面。" });
       return;
     }
     const saved: SpaceProfile = {
-      ...draft,
-      name: draft.name.trim(),
-      age: draft.age.trim(),
-      heightCm: draft.heightCm.trim(),
-      weightKg: draft.weightKg.trim(),
-      targetWeightKg: draft.targetWeightKg.trim(),
-      avoid: draft.avoid.trim(),
-      budget: draft.budget.trim(),
+      ...syncedDraft,
+      name: syncedDraft.name.trim(),
+      age: syncedDraft.age.trim(),
+      heightCm: syncedDraft.heightCm.trim(),
+      weightKg: syncedDraft.weightKg.trim(),
+      targetWeightKg: syncedDraft.targetWeightKg.trim(),
+      avoid: syncedDraft.avoid.trim(),
+      budget: syncedDraft.budget.trim(),
       source: isDemo ? "demo" : "local",
       savedAt: new Date().toISOString(),
     };
@@ -510,7 +518,7 @@ export function MySpace({ data, loading, profile, hasStored, demo }: MySpaceProp
           </p>
           <dl className="ms-pass-grid">
             <div><dt>身高</dt><dd>{draft.heightCm ? `${draft.heightCm} cm` : "—"}</dd></div>
-            <div><dt>体重</dt><dd>{draft.weightKg ? `${draft.weightKg} kg` : "—"}</dd></div>
+            <div><dt>体重</dt><dd>{displayWeight ? `${displayWeight} kg` : "—"}</dd></div>
             <div><dt>目标体重</dt><dd>{draft.targetWeightKg ? `${draft.targetWeightKg} kg` : "—"}</dd></div>
             <div><dt>饮食偏好</dt><dd>{dietText(draft.diet)}</dd></div>
           </dl>
@@ -620,22 +628,31 @@ export function MySpace({ data, loading, profile, hasStored, demo }: MySpaceProp
                 />
               </Field>
 
-              <Field id="ms-weight" label="当前体重" hint="kg" error={errors.weightKg}>
-                <input
-                  className="ms-input"
+              <div className="ms-field">
+                <label htmlFor="ms-weight">当前体重<small>kg · 随体重记录同步</small></label>
+                <div
                   id="ms-weight"
-                  type="number"
-                  inputMode="decimal"
-                  min={35}
-                  max={200}
-                  step="0.1"
-                  value={draft.weightKg}
-                  placeholder="例如 63.4"
+                  className={`ms-weight-sync${displayWeight ? "" : " is-empty"}`}
                   aria-invalid={Boolean(errors.weightKg)}
                   aria-describedby={errors.weightKg ? "ms-weight-error" : undefined}
-                  onChange={(event) => update("weightKg", event.target.value)}
-                />
-              </Field>
+                  tabIndex={errors.weightKg ? -1 : undefined}
+                >
+                  <strong>{displayWeight ? `${displayWeight} kg` : "还没有记录"}</strong>
+                  <button type="button" className="ms-weight-sync-link" onClick={() => setPage("dashboard")}>
+                    {latestWeight !== null && !weightFromProfile ? "更新记录" : "去记录"} <ArrowRight size={12} aria-hidden="true" />
+                  </button>
+                </div>
+                <p className="ms-weight-sync-note">
+                  {weightFromProfile
+                    ? "取自资料填写的体重，记录后会同步更新。"
+                    : latestWeight !== null
+                      ? "取自最新一笔体重记录。"
+                      : displayWeight
+                        ? "沿用资料里的体重，记录后会同步更新。"
+                        : "保存资料前，请先在今日概览记一笔体重。"}
+                </p>
+                {errors.weightKg && <p className="ms-error" id="ms-weight-error">{errors.weightKg}</p>}
+              </div>
 
               <Field id="ms-target-weight" label="目标体重" hint="kg" error={errors.targetWeightKg}>
                 <input

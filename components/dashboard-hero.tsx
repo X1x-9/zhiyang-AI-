@@ -29,6 +29,7 @@ type SliceTarget = "food" | "plans" | "exercise" | "review" | "profile" | "hydra
 type DashboardHeroProps = {
   data: DashboardData;
   water: number;
+  waterLog: Record<string, number>;
   percent: number;
   onRecord: () => void;
   onProfile: () => void;
@@ -152,7 +153,47 @@ function Macro({ label, value, goal }: { label: string; value: number; goal: num
   );
 }
 
-function HeroEnergy({ data, percent }: { data: DashboardData; percent: number }) {
+function WaterWeekChart({ data, water, waterLog }: { data: DashboardData; water: number; waterLog: Record<string, number> }) {
+  const days = data.week.days;
+  const values = days.map((day) => {
+    if (day.isToday) return water;
+    if (day.isFuture) return 0;
+    return waterLog[day.key] ?? data.waterHistory[day.key] ?? 0;
+  });
+  const max = Math.max(data.waterGoal, ...values, 1);
+  const summary = days
+    .map((day, index) => `${day.label} ${day.isFuture ? "未到" : `${values[index].toLocaleString("zh-CN")} 毫升`}`)
+    .join("，");
+
+  return (
+    <div className="water-week" role="img" aria-label={`本周饮水：${summary}`}>
+      <div className="water-week-head">
+        <span>本周饮水</span>
+        <em>{data.demo ? "演示数据" : `目标 ${data.waterGoal.toLocaleString("zh-CN")} ml`}</em>
+      </div>
+      <div className="water-week-bars" aria-hidden="true">
+        {days.map((day, index) => {
+          const value = values[index];
+          const height = Math.min(100, Math.round((value / max) * 100));
+          return (
+            <div
+              key={day.key}
+              className={`water-week-col${day.isToday ? " is-today" : ""}${day.isFuture ? " is-future" : ""}`}
+              title={day.isFuture ? `${day.label} 还没到` : `${day.label} ${value.toLocaleString("zh-CN")} ml`}
+            >
+              <span className="water-week-track">
+                {value > 0 && <span className="water-week-fill" style={{ height: `${height}%` }} />}
+              </span>
+              <small>{day.label.slice(1)}</small>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function HeroEnergy({ data, water, waterLog, percent }: { data: DashboardData; water: number; waterLog: Record<string, number>; percent: number }) {
   const reduce = useReducedMotion();
   const ringDeg = Math.min(100, percent) * 3.6;
   const remaining = data.calorieGoal === null ? null : data.calorieGoal - data.calories;
@@ -195,12 +236,13 @@ function HeroEnergy({ data, percent }: { data: DashboardData; percent: number })
             </div>
           )}
         </div>
+        <WaterWeekChart data={data} water={water} waterLog={waterLog} />
       </div>
     </motion.div>
   );
 }
 
-export function DashboardHero({ data, water, percent, onRecord, onProfile, onNavigate, onHydration }: DashboardHeroProps) {
+export function DashboardHero({ data, water, waterLog, percent, onRecord, onProfile, onNavigate, onHydration }: DashboardHeroProps) {
   const reduce = useReducedMotion();
   const stageRef = React.useRef<HTMLDivElement>(null);
   const rotateX = useSpring(0, { stiffness: 170, damping: 20, mass: 0.6 });
@@ -288,7 +330,7 @@ export function DashboardHero({ data, water, percent, onRecord, onProfile, onNav
           </div>
         </motion.div>
 
-        <HeroEnergy data={data} percent={percent} />
+        <HeroEnergy data={data} water={water} waterLog={waterLog} percent={percent} />
         <TodayMosaic data={data} water={water} percent={percent} onNavigate={onNavigate} onHydration={onHydration} />
         <span className="hero-glare" aria-hidden="true" />
       </motion.section>

@@ -15,9 +15,13 @@ import { MealRecorder } from "@/components/meal-recorder";
 import { MySpace } from "@/components/my-space";
 import { DietPlan, ExercisePlan, PlanSwitcher } from "@/components/plan-experience";
 import { SpaceCard } from "@/components/space-card";
-import { getDashboard, type DashboardData, type WeekSummary, type WeightPoint } from "@/lib/dashboard";
+import { WeightRecordForm } from "@/components/weight-record-form";
+import { WeightReviewSection } from "@/components/weight-review";
+import { WeightTrendChart, WeightValue } from "@/components/weight-trend-chart";
+import { formatWeightChange, getDashboard, type DashboardData, type WeekSummary } from "@/lib/dashboard";
 import { fetchProfile } from "@/lib/profile-client";
 import { createEmptySpaceProfile, type SpaceProfile } from "@/lib/space";
+import { loadWaterLog, recordWater, waterTodayKey } from "@/lib/water-log";
 import { useHealthStore, type Page } from "@/stores/health-store";
 
 const useIsomorphicLayoutEffect = typeof window === "undefined" ? React.useEffect : React.useLayoutEffect;
@@ -36,54 +40,6 @@ function SectionTitle({ title, action }: { title: string; action?: React.ReactNo
   return <div className="section-title"><h2>{title}</h2>{action}</div>;
 }
 
-function formatWeightChange(change: number | null) {
-  if (change === null) return "暂无变化记录";
-  if (Math.abs(change) < 0.05) return "与上次持平";
-  return `${change > 0 ? "↑" : "↓"} ${Math.abs(change).toFixed(1)} kg`;
-}
-
-function WeightChart({ series }: { series: WeightPoint[] }) {
-  if (series.length < 2) return <div className="chart-empty">体重记录不足两天，暂时画不出趋势。</div>;
-  const width = 330;
-  const height = 86;
-  const padX = 10;
-  const padY = 14;
-  const values = series.map((point) => point.kg);
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  const range = max - min || 1;
-  const step = (width - padX * 2) / (series.length - 1);
-  const points = series.map((point, index) => ({
-    x: padX + index * step,
-    y: padY + (1 - (point.kg - min) / range) * (height - padY * 2),
-  }));
-  const line = points.map((point, index) => `${index === 0 ? "M" : "L"}${point.x.toFixed(1)} ${point.y.toFixed(1)}`).join(" ");
-  const area = `${line} L ${points[points.length - 1].x.toFixed(1)} ${height - 2} L ${points[0].x.toFixed(1)} ${height - 2} Z`;
-  const labelIndexes = series.length <= 4
-    ? series.map((_, index) => index)
-    : [0, Math.round((series.length - 1) / 3), Math.round(((series.length - 1) * 2) / 3), series.length - 1];
-
-  return (
-    <>
-      <svg className="weight-chart" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" role="img" aria-label={`最近 ${series.length} 次体重记录：由 ${series[0].kg} 千克到 ${series[series.length - 1].kg} 千克`}>
-        <defs>
-          <linearGradient id="areaFill" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#78957a" stopOpacity="0.22" />
-            <stop offset="100%" stopColor="#78957a" stopOpacity="0" />
-          </linearGradient>
-        </defs>
-        <path className="axis" d="M0 18H330M0 47H330M0 76H330" />
-        <path className="area" d={area} />
-        <path className="line" d={line} />
-        {points.map((point, index) => <circle key={`${series[index].label}-${index}`} cx={point.x} cy={point.y} r={index === points.length - 1 ? 3.2 : 2.2} />)}
-      </svg>
-      <div className="chart-labels">
-        {labelIndexes.map((index, position) => <span key={`${series[index].label}-${index}-${position}`}>{series[index].label}</span>)}
-      </div>
-    </>
-  );
-}
-
 function DemoNotice({ notice }: { notice?: string }) {
   return (
     <div className="demo-banner" role="note">
@@ -93,12 +49,25 @@ function DemoNotice({ notice }: { notice?: string }) {
   );
 }
 
-function Dashboard() {
+function Dashboard({ identityKey }: { identityKey: string }) {
   const setPage = useHealthStore((state) => state.setPage);
   const addWater = useHealthStore((state) => state.addWater);
+  const setWaterAdded = useHealthStore((state) => state.setWaterAdded);
   const waterAdded = useHealthStore((state) => state.waterAdded);
   const { data, isPending, isError, error, refetch } = useQuery({ queryKey: ["dashboard"], queryFn: getDashboard });
   const [trainingStarted, setTrainingStarted] = React.useState(false);
+  const [waterLog, setWaterLog] = React.useState<Record<string, number>>({});
+
+  React.useEffect(() => {
+    const stored = loadWaterLog(identityKey);
+    setWaterLog(stored);
+    setWaterAdded(stored[waterTodayKey()] ?? 0);
+  }, [identityKey, setWaterAdded]);
+
+  const addCup = () => {
+    addWater(250);
+    setWaterLog(recordWater(identityKey, 250));
+  };
 
   if (isPending) return <GrowingLoader label="正在整理今天的健康记录…" />;
   if (isError || !data) return <div className="empty-note" role="alert">暂时无法载入今日数据。{error instanceof Error ? ` ${error.message}` : ""} <button className="link-button" onClick={() => void refetch()}>重试</button></div>;
@@ -118,6 +87,7 @@ function Dashboard() {
     <DashboardHero
       data={data}
       water={water}
+      waterLog={waterLog}
       percent={percent}
       onRecord={() => setPage("food")}
       onProfile={() => setPage("profile")}
@@ -165,11 +135,11 @@ function Dashboard() {
             <div className="section-title"><h2 id="hydration-title">喝水也算照顾自己</h2><span className="goal-tag">{water.toLocaleString("zh-CN")} / {data.waterGoal.toLocaleString("zh-CN")} ml</span></div>
             <div className="hydration-row">
               <span className="water-icon"><Droplets size={20} /></span>
-              <div className="water-detail"><strong>每一杯都算数</strong><small>{waterAdded > 0 ? `本次已加 ${waterAdded} ml` : "今天已记录"}</small></div>
-              <button className="water-add" onClick={() => addWater()} aria-label="记录一杯水，250 毫升">+</button>
+              <div className="water-detail"><strong>每一杯都算数</strong><small>{waterAdded > 0 ? `今天已加 ${waterAdded} ml` : "今天已记录"}</small></div>
+              <button className="water-add" onClick={addCup} aria-label="记录一杯水，250 毫升">+</button>
             </div>
             <div className="water-progress"><span style={{ width: `${waterPercent}%` }} /></div>
-            <p className="water-note">{data.demo ? "演示数据 · 刷新后重置" : "仅保存在当前浏览器"}</p>
+            <p className="water-note">{data.demo ? "演示数据 · 记录保存在当前浏览器" : "仅保存在当前浏览器"}</p>
           </section>
         </div>
 
@@ -205,15 +175,17 @@ function Dashboard() {
           <SectionTitle title="体重趋势" action={<button onClick={() => setPage("review")}>看复盘 <ChevronRight size={13} /></button>} />
           {data.weightKg === null ? (
             <div className="card-empty compact">
-              <div><strong>还没有体重记录</strong><p>体重模块尚未接入个人记录，不会用示例数字代替。</p></div>
+              <div><strong>还没有体重记录</strong><p>记下第一笔，趋势会从这里长出来。</p></div>
             </div>
           ) : (
             <>
-              <div className="weight-main"><strong>{data.weightKg.toFixed(1)}</strong><span>kg</span><span className="weight-change">{formatWeightChange(data.weightChangeKg)}</span></div>
-              <WeightChart series={data.weightSeries} />
-              {data.demo && <p className="chart-note">演示数据，仅用于展示趋势图。</p>}
+              <div className="weight-main"><strong><WeightValue value={data.weightKg} /></strong><span>kg</span><span className="weight-change">{formatWeightChange(data.weightChangeKg)}</span></div>
+              <WeightTrendChart points={data.weightSeries} variant="card" />
+              {data.weightSeries.some((point) => point.source === "profile") && <p className="chart-note">资料体重作为趋势起点。</p>}
+              {data.demo && <p className="chart-note">演示沙盒数据，仅存当前浏览器。</p>}
             </>
           )}
+          <WeightRecordForm latestKg={data.weightKg} />
         </section>
       </motion.div>
     </div>
@@ -270,7 +242,7 @@ function WeekTrail({ week }: { week: WeekSummary }) {
       </div>
       <p className="review-trail-note">
         {week.workouts === null
-          ? "训练与体重尚未接入，只按饮食记录呈现。"
+          ? "训练记录尚未接入，本次复盘按饮食与体重记录呈现。"
           : "只按已有记录呈现。"}
       </p>
     </section>
@@ -283,6 +255,7 @@ function ReviewPanel({ data, loading }: { data?: DashboardData; loading: boolean
   const { week } = data;
   return <>
     <WeekTrail week={week} />
+    <WeightReviewSection />
     <div className="review-layout">
       <section className="surface review-score">
         <SectionTitle title="本周执行情况" action={<span className="goal-tag">只按已有记录</span>} />
@@ -1160,7 +1133,7 @@ function CoreApp({ onHome }: { onHome: () => void }) {
         {renderedPages.map((visitedPage) => (
           <React.Activity key={visitedPage} mode={visitedPage === page ? "visible" : "hidden"}>
             <div className={`page-panel min-w-0${visitedPage === page ? " is-active" : ""}`}>
-              {visitedPage === "dashboard" ? <Dashboard key={identityKey} /> : <OtherPage key={identityKey} page={visitedPage} spaceProfile={spaceProfile} hasStored={hasStoredSpace} demo={Boolean(profileQuery.data?.demo)} identityKey={identityKey} />}
+              {visitedPage === "dashboard" ? <Dashboard key={identityKey} identityKey={identityKey} /> : <OtherPage key={identityKey} page={visitedPage} spaceProfile={spaceProfile} hasStored={hasStoredSpace} demo={Boolean(profileQuery.data?.demo)} identityKey={identityKey} />}
             </div>
           </React.Activity>
         ))}

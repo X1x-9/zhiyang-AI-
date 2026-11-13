@@ -11,6 +11,7 @@ type HealthState = {
   spaceProfile: SpaceProfile | null;
   setPage: (page: Page) => void;
   addWater: (amount?: number) => void;
+  setWaterAdded: (amount: number) => void;
   setMealNote: (note: string) => void;
   confirmMeal: () => void;
   resetMealConfirmation: () => void;
@@ -26,6 +27,7 @@ export const useHealthStore = create<HealthState>((set) => ({
   spaceProfile: null,
   setPage: (page) => set((state) => state.visitedPages.includes(page) ? { page } : { page, visitedPages: [...state.visitedPages, page] }),
   addWater: (amount = 250) => set((state) => ({ waterAdded: state.waterAdded + Math.max(0, amount) })),
+  setWaterAdded: (amount) => set({ waterAdded: Math.max(0, Math.round(amount)) }),
   setMealNote: (mealNote) => set({ mealNote }),
   confirmMeal: () => set({ confirmed: true }),
   resetMealConfirmation: () => set({ confirmed: false }),

@@ -1,7 +1,8 @@
-import type { DashboardData, WeekDaySummary, WeightPoint } from "./dashboard";
+import { profileWeightPoint, weightDateLabel, type DashboardData, type WeekDaySummary, type WeightEntry, type WeightPoint } from "./dashboard";
 import { readDemoProfile } from "./demo-session";
 import { matchFood, scaleNutrition } from "./food-data";
 import { DEMO_NUTRITION_TARGETS, deriveNutritionTargets, roundMacro } from "./nutrition-goal";
+import { readProfileWeightKg } from "./space";
 
 export type DemoMealType = "BREAKFAST" | "LUNCH" | "DINNER" | "SNACK" | "OTHER";
 export type DemoMealStatus = "PENDING" | "CONFIRMED" | "REJECTED";
@@ -100,6 +101,12 @@ export function lastSevenDayLabels(now = new Date()) {
   });
 }
 
+function lastSevenDayKeys(now = new Date()) {
+  const { key } = chinaDayRange(now);
+  const base = new Date(`${key}T12:00:00+08:00`);
+  return Array.from({ length: 7 }, (_, index) => chinaDateKey(new Date(base.getTime() - (6 - index) * 24 * 60 * 60 * 1000)));
+}
+
 function todayAt(hour: number, minute: number) {
   const { key } = chinaDayRange();
   const hh = String(hour).padStart(2, "0");
@@ -168,9 +175,19 @@ function enrichItem(item: DemoMealItem): DemoMealItem {
 }
 
 export function createDemoDashboard(sessionId: string, notice?: string): DashboardData {
-  const labels = lastSevenDayLabels();
-  const weightSeries: WeightPoint[] = labels.map((label, index) => ({ label, kg: demoWeightValues[index] }));
+  const weights = listDemoWeightEntries(sessionId);
+  const latestWeight = weights[0] ?? null;
+  const previousWeight = weights[1] ?? null;
   const profile = readDemoProfile(sessionId);
+  const profilePoint = profileWeightPoint(readProfileWeightKg(profile));
+  const recordSeries: WeightPoint[] = weights
+    .slice(0, 7)
+    .reverse()
+    .map((entry) => ({ label: weightDateLabel(entry.dateKey), kg: entry.kg }));
+  const weightSeries: WeightPoint[] = profilePoint ? [profilePoint, ...recordSeries] : recordSeries;
+  const weekStartKey = chinaDateKey(chinaWeekStart());
+  const todayKey = chinaDateKey();
+  const weightEntriesThisWeek = weights.filter((entry) => entry.dateKey >= weekStartKey && entry.dateKey <= todayKey).length;
   const targets = profile ? deriveNutritionTargets(profile) : DEMO_NUTRITION_TARGETS;
   const todayAll = listDemoMeals(sessionId);
   const todayMeals = todayAll.filter((meal) => meal.status === "CONFIRMED");
@@ -185,6 +202,11 @@ export function createDemoDashboard(sessionId: string, notice?: string): Dashboa
       }
     : null;
   const weekDays = buildDemoWeekDays(todayMeals.length, calories);
+  const demoWaterValues = [1620, 1840, 1380, 1760, 1520, 2050, 1690];
+  const waterHistory: Record<string, number> = {};
+  weekDays.forEach((day, index) => {
+    if (!day.isToday && !day.isFuture && day.meals > 0) waterHistory[day.key] = demoWaterValues[index];
+  });
   const recordedDays = weekDays.filter((day) => day.meals > 0).length;
   const weekMeals = weekDays.reduce((sum, day) => sum + day.meals, 0);
   const weekWorkouts = weekDays.filter((day) => day.workoutMinutes !== null).length;
@@ -205,9 +227,11 @@ export function createDemoDashboard(sessionId: string, notice?: string): Dashboa
     macros,
     waterMl: 1100,
     waterGoal: 2000,
-    weightKg: profile?.weightKg ? Number(profile.weightKg) || null : 63.4,
-    weightChangeKg: -0.6,
+    waterHistory,
+    weightKg: latestWeight?.kg ?? profilePoint?.kg ?? null,
+    weightChangeKg: latestWeight && previousWeight ? Math.round((latestWeight.kg - previousWeight.kg) * 10) / 10 : null,
     weightSeries,
+    weightSource: latestWeight ? "records" : profilePoint ? "profile" : null,
     pendingMeals: todayAll.filter((meal) => meal.status === "PENDING").length,
     mealsToday: todayMeals.length,
     workout: {
@@ -219,7 +243,7 @@ export function createDemoDashboard(sessionId: string, notice?: string): Dashboa
       recordedDays,
       meals: weekMeals,
       workouts: weekWorkouts,
-      weightEntries: 7,
+      weightEntries: weightEntriesThisWeek,
       note:
         recordedDays >= 4
           ? `本周已有 ${recordedDays} 天记录${missingNote ? `，${missingNote}` : ""}；复盘只按已有记录呈现，不补推缺失数据。`
@@ -399,5 +423,78 @@ export function deleteDemoMeal(sessionId: string, id: string) {
   const index = meals.findIndex((item) => item.id === id);
   if (index === -1) return false;
   meals.splice(index, 1);
+  return true;
+}
+
+type DemoWeightState = { seedDate: string; entries: WeightEntry[] };
+
+const globalForDemoWeights = globalThis as unknown as { demoWeightSessions?: Map<string, DemoWeightState> };
+
+function weightSessionState(sessionId: string): DemoWeightState {
+  if (!globalForDemoWeights.demoWeightSessions) globalForDemoWeights.demoWeightSessions = new Map();
+  const sessions = globalForDemoWeights.demoWeightSessions;
+  const today = chinaDateKey();
+  let state = sessions.get(sessionId);
+  if (!state || state.seedDate !== today) {
+    state = {
+      seedDate: today,
+      entries: lastSevenDayKeys().map((dateKey, index) => ({
+        id: `demo-w-${dateKey}`,
+        dateKey,
+        kg: demoWeightValues[index],
+        note: "",
+      })),
+    };
+    sessions.set(sessionId, state);
+    if (sessions.size > 200) {
+      const oldest = sessions.keys().next().value;
+      if (oldest && oldest !== sessionId) sessions.delete(oldest);
+    }
+  }
+  return state;
+}
+
+export function listDemoWeightEntries(sessionId: string): WeightEntry[] {
+  return [...weightSessionState(sessionId).entries].sort((a, b) => b.dateKey.localeCompare(a.dateKey));
+}
+
+export function upsertDemoWeightEntry(
+  sessionId: string,
+  input: { dateKey: string; kg: number; note?: string },
+): WeightEntry {
+  const entries = weightSessionState(sessionId).entries;
+  const existing = entries.find((entry) => entry.dateKey === input.dateKey);
+  if (existing) {
+    existing.kg = input.kg;
+    existing.note = input.note ?? "";
+    return existing;
+  }
+  const entry: WeightEntry = {
+    id: `demo-w-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    dateKey: input.dateKey,
+    kg: input.kg,
+    note: input.note ?? "",
+  };
+  entries.push(entry);
+  return entry;
+}
+
+export function updateDemoWeightEntry(
+  sessionId: string,
+  id: string,
+  patch: { kg?: number; note?: string },
+): WeightEntry | null {
+  const entry = weightSessionState(sessionId).entries.find((item) => item.id === id);
+  if (!entry) return null;
+  if (patch.kg !== undefined) entry.kg = patch.kg;
+  if (patch.note !== undefined) entry.note = patch.note;
+  return entry;
+}
+
+export function deleteDemoWeightEntry(sessionId: string, id: string) {
+  const entries = weightSessionState(sessionId).entries;
+  const index = entries.findIndex((item) => item.id === id);
+  if (index === -1) return false;
+  entries.splice(index, 1);
   return true;
 }

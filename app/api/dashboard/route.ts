@@ -11,7 +11,9 @@ import {
 import { IdentityError, resolveIdentity } from "@/lib/identity";
 import { deriveNutritionTargets } from "@/lib/nutrition-goal";
 import { loadProfile } from "@/lib/profile-store";
-import type { WeekSummary } from "@/lib/dashboard";
+import { profileWeightPoint, weightDateLabel, type WeekSummary } from "@/lib/dashboard";
+import { readProfileWeightKg } from "@/lib/space";
+import { listWeightEntries } from "@/lib/weight-store";
 
 export async function GET() {
   try {
@@ -33,7 +35,7 @@ export async function GET() {
 
     const { start, end } = chinaDayRange();
     const weekStart = chinaWeekStart();
-    const [todayMeals, pendingMeals, weekMeals] = await Promise.all([
+    const [todayMeals, pendingMeals, weekMeals, weightEntries] = await Promise.all([
       prisma.mealRecord.findMany({
         where: { profileId: identity.profileId, status: "CONFIRMED", eatenAt: { gte: start, lt: end } },
         select: { estimatedKcal: true, proteinG: true, carbsG: true, fatG: true },
@@ -43,6 +45,7 @@ export async function GET() {
         where: { profileId: identity.profileId, status: "CONFIRMED", eatenAt: { gte: weekStart, lt: end } },
         select: { eatenAt: true, estimatedKcal: true },
       }),
+      listWeightEntries(identity),
     ]);
 
     const calories = todayMeals.reduce((sum, meal) => sum + (meal.estimatedKcal ?? 0), 0);
@@ -83,14 +86,24 @@ export async function GET() {
       };
     });
     const recordedDays = weekDays.filter((day) => day.meals > 0).length;
+    const weekStartKey = chinaDateKey(weekStart);
+    const latestWeight = weightEntries[0] ?? null;
+    const previousWeight = weightEntries[1] ?? null;
+    const profilePoint = profileWeightPoint(readProfileWeightKg(profile));
+    const recordSeries = weightEntries
+      .slice(0, 7)
+      .reverse()
+      .map((entry) => ({ label: weightDateLabel(entry.dateKey), kg: entry.kg }));
+    const weightSeries = profilePoint ? [profilePoint, ...recordSeries] : recordSeries;
+    const weekWeightEntries = weightEntries.filter((entry) => entry.dateKey >= weekStartKey && entry.dateKey <= todayKey).length;
     const week: WeekSummary = {
       recordedDays,
       meals: weekMeals.length,
       workouts: null,
-      weightEntries: null,
+      weightEntries: weekWeightEntries,
       note:
         recordedDays >= 4
-          ? "训练和体重记录尚未接入，本次复盘只展示饮食记录。"
+          ? "训练记录尚未接入，本次复盘按饮食与体重记录呈现。"
           : `本周只有 ${recordedDays} 天饮食记录，暂不对执行情况作评价。`,
       days: weekDays,
     };
@@ -105,9 +118,11 @@ export async function GET() {
       macros,
       waterMl: 0,
       waterGoal: 2000,
-      weightKg: null,
-      weightChangeKg: null,
-      weightSeries: [],
+      waterHistory: {},
+      weightKg: latestWeight?.kg ?? profilePoint?.kg ?? null,
+      weightChangeKg: latestWeight && previousWeight ? Math.round((latestWeight.kg - previousWeight.kg) * 10) / 10 : null,
+      weightSeries,
+      weightSource: latestWeight ? "records" : profilePoint ? "profile" : null,
       pendingMeals,
       mealsToday: todayMeals.length,
       workout: null,

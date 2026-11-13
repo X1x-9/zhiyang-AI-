@@ -56,6 +56,20 @@ CREATE TABLE IF NOT EXISTS `PlanVersion` (
   INDEX `PlanVersion_profileId_activeAt_idx` (`profileId`, `activeAt`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS `PlanAdjustment` (
+  `id` VARCHAR(191) NOT NULL,
+  `profileId` VARCHAR(191) NOT NULL,
+  `dayKey` VARCHAR(10) NOT NULL,
+  `nextDayKey` VARCHAR(10) NOT NULL,
+  `baseVersion` INTEGER NOT NULL,
+  `adjustment` JSON NOT NULL,
+  `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  `updatedAt` DATETIME(3) NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE INDEX `PlanAdjustment_profileId_dayKey_key` (`profileId`, `dayKey`),
+  INDEX `PlanAdjustment_profileId_updatedAt_idx` (`profileId`, `updatedAt`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS `Feedback` (
   `id` VARCHAR(191) NOT NULL,
   `profileId` VARCHAR(191) NOT NULL,
@@ -65,6 +79,19 @@ CREATE TABLE IF NOT EXISTS `Feedback` (
   `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
   PRIMARY KEY (`id`),
   INDEX `Feedback_profileId_createdAt_idx` (`profileId`, `createdAt`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `WeightRecord` (
+  `id` VARCHAR(191) NOT NULL,
+  `profileId` VARCHAR(191) NOT NULL,
+  `dateKey` VARCHAR(10) NOT NULL,
+  `kg` DOUBLE NOT NULL,
+  `note` VARCHAR(100) NOT NULL DEFAULT '',
+  `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  `updatedAt` DATETIME(3) NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE INDEX `WeightRecord_profileId_dateKey_key` (`profileId`, `dateKey`),
+  INDEX `WeightRecord_profileId_dateKey_idx` (`profileId`, `dateKey`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS `KnowledgeChunk` (
@@ -91,6 +118,14 @@ ALTER TABLE `PlanVersion`
   ADD CONSTRAINT `PlanVersion_profileId_fkey`
   FOREIGN KEY (`profileId`) REFERENCES `HealthProfile`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
 
+ALTER TABLE `PlanAdjustment`
+  ADD CONSTRAINT `PlanAdjustment_profileId_fkey`
+  FOREIGN KEY (`profileId`) REFERENCES `HealthProfile`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
 ALTER TABLE `Feedback`
   ADD CONSTRAINT `Feedback_profileId_fkey`
+  FOREIGN KEY (`profileId`) REFERENCES `HealthProfile`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+ALTER TABLE `WeightRecord`
+  ADD CONSTRAINT `WeightRecord_profileId_fkey`
   FOREIGN KEY (`profileId`) REFERENCES `HealthProfile`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;

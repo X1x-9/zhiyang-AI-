@@ -210,8 +210,14 @@ export function createDemoSpaceProfile(name = "林同学", weightKg: number | nu
   };
 }
 
-export function createEmptySpaceProfile(name = ""): SpaceProfile {
-  return {
+export function readProfileWeightKg(profile: SpaceProfile | null): number | null {
+  if (!profile) return null;
+  const kg = Number(profile.weightKg);
+  if (!Number.isFinite(kg) || kg < 35 || kg > 200) return null;
+  return Math.round(kg * 10) / 10;
+}
+
+export function createEmptySpaceProfile(name = ""): SpaceProfile {  return {
     name,
     gender: "unspecified",
     age: "",
