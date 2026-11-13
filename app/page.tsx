@@ -8,7 +8,7 @@ import { Camera, ChartNoAxesCombined, ChevronRight, Droplets, Dumbbell, LayoutDa
 import { AccountPanel } from "@/components/account-panel";
 import { Button } from "@/components/ui/button";
 import Hero38 from "@/components/originkit/hero-38";
-import { LandingSections } from "@/components/landing/landing-sections";
+import { LandingSections, MochiFigure } from "@/components/landing/landing-sections";
 import { DashboardHero } from "@/components/dashboard-hero";
 import { BackToTop, FloatingCompanion, GrowingLoader, HamsterLoader, HealthTipsCarousel, ScrollProgress } from "@/components/experience";
 import { MealRecorder } from "@/components/meal-recorder";
@@ -18,6 +18,7 @@ import { SpaceCard } from "@/components/space-card";
 import { WeightRecordForm } from "@/components/weight-record-form";
 import { WeightReviewSection } from "@/components/weight-review";
 import { WeightTrendChart, WeightValue } from "@/components/weight-trend-chart";
+import { ReviewFluidTitle } from "@/components/review-fluid-title";
 import { formatWeightChange, getDashboard, type DashboardData, type WeekSummary } from "@/lib/dashboard";
 import { fetchProfile } from "@/lib/profile-client";
 import { createEmptySpaceProfile, type SpaceProfile } from "@/lib/space";
@@ -36,6 +37,21 @@ const navigation = [
   { id: "review", label: "每周复盘", short: "复盘", icon: ChartNoAxesCombined },
 ] as const;
 
+const REVIEW_TITLE_IMAGES: [string, string] = [
+  "/images/review-heading-mountain.webp",
+  "/images/zhiyang-hero-meadow.webp",
+];
+
+const REVIEW_FRAME_VEGGIES = [
+  "/images/review-veggie-broccoli.webp",
+  "/images/review-veggie-banana.webp",
+  "/images/review-veggie-cabbage.webp",
+  "/images/review-veggie-pepper.webp",
+  "/images/review-veggie-kiwi.webp",
+  "/images/review-veggie-grape.webp",
+  "/images/review-veggie-carrot.webp",
+];
+
 function SectionTitle({ title, action }: { title: string; action?: React.ReactNode }) {
   return <div className="section-title"><h2>{title}</h2>{action}</div>;
 }
@@ -51,23 +67,12 @@ function DemoNotice({ notice }: { notice?: string }) {
 
 function Dashboard({ identityKey }: { identityKey: string }) {
   const setPage = useHealthStore((state) => state.setPage);
-  const addWater = useHealthStore((state) => state.addWater);
-  const setWaterAdded = useHealthStore((state) => state.setWaterAdded);
-  const waterAdded = useHealthStore((state) => state.waterAdded);
   const { data, isPending, isError, error, refetch } = useQuery({ queryKey: ["dashboard"], queryFn: getDashboard });
   const [trainingStarted, setTrainingStarted] = React.useState(false);
-  const [waterLog, setWaterLog] = React.useState<Record<string, number>>({});
+  const [waterLog, setWaterLog] = React.useState<Record<string, number>>(() => loadWaterLog(identityKey));
+  const waterAdded = waterLog[waterTodayKey()] ?? 0;
 
-  React.useEffect(() => {
-    const stored = loadWaterLog(identityKey);
-    setWaterLog(stored);
-    setWaterAdded(stored[waterTodayKey()] ?? 0);
-  }, [identityKey, setWaterAdded]);
-
-  const addCup = () => {
-    addWater(250);
-    setWaterLog(recordWater(identityKey, 250));
-  };
+  const addCup = () => setWaterLog(recordWater(identityKey, 250));
 
   if (isPending) return <GrowingLoader label="正在整理今天的健康记录…" />;
   if (isError || !data) return <div className="empty-note" role="alert">暂时无法载入今日数据。{error instanceof Error ? ` ${error.message}` : ""} <button className="link-button" onClick={() => void refetch()}>重试</button></div>;
@@ -230,7 +235,15 @@ function WeekTrail({ week }: { week: WeekSummary }) {
                 <span>{day.label}</span>
                 <small>{day.isToday ? "今天" : day.dateLabel}</small>
               </header>
-              <span className="review-frame-orb" aria-hidden="true"><i /></span>
+              <span className="review-frame-orb" aria-hidden="true">
+                <img
+                  className="review-frame-veggie"
+                  src={REVIEW_FRAME_VEGGIES[index % REVIEW_FRAME_VEGGIES.length]}
+                  alt=""
+                  loading="lazy"
+                  draggable={false}
+                />
+              </span>
               <div className="review-frame-body">
                 <strong>{day.isFuture ? "未到" : recorded ? `${day.meals} 餐` : "未记录"}</strong>
                 <small>{day.isFuture ? "还在路上" : recorded ? `${day.calories.toLocaleString("zh-CN")} kcal` : "保持空白"}</small>
@@ -253,8 +266,6 @@ function ReviewPanel({ data, loading }: { data?: DashboardData; loading: boolean
   if (loading) return <GrowingLoader label="正在整理本周记录…" />;
   if (!data) return <div className="empty-note" role="alert">暂时无法载入复盘数据。</div>;
   const { week } = data;
-  const days = week.days ?? [];
-  const range = days.length ? `${days[0].dateLabel} — ${days[days.length - 1].dateLabel}` : undefined;
   return <>
     <WeekTrail week={week} />
     <WeightReviewSection />
@@ -727,7 +738,7 @@ function ChatPanel({ identityKey }: { identityKey: string }) {
         </aside>
         <div className="chat-main">
           <div className="chat-head">
-            <span className="coach-avatar"><MessageCircle size={17} /></span>
+            <span className="coach-avatar"><img src="/brand/cochi-avatar.png" alt="" /></span>
             <div className="chat-head-copy"><strong>你的健康搭子</strong><small>基于个人计划提供日常建议</small></div>
             <button
               type="button"
@@ -981,6 +992,7 @@ function CoachCubes() {
 
 function OtherPage({ page, spaceProfile, hasStored, demo, identityKey }: { page: string; spaceProfile: SpaceProfile; hasStored: boolean; demo: boolean; identityKey: string }) {
   const dashboardQuery = useQuery({ queryKey: ["dashboard"], queryFn: getDashboard });
+  const reviewTitleRef = React.useRef<HTMLHeadingElement | null>(null);
   if (page === "profile") {
     return <div className="app-content">
       <MySpace data={dashboardQuery.data} loading={dashboardQuery.isPending} profile={spaceProfile} hasStored={hasStored} demo={demo} />
@@ -996,7 +1008,10 @@ function OtherPage({ page, spaceProfile, hasStored, demo, identityKey }: { page:
   }
   const content: Record<string, { eyebrow?: string; title: React.ReactNode; intro?: string }> = {
     food: { eyebrow: "多模态餐食记录", title: "一张照片，轻松记下一餐。" },
-    coach: { eyebrow: "不确定的时候，随时聊聊", title: "你好，我在听。" },
+    coach: {
+      eyebrow: "不确定的时候，随时聊聊",
+      title: <>你好，我在听<span className="coach-title-dot">。</span></>,
+    },
     review: {
       title: (
         <>
@@ -1011,7 +1026,19 @@ function OtherPage({ page, spaceProfile, hasStored, demo, identityKey }: { page:
     <div className={`page-heading${page === "coach" ? " page-heading--coach" : ""}${page === "review" ? " page-heading--review" : ""}`}>
       <div className="page-heading-copy">
         {item.eyebrow && <div className="eyebrow">{item.eyebrow}</div>}
-        <h1>{item.title}</h1>
+        <div className={page === "coach" ? "coach-title-row" : undefined}>
+          <h1 ref={page === "review" ? reviewTitleRef : undefined} className={page === "review" ? "review-title" : undefined}>
+            {item.title}
+            {page === "review" && (
+              <ReviewFluidTitle hostRef={reviewTitleRef} images={REVIEW_TITLE_IMAGES} />
+            )}
+          </h1>
+          {page === "coach" && (
+            <div className="coach-mochi" aria-hidden="true">
+              <MochiFigure />
+            </div>
+          )}
+        </div>
         {item.intro && <p>{item.intro}</p>}
       </div>
       {page === "coach" && <CoachCubes />}
@@ -1046,10 +1073,19 @@ function CoreApp({ onHome }: { onHome: () => void }) {
   const scrollPositions = React.useRef<Record<string, number>>({});
   const activePageRef = React.useRef<Page>(page);
   const previousPageRef = React.useRef<Page>(page);
+  const [slideOrigin, setSlideOrigin] = React.useState<Page>(page);
+  const [slideFrom, setSlideFrom] = React.useState<Page | null>(null);
+  if (slideOrigin !== page) {
+    setSlideFrom(slideOrigin);
+    setSlideOrigin(page);
+  }
+  const pageOrder = (value: Page) => navigation.findIndex((item) => item.id === value);
+  const slideDirection = slideFrom && pageOrder(page) < pageOrder(slideFrom) ? "backward" : "forward";
   const renderedPages = visitedPages.includes(page) ? visitedPages : [...visitedPages, page];
   const dashboard = dashboardQuery.data;
   const profilePage = page === "profile";
   const pendingMeals = dashboard?.pendingMeals ?? 0;
+  const activeNavIndex = Math.max(0, navigation.findIndex((item) => item.id === page));
   const hasStoredSpace = Boolean(storedSpaceProfile?.savedAt);
   const identityKey = profileQuery.data?.account?.email ?? (profileQuery.data?.demo ? "demo" : "pending");
   const spaceProfile = React.useMemo(() => {
@@ -1063,7 +1099,7 @@ function CoreApp({ onHome }: { onHome: () => void }) {
   }, [profileQuery.data, setSpaceProfile]);
 
   const handleAccountChanged = React.useCallback(() => {
-    useHealthStore.setState({ waterAdded: 0, page: "dashboard" });
+    useHealthStore.setState({ page: "dashboard" });
     setSpaceProfile(null);
     void queryClient.resetQueries({ queryKey: ["dashboard"] });
     void queryClient.resetQueries({ queryKey: ["meals"] });
@@ -1088,9 +1124,10 @@ function CoreApp({ onHome }: { onHome: () => void }) {
   return <div className="app-shell">
     <ScrollProgress />
     <aside className="sidebar" aria-label="主导航">
-      <a className="brand" href="#dashboard" onClick={(event) => { event.preventDefault(); setPage("dashboard"); }}><span className="brand-mark"><Leaf size={23} /></span><span>智养 AI<small>WELLNESS, IN SYNC</small></span></a>
+      <a className="brand" href="#dashboard" onClick={(event) => { event.preventDefault(); setPage("dashboard"); }}><span className="brand-mark"><img src="/brand/icon-192.png" alt="" width={36} height={36} /></span><span>智养 AI<small>WELLNESS, IN SYNC</small></span></a>
       <div className="nav-label">你的空间</div>
-      <nav className="nav-list">
+      <nav className="nav-list" style={{ "--nav-index": activeNavIndex } as React.CSSProperties}>
+        <span className="nav-glider" aria-hidden="true" />
         {navigation.map(({ id, label, icon: Icon }) => (
           <button className={`nav-item ${page === id ? "active" : ""}`} key={id} onClick={() => setPage(id)} aria-current={page === id ? "page" : undefined}>
             <span className="nav-icon"><Icon size={18} /></span>{label}
@@ -1133,7 +1170,7 @@ function CoreApp({ onHome }: { onHome: () => void }) {
         </div>
       </header>
       <div className="mobile-brand">
-        <span className="brand-mark"><Leaf size={19} /></span><b>智养 AI</b>
+        <span className="brand-mark"><img src="/brand/icon-192.png" alt="" width={29} height={29} /></span><b>智养 AI</b>
         {dashboard?.demo && <span className="demo-chip">演示</span>}
         <AccountPanel data={profileQuery.data} loading={profileQuery.isPending} onChanged={handleAccountChanged} compact />
         <button type="button" className="mobile-home" onClick={onHome}>首页</button>
@@ -1141,7 +1178,7 @@ function CoreApp({ onHome }: { onHome: () => void }) {
       <section className="page-content">
         {renderedPages.map((visitedPage) => (
           <React.Activity key={visitedPage} mode={visitedPage === page ? "visible" : "hidden"}>
-            <div className={`page-panel min-w-0${visitedPage === page ? " is-active" : ""}`}>
+            <div className={`page-panel min-w-0${visitedPage === page ? " is-active" : ""}`} data-slide={visitedPage === page && slideFrom ? slideDirection : undefined}>
               {visitedPage === "dashboard" ? <Dashboard key={identityKey} identityKey={identityKey} /> : <OtherPage key={identityKey} page={visitedPage} spaceProfile={spaceProfile} hasStored={hasStoredSpace} demo={Boolean(profileQuery.data?.demo)} identityKey={identityKey} />}
             </div>
           </React.Activity>

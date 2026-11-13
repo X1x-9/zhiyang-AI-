@@ -1,5 +1,7 @@
 import { listDemoSessionMeals } from "./demo-data";
 import type { Identity } from "./identity";
+import { clearDemoAdjustmentMemory, readTodayAdjustment } from "./plan-adjustment-store";
+import type { DynamicPlanAdjustment } from "./plan-adjustment";
 import { PLANS_WINDOW_DAYS, summarizeMeals, planMealRecordFromDemo, type PlanMealRecord } from "./plan-context";
 import { runPlanAgent } from "./plan-agent";
 import { buildPlan, type PlanDocument, type PlanRevisionDirective, type PlanVersionSummary } from "./plan-engine";
@@ -27,6 +29,7 @@ export type PlanState = {
   versionTotal: number;
   persisted: boolean;
   demo: boolean;
+  adjustment: DynamicPlanAdjustment | null;
 };
 
 export class PlanStorageError extends Error {
@@ -72,6 +75,7 @@ function memoryRecords(identity: Identity) {
 
 export function clearDemoPlanMemory(sessionId: string) {
   memoryStore().delete(`demo:${sessionId}`);
+  clearDemoAdjustmentMemory(sessionId);
 }
 
 function toSummary(plan: PlanDocument, active: boolean, isLatest: boolean): PlanVersionSummary {
@@ -127,7 +131,7 @@ async function resolveRevision(
   return { directive: outcome.directive, request };
 }
 
-function useRevisionOverride(
+function resolveRevisionOverride(
   currentPlan: PlanDocument | null,
   override: PlanRevisionOverride,
 ): { directive: PlanRevisionDirective; request: string | null } {
@@ -175,6 +179,7 @@ async function readLatestPlan(profileId: string): Promise<PlanDocument | null> {
 }
 
 function saveToMemory(identity: Identity, plan: PlanDocument): StoredPlan {
+  if (identity.kind === "demo") clearDemoAdjustmentMemory(identity.sessionId);
   const store = memoryStore();
   const key = memoryKey(identity);
   const versions = store.get(key) ?? [];
@@ -192,7 +197,7 @@ export async function generatePlanVersion(
   if (identity.kind === "demo") {
     const current = memoryRecords(identity)[memoryRecords(identity).length - 1]?.plan ?? null;
     const revision = revisionOverride
-      ? useRevisionOverride(current, revisionOverride)
+      ? resolveRevisionOverride(current, revisionOverride)
       : await resolveRevision(feedback, profile, current);
     const draft = await runPlanDraft(profile, demoMealsForPlan(identity), current);
     const plan = composePlan(profile, draft.mealSummary, draft.agent, current, revision);
@@ -235,7 +240,7 @@ export async function generatePlanVersion(
 
   let currentPlan = (latestRow?.plan as unknown as PlanDocument | undefined) ?? null;
   const revision = revisionOverride
-    ? useRevisionOverride(currentPlan, revisionOverride)
+    ? resolveRevisionOverride(currentPlan, revisionOverride)
     : await resolveRevision(feedback, profile, currentPlan);
   const meals: PlanMealRecord[] = mealRows.map((meal) => ({
     title: meal.title,
@@ -253,6 +258,9 @@ export async function generatePlanVersion(
     try {
       await prisma.planVersion.create({
         data: { profileId: identity.profileId, version: plan.version, plan },
+      });
+      await prisma.planAdjustment.deleteMany({ where: { profileId: identity.profileId } }).catch((error) => {
+        console.error("PLAN ADJUSTMENT INVALIDATE ERROR", error);
       });
       return { plan, persisted: true, demo: false };
     } catch (error) {
@@ -344,6 +352,9 @@ export async function getPlanState(identity: Identity): Promise<PlanState> {
     const records = memoryRecords(identity);
     const latest = records.length > 0 ? records[records.length - 1] : null;
     const active = [...records].reverse().find((record) => record.active) ?? null;
+    const adjustment = latest?.plan
+      ? await readTodayAdjustment(identity, latest.plan.version).catch(() => null)
+      : null;
     return {
       plan: latest?.plan ?? null,
       activePlan: active?.plan ?? null,
@@ -352,6 +363,7 @@ export async function getPlanState(identity: Identity): Promise<PlanState> {
       versionTotal: records.length,
       persisted: false,
       demo: true,
+      adjustment,
     };
   }
   if (!process.env.DATABASE_URL) throw new PlanStorageError();
@@ -374,8 +386,17 @@ export async function getPlanState(identity: Identity): Promise<PlanState> {
     const allRows = activeRow && !rows.some((row) => row.id === activeRow.id)
       ? [...rows, activeRow].sort((a, b) => b.version - a.version)
       : rows;
+    const latestPlan = (latest?.plan as unknown as PlanDocument | undefined) ?? null;
+    let adjustment: DynamicPlanAdjustment | null = null;
+    if (latestPlan) {
+      try {
+        adjustment = await readTodayAdjustment(identity, latestPlan.version);
+      } catch (error) {
+        console.error("PLAN ADJUSTMENT READ ERROR", error);
+      }
+    }
     return {
-      plan: (latest?.plan as unknown as PlanDocument | undefined) ?? null,
+      plan: latestPlan,
       activePlan: (activeRow?.plan as unknown as PlanDocument | undefined) ?? null,
       activeVersion: activeRow?.version ?? null,
       versions: allRows.map((row) => {
@@ -385,6 +406,7 @@ export async function getPlanState(identity: Identity): Promise<PlanState> {
       versionTotal,
       persisted: true,
       demo: false,
+      adjustment,
     };
   } catch (error) {
     console.error("PLAN LATEST ERROR", error);

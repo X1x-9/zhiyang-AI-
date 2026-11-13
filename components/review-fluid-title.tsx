@@ -11,11 +11,31 @@ type FluidTitleProps = {
 
 type RGB = { r: number; g: number; b: number };
 
+type FluidFBO = {
+  texture: WebGLTexture | null;
+  fbo: WebGLFramebuffer | null;
+  width: number;
+  height: number;
+  texelSizeX: number;
+  texelSizeY: number;
+  attach: (id: number) => number;
+};
+
+type FluidDoubleFBO = {
+  width: number;
+  height: number;
+  texelSizeX: number;
+  texelSizeY: number;
+  read: FluidFBO;
+  write: FluidFBO;
+  swap: () => void;
+};
+
 const PALETTE = ["#dfeaf2", "#8fa9b8", "#46664f", "#a9b884", "#dccda6"];
-const SPLAT_RADIUS = 7;
+const SPLAT_RADIUS = 8;
 const SPLAT_FORCE = 10;
 const CURL = 50;
-const DENSITY_DISSIPATION = 2.5;
+const DENSITY_DISSIPATION = 1.1;
 const COLOR_SPEED = 0.125;
 const VELOCITY_DISSIPATION = 2;
 const PRESSURE = 1 / 20;
@@ -24,7 +44,7 @@ const DYE_RESOLUTION = 1024;
 const PRESSURE_ITERATIONS = 16;
 const IMAGE_FITS: [{ sx: number; sy: number; sw: number; sh: number }, { sx: number; sy: number; sw: number; sh: number }] = [
   { sx: 0.25, sy: 0.34, sw: 0.7, sh: 0.56 },
-  { sx: 0, sy: 0.04, sw: 1, sh: 0.2 },
+  { sx: 0.197, sy: 0.575, sw: 0.637, sh: 0.26 },
 ];
 
 function parseColor(input: string, multiplier: number): RGB {
@@ -146,10 +166,10 @@ const DISPLAY_SHADER = `
         float dx = length(rc) - length(lc);
         float dy = length(tc) - length(bc);
 
-        vec2 warp = clamp(vec2(dx, dy) * 0.5, vec2(-0.08), vec2(0.08));
+        vec2 warp = clamp(vec2(dx, dy) * 0.25, vec2(-0.03), vec2(0.03));
         vec3 img = texture2D(uImage, clamp(vUv + warp, vec2(0.002), vec2(0.998))).rgb;
 
-        float reveal = clamp(uReveal + d * 0.45, 0.0, 1.0);
+        float reveal = clamp(uReveal + smoothstep(0.01, 0.28, d), 0.0, 1.0);
         vec3 color = mix(uBase.rgb * uBase.a, img, reveal);
 
         vec3 n = normalize(vec3(dx, dy, 0.28));
@@ -370,7 +390,8 @@ export function ReviewFluidTitle({ hostRef, images, color = "#27352f" }: FluidTi
         canvas.getContext("experimental-webgl", glParams)) as WebGLRenderingContext | null;
     }
     if (!gl) return;
-    const g = gl as any;
+    // WebGL1 回退路径共用下面这些调用；WebGL2 专属的格式常量只在 isWebGL2 分支读取。
+    const g = gl as WebGL2RenderingContext;
 
     const onLost = (event: Event) => {
       event.preventDefault();
@@ -380,8 +401,8 @@ export function ReviewFluidTitle({ hostRef, images, color = "#27352f" }: FluidTi
     canvas.addEventListener("webglcontextlost", onLost);
     canvas.addEventListener("webglcontextrestored", onRestored);
 
-    let halfFloat: any;
-    let supportLinearFiltering: any;
+    let halfFloat: OES_texture_half_float | null = null;
+    let supportLinearFiltering: OES_texture_float_linear | OES_texture_half_float_linear | null = null;
     if (isWebGL2) {
       g.getExtension("EXT_color_buffer_float");
       supportLinearFiltering = g.getExtension("OES_texture_float_linear");
@@ -390,7 +411,7 @@ export function ReviewFluidTitle({ hostRef, images, color = "#27352f" }: FluidTi
       supportLinearFiltering = g.getExtension("OES_texture_half_float_linear");
     }
     g.clearColor(0, 0, 0, 0);
-    const halfFloatTexType = isWebGL2 ? g.HALF_FLOAT : halfFloat && halfFloat.HALF_FLOAT_OES;
+    const halfFloatTexType: number = isWebGL2 ? g.HALF_FLOAT : (halfFloat?.HALF_FLOAT_OES as number);
 
     const supportRenderTextureFormat = (internalFormat: number, format: number, type: number) => {
       const texture = g.createTexture();
@@ -445,20 +466,12 @@ export function ReviewFluidTitle({ hostRef, images, color = "#27352f" }: FluidTi
     const effectiveDyeRes = () =>
       supportLinearFiltering ? DYE_RESOLUTION : Math.min(DYE_RESOLUTION, 256);
 
-    const hashCode = (s: string) => {
-      let hash = 0;
-      for (let i = 0; i < s.length; i++) {
-        hash = (hash << 5) - hash + s.charCodeAt(i);
-        hash |= 0;
-      }
-      return hash;
-    };
-
     const compileShader = (type: number, source: string, keywords?: string[]) => {
       const withDefines = keywords
         ? keywords.map((k) => `#define ${k}\n`).join("") + source
         : source;
       const shader = g.createShader(type);
+      if (!shader) return null;
       g.shaderSource(shader, withDefines);
       g.compileShader(shader);
       if (!g.getShaderParameter(shader, g.COMPILE_STATUS)) {
@@ -467,8 +480,9 @@ export function ReviewFluidTitle({ hostRef, images, color = "#27352f" }: FluidTi
       return shader;
     };
 
-    const createProgram = (vs: any, fs: any) => {
+    const createProgram = (vs: WebGLShader | null, fs: WebGLShader | null) => {
       const program = g.createProgram();
+      if (!program || !vs || !fs) return null;
       g.attachShader(program, vs);
       g.attachShader(program, fs);
       g.linkProgram(program);
@@ -478,20 +492,22 @@ export function ReviewFluidTitle({ hostRef, images, color = "#27352f" }: FluidTi
       return program;
     };
 
-    const getUniforms = (program: any) => {
-      const uniforms: Record<string, WebGLUniformLocation> = {};
+    const getUniforms = (program: WebGLProgram | null) => {
+      const uniforms: Record<string, WebGLUniformLocation | null> = {};
+      if (!program) return uniforms;
       const count = g.getProgramParameter(program, g.ACTIVE_UNIFORMS);
       for (let i = 0; i < count; i++) {
-        const name = g.getActiveUniform(program, i).name;
-        uniforms[name] = g.getUniformLocation(program, name);
+        const info = g.getActiveUniform(program, i);
+        if (!info) continue;
+        uniforms[info.name] = g.getUniformLocation(program, info.name);
       }
       return uniforms;
     };
 
     class Program {
-      program: any;
-      uniforms: Record<string, WebGLUniformLocation>;
-      constructor(vs: any, fs: any) {
+      program: WebGLProgram | null;
+      uniforms: Record<string, WebGLUniformLocation | null>;
+      constructor(vs: WebGLShader | null, fs: WebGLShader | null) {
         this.program = createProgram(vs, fs);
         this.uniforms = getUniforms(this.program);
       }
@@ -543,7 +559,7 @@ export function ReviewFluidTitle({ hostRef, images, color = "#27352f" }: FluidTi
     g.vertexAttribPointer(0, 2, g.FLOAT, false, 0, 0);
     g.enableVertexAttribArray(0);
 
-    const blit = (target: any, clear = false) => {
+    const blit = (target: FluidFBO | null, clear = false) => {
       if (target == null) {
         g.viewport(0, 0, g.drawingBufferWidth, g.drawingBufferHeight);
         g.bindFramebuffer(g.FRAMEBUFFER, null);
@@ -565,7 +581,7 @@ export function ReviewFluidTitle({ hostRef, images, color = "#27352f" }: FluidTi
       format: number,
       type: number,
       param: number
-    ) => {
+    ): FluidFBO => {
       g.activeTexture(g.TEXTURE0);
       const texture = g.createTexture();
       g.bindTexture(g.TEXTURE_2D, texture);
@@ -594,12 +610,12 @@ export function ReviewFluidTitle({ hostRef, images, color = "#27352f" }: FluidTi
       };
     };
 
-    const destroyFBO = (target: any) => {
+    const destroyFBO = (target: FluidFBO | null | undefined) => {
       if (!target) return;
       g.deleteFramebuffer(target.fbo);
       g.deleteTexture(target.texture);
     };
-    const destroyDoubleFBO = (target: any) => {
+    const destroyDoubleFBO = (target: FluidDoubleFBO | null | undefined) => {
       if (!target) return;
       destroyFBO(target.read);
       destroyFBO(target.write);
@@ -612,7 +628,7 @@ export function ReviewFluidTitle({ hostRef, images, color = "#27352f" }: FluidTi
       format: number,
       type: number,
       param: number
-    ) => {
+    ): FluidDoubleFBO => {
       let fbo1 = createFBO(w, h, internalFormat, format, type, param);
       let fbo2 = createFBO(w, h, internalFormat, format, type, param);
       return {
@@ -641,7 +657,7 @@ export function ReviewFluidTitle({ hostRef, images, color = "#27352f" }: FluidTi
     };
 
     const resizeFBO = (
-      target: any,
+      target: FluidFBO,
       w: number,
       h: number,
       internalFormat: number,
@@ -658,7 +674,7 @@ export function ReviewFluidTitle({ hostRef, images, color = "#27352f" }: FluidTi
     };
 
     const resizeDoubleFBO = (
-      target: any,
+      target: FluidDoubleFBO,
       w: number,
       h: number,
       internalFormat: number,
@@ -687,11 +703,11 @@ export function ReviewFluidTitle({ hostRef, images, color = "#27352f" }: FluidTi
         : { width: min, height: max };
     };
 
-    let dye: any;
-    let velocity: any;
-    let divergence: any;
-    let curlFBO: any;
-    let pressureFBO: any;
+    let dye!: FluidDoubleFBO;
+    let velocity!: FluidDoubleFBO;
+    let divergence!: FluidFBO;
+    let curlFBO!: FluidFBO;
+    let pressureFBO!: FluidDoubleFBO;
 
     const initFramebuffers = () => {
       const simRes = getResolution(SIM_RESOLUTION);
@@ -925,7 +941,7 @@ export function ReviewFluidTitle({ hostRef, images, color = "#27352f" }: FluidTi
       ctx.clearRect(0, 0, info.width, info.height);
       ctx.font = `${info.fontWeight} ${info.fontSize}px ${info.fontFamily}`;
       try {
-        (ctx as any).letterSpacing = info.letterSpacing;
+        ctx.letterSpacing = info.letterSpacing;
       } catch {}
       ctx.textAlign = "left";
       ctx.textBaseline = "middle";
@@ -955,18 +971,21 @@ export function ReviewFluidTitle({ hostRef, images, color = "#27352f" }: FluidTi
       imagesSettled = 2;
     }
 
-    document.fonts?.ready?.then(() => {
+    const onFontsDone = () => {
+      maskKey = "";
       maskDirty = true;
       canReveal = true;
-    });
+    };
+    document.fonts?.addEventListener?.("loadingdone", onFontsDone);
+    document.fonts?.ready?.then(onFontsDone);
 
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const restReveal = 0.07;
+    const restReveal = 0.03;
 
     let colorPhase = Math.random();
     const paletteAt = (phase: number): RGB => {
       const list = PALETTE;
-      const t = 0.5;
+      const t = 0.65;
       if (list.length === 1) return parseColor(list[0], t);
       const scaled = phase * list.length;
       const i = Math.floor(scaled) % list.length;
@@ -994,7 +1013,6 @@ export function ReviewFluidTitle({ hostRef, images, color = "#27352f" }: FluidTi
     };
 
     let inside = false;
-    let hoverMix = 0;
 
     const hostRect = () => host.getBoundingClientRect();
 
@@ -1211,7 +1229,7 @@ export function ReviewFluidTitle({ hostRef, images, color = "#27352f" }: FluidTi
       g.uniform1i(displayProgram.uniforms.uImage, IMAGE_UNIT);
       const base = parseRGBA(color);
       g.uniform4f(displayProgram.uniforms.uBase, base[0], base[1], base[2], base[3]);
-      g.uniform1f(displayProgram.uniforms.uReveal, Math.min(1, restReveal + hoverMix * (1 - restReveal)));
+      g.uniform1f(displayProgram.uniforms.uReveal, restReveal);
       blit(null, true);
     };
 
@@ -1256,8 +1274,6 @@ export function ReviewFluidTitle({ hostRef, images, color = "#27352f" }: FluidTi
 
       colorPhase = (colorPhase + dt * COLOR_SPEED) % 1;
       pointer.color = paletteAt(colorPhase);
-
-      hoverMix += ((inside ? 1 : 0) - hoverMix) * Math.min(1, dt * 7);
 
       if (!reducedMotion) applyInputs();
       step(dt);
@@ -1313,7 +1329,8 @@ export function ReviewFluidTitle({ hostRef, images, color = "#27352f" }: FluidTi
       window.removeEventListener("pointerdown", onPointerDown);
       document.removeEventListener("pointerleave", onWindowLeave);
       window.removeEventListener("blur", onWindowLeave);
-      window.removeEventListener("scroll", onScroll, { capture: true } as any);
+      window.removeEventListener("scroll", onScroll, { capture: true });
+      document.fonts?.removeEventListener?.("loadingdone", onFontsDone);
       canvas.removeEventListener("webglcontextlost", onLost);
       canvas.removeEventListener("webglcontextrestored", onRestored);
       host.classList.remove("is-fluid-ready");

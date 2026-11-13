@@ -28,7 +28,7 @@ function useReveal() {
     (delay = 0) => ({
       initial: { opacity: 0, y: 26 },
       whileInView: { opacity: 1, y: 0 },
-      viewport: { once: true, amount: 0.3 } as const,
+      viewport: { once: false, amount: 0.3 } as const,
       transition: { duration: reduce ? 0 : 0.7, delay: reduce ? 0 : delay, ease },
     }),
     [reduce],
@@ -264,13 +264,15 @@ type MochiMood = "awake" | "happy" | "dozing";
 const MOCHI_BODY =
   "M94 40L266 40C317.2 40 330 52.8 330 104L330 280C330 331.2 317.2 344 266 344L94 344C42.8 344 30 331.2 30 280L30 104C30 52.8 42.8 40 94 40Z";
 
-function MochiFigure() {
+export function MochiFigure() {
   const reduce = useReducedMotion();
   const hostRef = React.useRef<HTMLDivElement>(null);
   const happyTimer = React.useRef<number | undefined>(undefined);
   const hopTimer = React.useRef<number | undefined>(undefined);
   const [mood, setMood] = React.useState<MochiMood>("awake");
   const [hopping, setHopping] = React.useState(false);
+  const uid = React.useId().replace(/[^a-zA-Z0-9_-]/g, "");
+  const gid = (name: string) => `mochi-${uid}-${name}`;
 
   React.useEffect(() => {
     const host = hostRef.current;
@@ -376,7 +378,7 @@ function MochiFigure() {
     >
       <svg className="mochi__body" viewBox="0 0 360 400" aria-hidden="true">
         <defs>
-          <radialGradient id="mochi-fill" cx="0.36" cy="0.18" r="0.96">
+          <radialGradient id={gid("fill")} cx="0.36" cy="0.18" r="0.96">
             <stop offset="0" stopColor="#FFFEF8" />
             <stop offset="0.25" stopColor="#FCFCF1" />
             <stop offset="0.45" stopColor="#F5F8E6" />
@@ -385,78 +387,78 @@ function MochiFigure() {
             <stop offset="0.92" stopColor="#D2DEB7" />
             <stop offset="1" stopColor="#C6D2AA" />
           </radialGradient>
-          <radialGradient id="mochi-glow">
+          <radialGradient id={gid("glow")}>
             <stop offset="0" stopColor="#FFFFFF" stopOpacity="0.95" />
             <stop offset="0.55" stopColor="#FBFDEF" stopOpacity="0.22" />
             <stop offset="1" stopColor="#FBFDEF" stopOpacity="0" />
           </radialGradient>
-          <radialGradient id="mochi-specular">
+          <radialGradient id={gid("specular")}>
             <stop offset="0" stopColor="#FFFFFF" stopOpacity="0.7" />
             <stop offset="1" stopColor="#FFFFFF" stopOpacity="0" />
           </radialGradient>
-          <linearGradient id="mochi-rim" x1="0.18" y1="0.02" x2="0.8" y2="1">
+          <linearGradient id={gid("rim")} x1="0.18" y1="0.02" x2="0.8" y2="1">
             <stop offset="0" stopColor="#6F7B66" stopOpacity="0" />
             <stop offset="0.38" stopColor="#6F7B66" stopOpacity="0.06" />
             <stop offset="0.66" stopColor="#616E58" stopOpacity="0.26" />
             <stop offset="1" stopColor="#53604E" stopOpacity="0.44" />
           </linearGradient>
-          <linearGradient id="mochi-rim-light" x1="0.12" y1="0" x2="0.72" y2="0.9">
+          <linearGradient id={gid("rim-light")} x1="0.12" y1="0" x2="0.72" y2="0.9">
             <stop offset="0" stopColor="#FFFFFF" stopOpacity="0.7" />
             <stop offset="0.3" stopColor="#FFFFFF" stopOpacity="0.28" />
             <stop offset="0.6" stopColor="#FFFFFF" stopOpacity="0" />
           </linearGradient>
-          <linearGradient id="mochi-side" x1="0.55" y1="0" x2="1" y2="0">
+          <linearGradient id={gid("side")} x1="0.55" y1="0" x2="1" y2="0">
             <stop offset="0" stopColor="#5D6A55" stopOpacity="0" />
             <stop offset="0.6" stopColor="#5D6A55" stopOpacity="0.04" />
             <stop offset="1" stopColor="#53604E" stopOpacity="0.22" />
           </linearGradient>
-          <radialGradient id="mochi-left-shade">
+          <radialGradient id={gid("left-shade")}>
             <stop offset="0" stopColor="#6F7B66" stopOpacity="0.2" />
             <stop offset="1" stopColor="#6F7B66" stopOpacity="0" />
           </radialGradient>
-          <radialGradient id="mochi-bottom-shade">
+          <radialGradient id={gid("bottom-shade")}>
             <stop offset="0" stopColor="#5D6A55" stopOpacity="0.32" />
             <stop offset="1" stopColor="#5D6A55" stopOpacity="0" />
           </radialGradient>
-          <radialGradient id="mochi-shadow">
+          <radialGradient id={gid("shadow")}>
             <stop offset="0" stopColor="#3E5647" stopOpacity="0.26" />
             <stop offset="0.6" stopColor="#3E5647" stopOpacity="0.12" />
             <stop offset="1" stopColor="#3E5647" stopOpacity="0" />
           </radialGradient>
-          <filter id="mochi-rim-blur" x="-25%" y="-25%" width="150%" height="150%">
+          <filter id={gid("rim-blur")} x="-25%" y="-25%" width="150%" height="150%">
             <feGaussianBlur stdDeviation="10" />
           </filter>
-          <filter id="mochi-light-blur" x="-25%" y="-25%" width="150%" height="150%">
+          <filter id={gid("light-blur")} x="-25%" y="-25%" width="150%" height="150%">
             <feGaussianBlur stdDeviation="6" />
           </filter>
-          <clipPath id="mochi-clip">
+          <clipPath id={gid("clip")}>
             <path d={MOCHI_BODY} />
           </clipPath>
         </defs>
-        <ellipse className="mochi__shadow" cx="180" cy="368" rx="128" ry="17" fill="url(#mochi-shadow)" />
+        <ellipse className="mochi__shadow" cx="180" cy="368" rx="128" ry="17" fill={`url(#${gid("shadow")})`} />
         <g className="mochi__figure">
-          <path d={MOCHI_BODY} fill="url(#mochi-fill)" />
-          <g clipPath="url(#mochi-clip)">
+          <path d={MOCHI_BODY} fill={`url(#${gid("fill")})`} />
+          <g clipPath={`url(#${gid("clip")})`}>
             <g className="mochi__sheen">
-              <ellipse cx="146" cy="90" rx="92" ry="70" fill="url(#mochi-glow)" />
-              <ellipse cx="196" cy="62" rx="84" ry="28" fill="url(#mochi-specular)" />
+              <ellipse cx="146" cy="90" rx="92" ry="70" fill={`url(#${gid("glow")})`} />
+              <ellipse cx="196" cy="62" rx="84" ry="28" fill={`url(#${gid("specular")})`} />
             </g>
             <path
               d={MOCHI_BODY}
               fill="none"
-              stroke="url(#mochi-rim)"
+              stroke={`url(#${gid("rim")})`}
               strokeWidth="54"
-              filter="url(#mochi-rim-blur)"
+              filter={`url(#${gid("rim-blur")})`}
             />
-            <rect x="30" y="40" width="300" height="304" fill="url(#mochi-side)" />
-            <ellipse cx="22" cy="210" rx="54" ry="172" fill="url(#mochi-left-shade)" />
-            <ellipse cx="180" cy="352" rx="172" ry="66" fill="url(#mochi-bottom-shade)" />
+            <rect x="30" y="40" width="300" height="304" fill={`url(#${gid("side")})`} />
+            <ellipse cx="22" cy="210" rx="54" ry="172" fill={`url(#${gid("left-shade")})`} />
+            <ellipse cx="180" cy="352" rx="172" ry="66" fill={`url(#${gid("bottom-shade")})`} />
             <path
               d={MOCHI_BODY}
               fill="none"
-              stroke="url(#mochi-rim-light)"
+              stroke={`url(#${gid("rim-light")})`}
               strokeWidth="22"
-              filter="url(#mochi-light-blur)"
+              filter={`url(#${gid("light-blur")})`}
             />
           </g>
           <g className="mochi__eyes">

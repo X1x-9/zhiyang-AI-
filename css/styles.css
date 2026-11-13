@@ -127,3 +127,52 @@ button:active:not(:disabled),[role="button"]:active{transform:scale(.98)}
 .nav-item{color:#6f7a72}
 .nav-item:hover{background:#f5f7f3;color:var(--ink)}
 .nav-item.active{background:#eef3eb;color:#2f5740;box-shadow:inset 0 0 0 1px #e2e9dd}
+
+/* 主导航玻璃单选组 */
+.nav-label{padding:0 17px}
+.nav-list{
+  --nav-item-h:45px;
+  --nav-gap:4px;
+  position:relative;
+  display:grid;
+  gap:var(--nav-gap);
+  padding:5px;
+  overflow:hidden;
+  border:1px solid rgba(255,255,255,.7);
+  border-radius:16px;
+  background:linear-gradient(150deg,rgba(255,255,255,.55),rgba(224,232,216,.44));
+  backdrop-filter:blur(12px);
+  -webkit-backdrop-filter:blur(12px);
+  box-shadow:
+    inset 1px 1px 4px rgba(255,255,255,.85),
+    inset -1px -1px 7px rgba(74,92,76,.2),
+    0 14px 28px -22px rgba(40,60,45,.4);
+}
+.nav-glider{
+  position:absolute;
+  left:5px;
+  right:5px;
+  top:5px;
+  height:var(--nav-item-h);
+  border-radius:10px;
+  background:linear-gradient(135deg,rgba(45,67,51,.96),rgba(97,127,101,.96));
+  box-shadow:0 0 18px rgba(58,88,66,.4),inset 0 0 10px rgba(255,255,255,.18);
+  transform:translateY(calc(var(--nav-index,0) * (var(--nav-item-h) + var(--nav-gap))));
+  transition:transform .5s cubic-bezier(.37,1.95,.66,.56);
+  pointer-events:none;
+  z-index:1;
+}
+.nav-item{
+  position:relative;
+  z-index:2;
+  height:var(--nav-item-h);
+  border-radius:10px;
+  background:transparent;
+  transition:color .3s ease,background-color .3s ease;
+}
+.nav-item:hover{background:rgba(255,255,255,.45);color:#27352f}
+.nav-item.active{background:transparent;color:#f4f1e6;box-shadow:none}
+.nav-item.active .nav-badge{background:rgba(255,255,255,.22);color:#f4f1e6}
+.nav-item:focus-visible{outline-offset:-2px}
+.nav-item.active:focus-visible{outline-color:rgba(244,241,230,.8)}
+@media (prefers-reduced-motion:reduce){.nav-glider{transition:none}}

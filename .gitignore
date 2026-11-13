@@ -10,3 +10,5 @@ prisma/generated/
 .neon
 .originkit/
 .shots/
+.ai-logs/
+.rag-eval/

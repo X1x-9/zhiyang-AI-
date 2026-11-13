@@ -166,13 +166,12 @@ export function WeightValue({ value }: { value: number }) {
   React.useEffect(() => {
     if (reduce) {
       previous.current = value;
-      setDisplay(value);
       return;
     }
     const from = previous.current;
     if (from === value) {
-      setDisplay(value);
-      return;
+      const frame = requestAnimationFrame(() => setDisplay(value));
+      return () => cancelAnimationFrame(frame);
     }
     let frame = 0;
     const startedAt = performance.now();
@@ -193,5 +192,5 @@ export function WeightValue({ value }: { value: number }) {
     };
   }, [value, reduce]);
 
-  return <>{display.toFixed(1)}</>;
+  return <>{reduce ? value.toFixed(1) : display.toFixed(1)}</>;
 }

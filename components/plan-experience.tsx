@@ -35,7 +35,7 @@ import { GlitchButton } from "@/components/glitch-button";
 import type { DashboardData } from "@/lib/dashboard";
 import type { DynamicPlanAdjustment } from "@/lib/plan-adjustment";
 import type { PlanDocument, PlanVersionSummary } from "@/lib/plan-engine";
-import { createEmptySpaceProfile, dietLabels, spaceCompleteness, type SpaceProfile } from "@/lib/space";
+import { createEmptySpaceProfile, dietLabels, spaceCompleteness, type SpaceProfile, type SpaceSession } from "@/lib/space";
 import { useHealthStore } from "@/stores/health-store";
 
 const ease = [0.22, 1, 0.36, 1] as const;
@@ -77,6 +77,7 @@ const sessions = [
     title: "力量 A",
     subtitle: "下肢与核心",
     minutes: 25,
+    tone: "strength",
     focus: "椅子深蹲 · 臀桥 · 死虫",
     steps: [
       { label: "热身", minutes: 5, text: "原地走、踝关节绕环，让身体微微发热。" },
@@ -91,6 +92,7 @@ const sessions = [
     title: "快走 + 活动度",
     subtitle: "心肺与恢复",
     minutes: 20,
+    tone: "cardio",
     focus: "快走 · 肩颈活动 · 髋部拉伸",
     steps: [
       { label: "热身", minutes: 3, text: "慢走 3 分钟，让呼吸和脚步找到节奏。" },
@@ -105,6 +107,7 @@ const sessions = [
     title: "力量 B",
     subtitle: "上肢与背部",
     minutes: 25,
+    tone: "strength",
     focus: "墙面俯卧撑 · 划船 · 平板支撑",
     steps: [
       { label: "热身", minutes: 5, text: "手臂绕环、原地踏步，让肩背醒过来。" },
@@ -630,20 +633,29 @@ function PlateInstrument() {
   return (
     <div className="pp-instrument-float">
       <div className="pp-plate-scene" ref={sceneRef} {...tilt}>
-        <div className="pp-plate-card">
-          <span className="pp-plate-glass" aria-hidden="true" />
-          <span className="pp-plate-orbit orbit-a" aria-hidden="true" />
-          <span className="pp-plate-orbit orbit-b" aria-hidden="true" />
-          <div className="pp-plate-body">
-            <div className="pp-instrument-head"><span>一餐的样子</span><span className="pp-mini-tag">示例</span></div>
-            <div className="pp-plate-disc" role="img" aria-label="示例餐盘结构：一半蔬菜，四分之一蛋白质，四分之一主食">
-              <span className="pp-plate-half" aria-hidden="true">½</span>
-              <span className="pp-plate-half-label" aria-hidden="true">蔬菜</span>
-            </div>
-            <div className="pp-plate-legend" aria-hidden="true">
-              <span><i className="veg" />蔬菜 ½</span>
-              <span><i className="protein" />蛋白质 ¼</span>
-              <span><i className="staple" />主食 ¼</span>
+        <div className="pp-plate-tilt">
+          <div className="pp-plate-card">
+            <span className="pp-plate-surface" aria-hidden="true">
+              <span className="pp-plate-orbit orbit-a" />
+              <span className="pp-plate-orbit orbit-b" />
+            </span>
+            <span className="pp-plate-glass" aria-hidden="true" />
+            <div className="pp-plate-body">
+              <div className="pp-instrument-head"><span>一餐的样子</span></div>
+              <div className="pp-plate-stack">
+                <span className="pp-plate-ring pp-plate-ring-3" aria-hidden="true" />
+                <span className="pp-plate-ring pp-plate-ring-2" aria-hidden="true" />
+                <span className="pp-plate-ring pp-plate-ring-1" aria-hidden="true" />
+                <div className="pp-plate-disc" role="img" aria-label="示例餐盘结构：一半蔬菜，四分之一蛋白质，四分之一主食">
+                  <span className="pp-plate-half" aria-hidden="true">½</span>
+                  <span className="pp-plate-half-label" aria-hidden="true">蔬菜</span>
+                </div>
+              </div>
+              <div className="pp-plate-legend" aria-hidden="true">
+                <span><i className="veg" />蔬菜 ½</span>
+                <span><i className="protein" />蛋白质 ¼</span>
+                <span><i className="staple" />主食 ¼</span>
+              </div>
             </div>
           </div>
         </div>
@@ -674,7 +686,6 @@ function WeekInstrument({ plan, hasStored }: { plan?: PlanDocument | null; hasSt
       ? weekPlan.map((day) => ({ label: day.label, short: day.short, title: day.title, minutes: day.minutes, tone: day.tone }))
       : weekPlan.map((day) => ({ label: day.label, short: day.short, title: "待生成", minutes: 0, tone: "rest" as const }));
   const spoken = days.filter((day) => day.minutes > 0).map((day) => `${day.label}${day.title}${day.minutes}分钟`).join("，");
-  const tag = plan ? "按资料生成" : hasStored ? "示例" : "待生成";
   const ariaLabel = plan
     ? `按资料生成的周节奏：${spoken}。`
     : hasStored
@@ -692,7 +703,7 @@ function WeekInstrument({ plan, hasStored }: { plan?: PlanDocument | null; hasSt
         <div className="pp-week-card">
           <span className="pp-plate-glass" aria-hidden="true" />
           <div className="pp-week-body">
-            <div className="pp-instrument-head"><span>本周节奏</span><span className="pp-mini-tag">{tag}</span></div>
+            <div className="pp-instrument-head"><span>本周节奏</span></div>
             <div className="pp-week-mini" role="img" aria-label={ariaLabel}>
               {days.map((day, index) => (
                 <div key={day.label} className={`pp-week-mini-day ${day.tone === "session" ? "has-session" : ""} ${index === today ? "is-today" : ""}`} aria-hidden="true">
@@ -742,7 +753,6 @@ function PlanHero({ kind, data, plan, hasStored }: { kind: PlanKind; data?: Dash
             <span>{diet ? "DIET" : "MOVEMENT"}</span>
             <i aria-hidden="true" />
             <span>{diet ? "饮食计划" : "运动计划"}</span>
-            <span className="pp-mini-tag">{plan ? (plan.dataBasis.usesMealRecords ? "按资料与记录生成" : "按资料生成") : diet ? "示例结构" : hasStored ? "示例安排" : "待生成"}</span>
           </div>
           <h1 id={`pp-${kind}-title`}>{diet ? "吃得刚刚好，\n比吃得完美更重要。" : "把训练，\n放回风里。"}</h1>
           <p className="pp-hero-lede">
@@ -787,13 +797,11 @@ function PlanHero({ kind, data, plan, hasStored }: { kind: PlanKind; data?: Dash
               <>
                 <span className="pp-chip">安排待生成</span>
                 <span className="pp-chip">生成后显示每周节奏</span>
-                <span className="pp-chip">环境按资料</span>
               </>
             ) : (
               <>
                 <span className="pp-chip">资料未保存</span>
                 <span className="pp-chip">保存后生成每周节奏</span>
-                <span className="pp-chip">环境按资料</span>
               </>
             )}
           </div>
@@ -845,7 +853,6 @@ function GeneratedDiet({ plan }: { plan: PlanDocument }) {
               swap: meal.swap,
               tags: [meal.kcalHint, effectiveDiet].filter((tag): tag is string => Boolean(tag)),
               tone: mealTones[index % mealTones.length],
-              badge: "按资料",
             }}
           />
         ))}
@@ -938,7 +945,15 @@ function DynamicAdjustmentBlock({ adjustment, restoring, restore }: {
   );
 }
 
+const sessionToneLabels: Record<SpaceSession["tone"], string> = {
+  strength: "力量",
+  cardio: "心肺",
+  mobility: "恢复",
+};
+
 function GeneratedMovement({ plan }: { plan: PlanDocument }) {
+  const [openDay, setOpenDay] = React.useState<string | null>(null);
+  const toggleDay = (label: string) => setOpenDay((current) => current === label ? null : label);
   return (
     <div className="pp-generated-block">
       <div className="pp-generated-subhead">
@@ -946,22 +961,50 @@ function GeneratedMovement({ plan }: { plan: PlanDocument }) {
         <span>{plan.movement.environmentLabel} · {plan.movement.sessionCount} 次 · 约 {plan.movement.totalMinutes} 分钟</span>
       </div>
       <div className="pp-generated-week">
-        {plan.movement.week.map((day) => (
-          <div key={day.label} className={day.session ? "has-session" : "rest"}>
-            <span>{day.label}</span>
-            <strong>{day.session?.title ?? "休息 / 散步"}</strong>
-            <small>{day.session ? `${day.session.minutes} 分钟` : "—"}</small>
-          </div>
-        ))}
-      </div>
-      <div className="pp-generated-sessions">
-        {plan.movement.sessions.map((session) => (
-          <article key={`${session.day}-${session.title}`}>
-            <span>{session.day} · {session.tone === "strength" ? "力量" : session.tone === "cardio" ? "心肺" : "恢复"}</span>
-            <h3>{session.title}<small>{session.minutes} 分钟</small></h3>
-            <p>{session.focus}</p>
-          </article>
-        ))}
+        {plan.movement.week.map((day) => {
+          const session = day.session;
+          const open = openDay === day.label;
+          return (
+            <div
+              key={day.label}
+              className={`pp-daybook${session ? " has-session" : " is-rest"}${open ? " is-open" : ""}`}
+              role="button"
+              tabIndex={0}
+              aria-expanded={open}
+              aria-label={session
+                ? `${day.label}：${session.title}，${sessionToneLabels[session.tone]}，${session.minutes} 分钟，${session.focus}`
+                : `${day.label}：休息 / 散步`}
+              onClick={() => toggleDay(day.label)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  toggleDay(day.label);
+                }
+              }}
+            >
+              <div className="pp-daybook-page">
+                <span className="pp-daybook-day">{day.label}</span>
+                <strong>{session?.title ?? "休息 / 散步"}</strong>
+                {session ? (
+                  <ul className="pp-daybook-moves">
+                    {session.focus.split(" · ").filter(Boolean).map((move) => <li key={move}>{move}</li>)}
+                  </ul>
+                ) : (
+                  <p>今天不安排训练，饭后轻松走一走，给身体留出恢复的时间。</p>
+                )}
+                <small>{session ? `${sessionToneLabels[session.tone]} · ${session.minutes} 分钟` : "恢复日"}</small>
+              </div>
+              <div className="pp-daybook-cover" aria-hidden="true">
+                <span className="pp-daybook-day">{day.label}</span>
+                <strong>{session?.title ?? "休息 / 散步"}</strong>
+                <div className="pp-daybook-foot">
+                  <small>{session ? `${session.minutes} 分钟` : "恢复日"}</small>
+                  <em>翻开</em>
+                </div>
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -1065,8 +1108,10 @@ function PlanHistory({ versions, versionTotal, activating, deleting, activate, r
   const [confirming, setConfirming] = React.useState(false);
   const [deleteError, setDeleteError] = React.useState<string | null>(null);
   const [notice, setNotice] = React.useState<string | null>(null);
-
-  React.useEffect(() => {
+  const versionSignature = versions.map((item) => `${item.version}:${item.active ? 1 : 0}`).join("|");
+  const [knownVersionSignature, setKnownVersionSignature] = React.useState(versionSignature);
+  if (knownVersionSignature !== versionSignature) {
+    setKnownVersionSignature(versionSignature);
     const allowed = new Set(versions.filter((item) => !item.active).map((item) => item.version));
     setSelected((current) => {
       const next = new Set([...current].filter((version) => allowed.has(version)));
@@ -1074,7 +1119,7 @@ function PlanHistory({ versions, versionTotal, activating, deleting, activate, r
     });
     setConfirming(false);
     if (allowed.size === 0) setManaging(false);
-  }, [versions]);
+  }
 
   if (versions.length === 0) return null;
   const hiddenCount = Math.max(0, versionTotal - versions.length);
@@ -1242,8 +1287,7 @@ type RevisionMessage = {
   tone?: "ok" | "error";
 };
 
-function PlanRevisionDialog({ open, kind, plan, busy, onClose, onChat, onRegenerate }: {
-  open: boolean;
+function PlanRevisionDialog({ kind, plan, busy, onClose, onChat, onRegenerate }: {
   kind: PlanKind;
   plan: PlanDocument;
   busy: boolean;
@@ -1253,26 +1297,22 @@ function PlanRevisionDialog({ open, kind, plan, busy, onClose, onChat, onRegener
 }) {
   const reduce = useReducedMotion();
   const [feedback, setFeedback] = React.useState("");
-  const [messages, setMessages] = React.useState<RevisionMessage[]>([]);
+  const [messages, setMessages] = React.useState<RevisionMessage[]>(() => [{
+    id: 1,
+    role: "assistant",
+    text: kind === "diet"
+      ? "可以问我为什么这样安排、某一餐怎么替换，也可以直接说想改哪里。"
+      : "可以问我为什么这样安排、训练强度怎么判断，也可以直接说想改哪里。",
+  }]);
   const [pending, setPending] = React.useState(false);
-  const idRef = React.useRef(0);
+  const idRef = React.useRef(1);
   const threadRef = React.useRef<HTMLDivElement>(null);
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
   const dialogRef = React.useRef<HTMLDivElement>(null);
   const returnFocusRef = React.useRef<HTMLElement | null>(null);
 
   React.useEffect(() => {
-    if (!open) return;
     returnFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    setFeedback("");
-    setPending(false);
-    setMessages([{
-      id: ++idRef.current,
-      role: "assistant",
-      text: kind === "diet"
-        ? "可以问我为什么这样安排、某一餐怎么替换，也可以直接说想改哪里。"
-        : "可以问我为什么这样安排、训练强度怎么判断，也可以直接说想改哪里。",
-    }]);
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         onClose();
@@ -1306,9 +1346,9 @@ function PlanRevisionDialog({ open, kind, plan, busy, onClose, onChat, onRegener
       cancelAnimationFrame(frame);
       returnFocusRef.current?.focus();
     };
-    // 只在打开时初始化会话，计划更新后保留当前对话。
+    // 挂载时初始化会话，计划更新后保留当前对话。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
+  }, []);
 
   React.useEffect(() => {
     const thread = threadRef.current;
@@ -1355,8 +1395,6 @@ function PlanRevisionDialog({ open, kind, plan, busy, onClose, onChat, onRegener
       text: outcome.ok ? `已按当前资料重新生成 v${outcome.version}。` : outcome.message,
     }]);
   }
-
-  if (!open) return null;
 
   return createPortal(
     <div className="pp-revision-overlay" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
@@ -1444,7 +1482,7 @@ function GeneratedPlanPanel({ kind, profile, hasStored, planState }: {
   planState: PlanState;
 }) {
   const setPage = useHealthStore((state) => state.setPage);
-  const { plan, activeVersion, versions, versionTotal, persisted, adjustment, loading, chatting, activating, deleting, restoringAdjustment, error, generate, chat, activate, remove, restoreAdjustment } = planState;
+  const { plan, activeVersion, versions, versionTotal, adjustment, loading, chatting, activating, deleting, restoringAdjustment, error, generate, chat, activate, remove, restoreAdjustment } = planState;
   const completeness = hasStored ? spaceCompleteness(profile) : spaceCompleteness(createEmptySpaceProfile());
   const [revisionOpen, setRevisionOpen] = React.useState(false);
 
@@ -1478,9 +1516,9 @@ function GeneratedPlanPanel({ kind, profile, hasStored, planState }: {
             <div className="pp-sec-eyebrow">你的生成计划{plan ? ` · 版本 v${plan.version}` : ""}</div>
             <h2 id="pp-generated-title">
               {plan
-                ? plan.dataBasis.usesMealRecords
-                  ? "按资料与记录生成，不靠猜。"
-                  : "按资料生成，不靠猜。"
+                ? kind === "diet"
+                  ? "为你量身定制的专属饮食计划。"
+                  : "为你量身定制的专属运动计划。"
                 : "资料已就位，生成第一版。"}
             </h2>
           </div>
@@ -1495,9 +1533,8 @@ function GeneratedPlanPanel({ kind, profile, hasStored, planState }: {
           </button>
         </header>
 
-        {plan && (
+        {plan && revisionOpen && (
           <PlanRevisionDialog
-            open={revisionOpen}
             kind={kind}
             plan={plan}
             busy={loading || chatting || activating !== null || deleting}
@@ -1552,28 +1589,6 @@ function GeneratedPlanPanel({ kind, profile, hasStored, planState }: {
 
             <PlanRevisionBlock plan={plan} />
 
-            <details className="pp-generated-basis">
-              <summary>数据依据与版本</summary>
-              <div className="pp-generated-basis-grid">
-                <div>
-                  <span>数据依据</span>
-                  <p>使用：{plan.dataBasis.usedFields.join("、")}。</p>
-                  {plan.dataBasis.missingFields.length > 0 && <p>未填：{plan.dataBasis.missingFields.join("、")}。</p>}
-                  <p>
-                    {plan.dataBasis.usesMealRecords
-                      ? `近 7 天 ${plan.dataBasis.mealRecordCount} 餐已确认（${plan.dataBasis.mealRecordedDays} 天，${plan.dataBasis.mealMacroCompleteMeals} 餐字段完整）；未读取体重或手环数据。`
-                      : "未读取餐食记录、体重或手环数据。"}
-                  </p>
-                  {plan.dataBasis.targetMethod && <p>热量算法：{plan.dataBasis.targetMethod}。</p>}
-                </div>
-                <div>
-                  <span>版本与来源</span>
-                  <p>{persisted ? "已写入计划历史。" : "演示沙盒 · 仅存本次会话。"}</p>
-                  {plan.dataBasis.notes.map((note) => <p key={note}>{note}</p>)}
-                </div>
-              </div>
-            </details>
-
             <PlanHistory versions={versions} versionTotal={versionTotal} activating={activating} deleting={deleting} activate={activate} remove={remove} />
           </>
         )}
@@ -1610,7 +1625,6 @@ type MealCardData = {
   swap: string;
   tags: readonly string[];
   tone: "amber" | "sage" | "clay" | "forest";
-  badge: string;
 };
 
 function MealCard({ meal }: { meal: MealCardData }) {
@@ -1629,7 +1643,7 @@ function MealCard({ meal }: { meal: MealCardData }) {
       <span className="pp-meal-sheet pp-meal-sheet-mid" aria-hidden="true" />
       <span className="pp-meal-inner">
         <span className="pp-meal-face pp-meal-front" aria-hidden={flipped}>
-          <span className="pp-meal-top"><span className="pp-meal-time">{meal.time}</span><span className="pp-meal-badge">{meal.badge}</span></span>
+          <span className="pp-meal-top"><span className="pp-meal-time">{meal.time}</span></span>
           <span className="pp-meal-kicker">{meal.label}</span>
           <strong>{meal.title}</strong>
           {meal.detail && <span className="pp-meal-detail">{meal.detail}</span>}
@@ -1641,7 +1655,7 @@ function MealCard({ meal }: { meal: MealCardData }) {
           </span>
         </span>
         <span className="pp-meal-face pp-meal-back" aria-hidden={!flipped}>
-          <span className="pp-meal-back-top"><span>替换思路 · {meal.badge}</span><RotateCw size={12} aria-hidden="true" /></span>
+          <span className="pp-meal-back-top"><span>替换思路</span><RotateCw size={12} aria-hidden="true" /></span>
           <span className="pp-meal-swap">{meal.swap}</span>
           <span className="pp-meal-hint">
             <span className="pp-meal-hint-hover">翻回</span>
@@ -1792,17 +1806,90 @@ function ExerciseWeek({ today }: { today: number }) {
   );
 }
 
-function SessionDeck() {
+type SessionTone = "strength" | "cardio" | "mobility";
+
+type SessionCard = {
+  id: string;
+  day: string;
+  tag: string;
+  title: string;
+  subtitle: string;
+  minutes: number;
+  focus: string;
+  tone: SessionTone;
+  steps: Array<{ label: string; minutes: number; text: string }>;
+  easier: string;
+};
+
+const sessionToneMeta = {
+  strength: { tag: "力量", subtitle: "力量与核心", easier: "减少一组或降低负重；动作以无痛范围为限。" },
+  cardio: { tag: "心肺", subtitle: "心肺与恢复", easier: "改成慢走，或拆成两段各 10 分钟。" },
+  mobility: { tag: "活动度", subtitle: "活动度与恢复", easier: "缩短到一个动作做几次就好，幅度以舒适为限。" },
+} as const;
+
+function sampleCards(): SessionCard[] {
+  return sessions.map((item) => ({
+    id: item.id,
+    day: item.day,
+    tag: "示例",
+    title: item.title,
+    subtitle: item.subtitle,
+    minutes: item.minutes,
+    tone: item.tone,
+    focus: item.focus,
+    steps: item.steps.map((step) => ({ ...step })),
+    easier: item.easier,
+  }));
+}
+
+function planCards(plan: PlanDocument): SessionCard[] {
+  return plan.movement.sessions.map((session) => {
+    const meta = sessionToneMeta[session.tone];
+    const warm = Math.max(3, Math.round(session.minutes * 0.2));
+    const cool = Math.max(3, Math.round(session.minutes * 0.2));
+    const main = Math.max(1, session.minutes - warm - cool);
+    const mainText = session.tone === "cardio"
+      ? `按计划保持：${session.focus}；以能说短句的速度为宜。`
+      : session.tone === "mobility"
+        ? `依次完成：${session.focus}；动作放慢，不做弹振。`
+        : `按计划重点完成：${session.focus}；组间休息 45 秒，按状态增减组数。`;
+    return {
+      id: `${session.day}-${session.title}`,
+      day: session.day,
+      tag: "计划",
+      title: session.title,
+      subtitle: meta.subtitle,
+      minutes: session.minutes,
+      tone: session.tone,
+      focus: session.focus,
+      steps: [
+        { label: "热身", minutes: warm, text: "原地走、踝关节绕环，让身体微微发热。" },
+        { label: "主训练", minutes: main, text: mainText },
+        { label: "收尾", minutes: cool, text: "拉伸主要发力的部位，呼吸放慢。" },
+      ],
+      easier: meta.easier,
+    };
+  });
+}
+
+function SessionDeck({ plan }: { plan: PlanDocument | null }) {
+  const usingPlan = Boolean(plan && plan.movement.sessions.length > 0);
+  const cards = React.useMemo(() => (usingPlan && plan ? planCards(plan) : sampleCards()), [usingPlan, plan]);
   const [active, setActive] = React.useState(0);
   const tabsRef = React.useRef<Array<HTMLButtonElement | null>>([]);
   const reduce = useReducedMotion();
-  const session = sessions[active];
+  const index = Math.min(active, cards.length - 1);
+  const session = cards[index];
+  const minutes = [...new Set(cards.map((card) => card.minutes))];
+  const title = usingPlan
+    ? minutes.length === 1 ? `一次 ${minutes[0]} 分钟，怎么排。` : "一次训练，怎么排。"
+    : "一次 25 分钟，怎么排。";
 
   function onKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
     if (event.key !== "ArrowDown" && event.key !== "ArrowRight" && event.key !== "ArrowUp" && event.key !== "ArrowLeft") return;
     event.preventDefault();
     const direction = event.key === "ArrowDown" || event.key === "ArrowRight" ? 1 : -1;
-    const next = (active + direction + sessions.length) % sessions.length;
+    const next = (index + direction + cards.length) % cards.length;
     setActive(next);
     tabsRef.current[next]?.focus();
   }
@@ -1812,34 +1899,44 @@ function SessionDeck() {
       <section className="pp-section" aria-labelledby="pp-session-title">
         <SectionHead
           eyebrow="一次训练"
-          title="一次 25 分钟，怎么排。"
+          title={title}
         />
         <div className="pp-deck">
-          <div className="pp-deck-tabs" role="tablist" aria-label="示例训练课" aria-orientation="vertical" onKeyDown={onKeyDown}>
-            {sessions.map((item, index) => (
+          <div className="pp-deck-tabs" role="tablist" aria-label={usingPlan ? "当前计划的训练课" : "示例训练课"} aria-orientation="vertical" onKeyDown={onKeyDown}>
+            {cards.map((item, itemIndex) => (
               <button
                 type="button"
                 key={item.id}
-                ref={(element) => { tabsRef.current[index] = element; }}
+                ref={(element) => { tabsRef.current[itemIndex] = element; }}
                 role="tab"
-                id={`pp-session-tab-${item.id}`}
-                aria-selected={index === active}
-                aria-controls={`pp-session-panel-${item.id}`}
-                tabIndex={index === active ? 0 : -1}
-                className={`pp-session-tab ${index === active ? "active" : ""}`}
-                onClick={() => setActive(index)}
+                id={`pp-session-tab-${itemIndex}`}
+                aria-selected={itemIndex === index}
+                aria-controls={`pp-session-panel-${itemIndex}`}
+                tabIndex={itemIndex === index ? 0 : -1}
+                className={`pp-session-tab ${itemIndex === index ? "active" : ""}`}
+                onClick={() => setActive(itemIndex)}
               >
-                <span className="pp-session-day">{item.day} · 示例</span>
-                <strong>{item.title}</strong>
-                <small>{item.subtitle} · {item.minutes} 分钟</small>
+                {itemIndex === index && (
+                  <motion.span
+                    layoutId="pp-session-glider"
+                    className={`pp-session-glider tone-${item.tone}`}
+                    transition={reduce ? { duration: 0 } : { type: "spring", stiffness: 340, damping: 26, mass: 0.9 }}
+                    aria-hidden="true"
+                  />
+                )}
+                <span className="pp-session-tab-inner">
+                  <span className="pp-session-day">{item.day} · {item.tag}</span>
+                  <strong>{item.title}</strong>
+                  <small>{item.subtitle} · {item.minutes} 分钟</small>
+                </span>
               </button>
             ))}
           </div>
           <div
             className="pp-session-panel"
             role="tabpanel"
-            id={`pp-session-panel-${session.id}`}
-            aria-labelledby={`pp-session-tab-${session.id}`}
+            id={`pp-session-panel-${index}`}
+            aria-labelledby={`pp-session-tab-${index}`}
           >
             <AnimatePresence mode="wait" initial={false}>
               <motion.div
@@ -1851,16 +1948,15 @@ function SessionDeck() {
               >
                 <div className="pp-session-head">
                   <div>
-                    <span className="pp-mini-tag">示例 · {session.day}</span>
                     <h3>{session.title}<small>{session.subtitle}</small></h3>
                   </div>
                   <span className="pp-session-time"><Timer size={13} aria-hidden="true" />约 {session.minutes} 分钟</span>
                 </div>
                 <p className="pp-session-focus">{session.focus}</p>
                 <ol className="pp-steps">
-                  {session.steps.map((step, index) => (
+                  {session.steps.map((step, stepIndex) => (
                     <li key={step.label}>
-                      <span className="pp-step-num" aria-hidden="true">{String(index + 1).padStart(2, "0")}</span>
+                      <span className="pp-step-num" aria-hidden="true">{String(stepIndex + 1).padStart(2, "0")}</span>
                       <div><strong>{step.label} · {step.minutes} 分钟</strong><p>{step.text}</p></div>
                     </li>
                   ))}
@@ -1990,14 +2086,15 @@ export function ExercisePlan({ data, profile, hasStored }: { data?: DashboardDat
     <div className="pp-page">
       <PlanHero kind="exercise" data={data} plan={planState.plan} hasStored={hasStored} />
       <GeneratedPlanPanel kind="exercise" profile={profile} hasStored={hasStored} planState={planState} />
-      {planState.plan && <ExampleDivider />}
       {hasStored && !planState.plan && <ExerciseWeek today={today} />}
-      {hasStored && <SessionDeck />}
+      {planState.plan
+        ? planState.plan.movement.sessions.length > 0 && <SessionDeck plan={planState.plan} />
+        : hasStored && <SessionDeck plan={null} />}
       <IntensityMeter />
       <ExerciseLife />
       <SafetyPanel />
       <p className="pp-endnote">
-        <Leaf size={12} aria-hidden="true" /> 智养 AI · {planState.plan ? `${planState.activeVersion === planState.plan.version ? "计划已启用" : "建议版本待启用"} v${planState.plan.version} + 示例结构` : hasStored ? "资料已保存 · 示例结构" : "尚未生成计划"} · 今天做到一点点，就已经在往前。
+        <Leaf size={12} aria-hidden="true" /> 智养 AI · {planState.plan ? `${planState.activeVersion === planState.plan.version ? "计划已启用" : "建议版本待启用"} v${planState.plan.version} + 通用建议` : hasStored ? "资料已保存 · 示例结构" : "尚未生成计划"} · 今天做到一点点，就已经在往前。
       </p>
     </div>
   );
