@@ -244,6 +244,8 @@ export function DashboardHero({ data, water, percent, onRecord, onProfile, onNav
         aria-labelledby="hero-greeting"
         style={reduce ? undefined : { rotateX, rotateY, scale }}
       >
+        <span className="hero-scene" aria-hidden="true" />
+        <span className="hero-scene-wash" aria-hidden="true" />
         <span className="hero-glass" aria-hidden="true" />
         <motion.div
           className="hero-copy"

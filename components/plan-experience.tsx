@@ -875,10 +875,13 @@ function DynamicAdjustmentBlock({ adjustment, restoring, restore }: {
       </header>
 
       <div className={`pp-dynamic-grid${adjustment.remainingToday.length === 0 ? " is-single" : ""}`}>
-        <div className="pp-dynamic-col">
-          <div className="pp-generated-subhead">
-            <strong>今天剩下</strong>
-            <span>{adjustment.remainingToday.length > 0 ? `${adjustment.remainingToday.length} 个餐次` : "已记录完"}</span>
+        <div className="pp-dynamic-col is-today">
+          <div className="pp-dynamic-subhead">
+            <div className="pp-dynamic-heading">
+              <Clock3 size={17} aria-hidden="true" />
+              <strong>今天剩下</strong>
+            </div>
+            <span className="pp-dynamic-status">{adjustment.remainingToday.length > 0 ? `${adjustment.remainingToday.length} 个餐次` : "已记录完"}</span>
           </div>
           {adjustment.remainingToday.length > 0 ? (
             <ul className="pp-dynamic-meals">
@@ -897,10 +900,13 @@ function DynamicAdjustmentBlock({ adjustment, restoring, restore }: {
           )}
         </div>
 
-        <div className="pp-dynamic-col">
-          <div className="pp-generated-subhead">
-            <strong>{adjustment.nextDayLabel}</strong>
-            <span>正常节奏</span>
+        <div className="pp-dynamic-col is-next">
+          <div className="pp-dynamic-subhead">
+            <div className="pp-dynamic-heading">
+              <Sun size={17} aria-hidden="true" />
+              <strong>{adjustment.nextDayLabel}</strong>
+            </div>
+            <span className="pp-dynamic-status">正常节奏</span>
           </div>
           <ul className="pp-dynamic-meals">
             {adjustment.nextDayMeals.map((meal) => (
@@ -914,13 +920,6 @@ function DynamicAdjustmentBlock({ adjustment, restoring, restore }: {
             ))}
           </ul>
         </div>
-      </div>
-
-      <div className="pp-dynamic-evidence">
-        <span>为什么建议调整</span>
-        <ul>
-          {adjustment.evidence.map((item) => <li key={item}>{item}</li>)}
-        </ul>
       </div>
 
       <p className="pp-dynamic-next-note">{adjustment.nextDayNote}</p>

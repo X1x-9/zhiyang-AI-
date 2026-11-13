@@ -59,6 +59,36 @@
   pointer-events: none;
 }
 
+/* Soft meadow scene behind the hero, veiled so copy and data stay legible. */
+.hero-scene {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: inherit;
+  background: url("/images/zhiyang-hero-meadow.webp") 50% 0% / 180% auto no-repeat;
+  opacity: .85;
+  filter: saturate(.5) brightness(1.06) contrast(1.02) blur(2.5px);
+  -webkit-mask-image: linear-gradient(180deg, #000 0%, #000 60%, transparent 96%);
+  mask-image: linear-gradient(180deg, #000 0%, #000 60%, transparent 96%);
+  pointer-events: none;
+}
+
+.hero-scene-wash {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: inherit;
+  background: linear-gradient(
+    96deg,
+    rgba(251, 252, 247, .9) 0%,
+    rgba(249, 251, 244, .78) 34%,
+    rgba(246, 249, 238, .42) 58%,
+    rgba(240, 246, 231, .16) 84%,
+    rgba(236, 243, 227, .08) 100%
+  );
+  pointer-events: none;
+}
+
 /* Layered glass pane behind the hero content, with a stepped top-right corner. */
 .hero-glass {
   position: absolute;
@@ -1107,14 +1137,14 @@
 
 .tips-stage {
   --tip-w: clamp(216px, 16.5vw, 240px);
-  --tip-h: calc(var(--tip-w) * 1.18);
-  --tip-radius: calc(var(--tip-w) * 1.5);
+  --tip-h: calc(var(--tip-w) * 1.26);
+  --tip-radius: calc(var(--tip-w) * 1.72);
   position: relative;
   z-index: 2;
   height: clamp(356px, 27vw, 400px);
   margin-top: 6px;
   overflow: hidden;
-  perspective: 1900px;
+  perspective: 2200px;
   perspective-origin: 50% 48%;
 }
 
@@ -1139,7 +1169,7 @@
   width: 0;
   height: 0;
   transform-style: preserve-3d;
-  animation: tipsSpin 64s linear infinite;
+  animation: tipsSpin 18s linear infinite;
   will-change: transform;
 }
 
@@ -1152,26 +1182,42 @@
   position: absolute;
   top: calc(var(--tip-h) / -2);
   left: calc(var(--tip-w) / -2);
-  display: flex;
-  flex-direction: column;
   width: var(--tip-w);
   height: var(--tip-h);
+  transform-style: preserve-3d;
+}
+
+.tip-face {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
   padding: 24px 22px 18px;
-  border: 1px solid rgba(255, 255, 255, .9);
+  border: 1px solid rgba(255, 255, 255, .88);
   border-radius: 26px;
-  background:
-    radial-gradient(circle at 86% 12%, rgba(255, 255, 255, .62) 0 5.4%, transparent 5.7%),
-    linear-gradient(165deg, var(--tip-top) 0%, var(--tip-bottom) 64%);
   box-shadow:
-    0 26px 50px rgba(42, 62, 46, .22),
+    0 26px 50px rgba(42, 62, 46, .2),
     inset 0 1px 0 rgba(255, 255, 255, .9);
   backface-visibility: hidden;
   -webkit-backface-visibility: hidden;
   transition: box-shadow .3s ease;
 }
 
-.tip-3d::before {
+.tip-face--front {
+  background:
+    radial-gradient(circle at 86% 12%, rgba(255, 255, 255, .52) 0 8.5%, rgba(255, 255, 255, 0) 13%),
+    linear-gradient(165deg, var(--tip-top) 0%, var(--tip-bottom) 64%);
+}
+
+.tip-face--back {
+  transform: rotateY(180deg);
+  background:
+    radial-gradient(circle at 14% 12%, rgba(255, 255, 255, .45) 0 8.5%, rgba(255, 255, 255, 0) 13%),
+    linear-gradient(345deg, var(--tip-top) 0%, var(--tip-bottom) 72%);
+}
+
+.tip-face::before {
   content: "";
   position: absolute;
   right: -64px;
@@ -1185,7 +1231,7 @@
   pointer-events: none;
 }
 
-.tip-3d:hover { box-shadow: 0 34px 66px rgba(48, 67, 51, .23), inset 0 1px 0 rgba(255, 255, 255, .9); }
+.tip-3d:hover .tip-face--front { box-shadow: 0 34px 66px rgba(48, 67, 51, .23), inset 0 1px 0 rgba(255, 255, 255, .9); }
 
 .tip-3d.theme-sage {
   --tip-top: #e6f2d8;
@@ -1963,6 +2009,28 @@ body.companion-dragging {
   .back-to-top { left: 243px; }
 }
 
+/* Two-row hero layouts are taller, so the photo stays a top band to keep the quote out of frame. */
+@media (max-width: 1319px) {
+  .hero-scene {
+    inset: 0 0 auto;
+    height: clamp(120px, 24vw, 300px);
+    background-size: 180% auto;
+    background-position: 50% 0%;
+    opacity: .45;
+    -webkit-mask-image: linear-gradient(180deg, #000 0%, #000 52%, transparent 100%);
+    mask-image: linear-gradient(180deg, #000 0%, #000 52%, transparent 100%);
+  }
+  .hero-scene-wash {
+    background: linear-gradient(
+      180deg,
+      rgba(250, 252, 246, .94) 0%,
+      rgba(248, 250, 242, .9) 42%,
+      rgba(244, 248, 236, .8) 70%,
+      rgba(238, 244, 229, .72) 100%
+    );
+  }
+}
+
 @media (max-width: 960px) {
   .hero-garden {
     grid-template-columns: 1fr;
@@ -2019,9 +2087,9 @@ body.companion-dragging {
   .tips-head h2 { font-size: 15px; }
   .tips-head p { max-width: 245px; font-size: 9px; }
   .tips-toggle { height: 32px; padding: 0 11px; font-size: 9px; }
-  .tips-ring { animation-name: tipsStepSpin; animation-duration: 60s; }
-  .tips-stage { --tip-w: 236px; height: 404px; perspective: 1500px; }
-  .tip-3d { padding: 20px 18px 16px; border-radius: 22px; }
+  .tips-ring { animation-name: tipsStepSpin; animation-duration: 44s; }
+  .tips-stage { --tip-w: 236px; height: 404px; perspective: 2000px; }
+  .tip-face { padding: 20px 18px 16px; border-radius: 22px; }
   .tip-icon { width: 38px; height: 38px; border-radius: 12px; }
   .tip-3d h3 { margin-top: 19px; font-size: 19px; }
   .tip-3d p { font-size: 11px; line-height: 1.8; }
@@ -2053,8 +2121,8 @@ body.companion-dragging {
   .hero-mosaic-trigger { min-height: 40px; font-size: 10px; }
   .tips-head p { display: none; }
   .tips-toggle { height: 30px; padding: 0 10px; font-size: 9px; }
-  .tips-stage { --tip-w: 210px; height: 368px; perspective: 1300px; }
-  .tip-3d { padding: 18px 16px 14px; border-radius: 20px; }
+  .tips-stage { --tip-w: 210px; height: 368px; perspective: 1800px; }
+  .tip-face { padding: 18px 16px 14px; border-radius: 20px; }
   .tip-icon { width: 36px; height: 36px; border-radius: 11px; }
   .tip-3d h3 { margin-top: 16px; font-size: 17px; }
   .tip-3d p { font-size: 10.5px; line-height: 1.75; }
@@ -2166,11 +2234,20 @@ body.companion-dragging {
     position: relative;
     top: auto;
     left: auto;
+    display: flex;
     width: auto;
     height: auto;
     min-height: 230px;
     transform: none !important;
   }
+
+  .tip-face--front {
+    position: relative;
+    inset: auto;
+    flex: 1 1 auto;
+  }
+
+  .tip-face--back { display: none; }
 }
 
 @media (prefers-reduced-motion: reduce) and (max-width: 800px) {
