@@ -7,7 +7,6 @@ build/
 .env.*.local
 *.tsbuildinfo
 prisma/generated/
-.neon
 .originkit/
 .shots/
 .ai-logs/

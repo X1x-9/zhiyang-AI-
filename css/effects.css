@@ -3055,6 +3055,7 @@ body.companion-dragging {
 
 .chat-main > .chat-input {
   position: relative;
+  z-index: 4;
   margin-top: 15px;
   padding: 10px;
   gap: 8px;

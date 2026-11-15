@@ -545,14 +545,15 @@ function speechErrorMessage(code: string) {
   return "语音输入没有成功，稍后再试。";
 }
 
-function speechChunks(text: string) {
+function speechChunks(text: string, maxLength = 120, firstMaxLength = maxLength) {
   const sentences = text.match(/[^。！？!?；;\n]+[。！？!?；;\n]?/g) ?? [text];
   const chunks: string[] = [];
   let current = "";
   for (const sentence of sentences) {
     const piece = sentence.trim();
     if (!piece) continue;
-    if (current && current.length + piece.length > 120) {
+    const limit = chunks.length === 0 ? firstMaxLength : maxLength;
+    if (current && current.length + piece.length > limit) {
       chunks.push(current);
       current = piece;
     } else {
@@ -595,6 +596,10 @@ function ChatPanel({ identityKey }: { identityKey: string }) {
   const voiceHintTimerRef = React.useRef<number | null>(null);
   const speechRunRef = React.useRef(0);
   const spokenRef = React.useRef<SpeechSynthesisUtterance[]>([]);
+  const audioRef = React.useRef<HTMLAudioElement | null>(null);
+  const audioUrlRef = React.useRef<string | null>(null);
+  const audioStopRef = React.useRef<(() => void) | null>(null);
+  const ttsAbortRef = React.useRef<AbortController | null>(null);
 
   const orderedThreads = React.useMemo(() => [...threads].sort((a, b) => b.updatedAt - a.updatedAt), [threads]);
   const activeThread = threads.find((thread) => thread.id === activeThreadId) ?? threads[0] ?? null;
@@ -727,25 +732,32 @@ function ChatPanel({ identityKey }: { identityKey: string }) {
     }
   }
 
+  function clearAudioPlayback() {
+    ttsAbortRef.current?.abort();
+    ttsAbortRef.current = null;
+    const stop = audioStopRef.current;
+    if (stop) {
+      audioStopRef.current = null;
+      stop();
+    }
+    audioRef.current = null;
+    if (audioUrlRef.current) {
+      URL.revokeObjectURL(audioUrlRef.current);
+      audioUrlRef.current = null;
+    }
+  }
+
   function stopSpeaking() {
     speechRunRef.current += 1;
     spokenRef.current = [];
     if (typeof window !== "undefined" && "speechSynthesis" in window) window.speechSynthesis.cancel();
+    clearAudioPlayback();
     setSpeakingId(null);
   }
 
-  function toggleSpeak(message: ChatMessage) {
-    if (!ttsSupported) return;
-    if (speakingId === message.id) {
-      stopSpeaking();
-      return;
-    }
-    const text = readableText(splitAnswer(message.content).body);
-    if (!text) return;
+  function speakWithBrowser(text: string, run: number) {
     const synth = window.speechSynthesis;
     synth.cancel();
-    const run = speechRunRef.current + 1;
-    speechRunRef.current = run;
     const chunks = speechChunks(text);
     const preferred = synth.getVoices().find((voice) => voice.lang.toLowerCase().startsWith("zh"));
     const utterances = chunks.map((chunk, index) => {
@@ -762,8 +774,102 @@ function ChatPanel({ identityKey }: { identityKey: string }) {
       return utterance;
     });
     spokenRef.current = utterances;
-    setSpeakingId(message.id);
     for (const utterance of utterances) synth.speak(utterance);
+  }
+
+  function playAudioBlob(blob: Blob) {
+    return new Promise<void>((resolve, reject) => {
+      const url = URL.createObjectURL(blob);
+      const audio = new Audio(url);
+      audioRef.current = audio;
+      audioUrlRef.current = url;
+      let settled = false;
+      const finish = (error?: Error) => {
+        if (settled) return;
+        settled = true;
+        audio.onended = null;
+        audio.onerror = null;
+        if (audioStopRef.current === stop) audioStopRef.current = null;
+        if (audioRef.current === audio) audioRef.current = null;
+        if (audioUrlRef.current === url) audioUrlRef.current = null;
+        URL.revokeObjectURL(url);
+        if (error) reject(error);
+        else resolve();
+      };
+      const stop = () => {
+        audio.pause();
+        finish();
+      };
+      audioStopRef.current = stop;
+      audio.onended = () => finish();
+      audio.onerror = () => finish(new Error("audio"));
+      void audio.play().catch((error: unknown) => finish(error instanceof Error ? error : new Error("audio")));
+    });
+  }
+
+  async function playCloudSpeech(text: string, run: number) {
+    const chunks = speechChunks(text, 380, 120);
+    const controller = new AbortController();
+    ttsAbortRef.current = controller;
+    const load = async (chunk: string): Promise<{ blob: Blob } | { error: unknown }> => {
+      try {
+        const response = await fetch("/api/tts", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: chunk }),
+          signal: controller.signal,
+        });
+        if (!response.ok) return { error: new Error(`tts ${response.status}`) };
+        const blob = await response.blob();
+        if (!blob.size) return { error: new Error("tts empty") };
+        return { blob };
+      } catch (error) {
+        return { error };
+      }
+    };
+    try {
+      let pending = load(chunks[0]);
+      let played = 0;
+      for (let index = 0; index < chunks.length; index += 1) {
+        const result = await pending;
+        if (speechRunRef.current !== run) return;
+        if (!("blob" in result)) {
+          if (!played) throw Object.assign(new Error("tts failed"), { played });
+          setSpeakingId(null);
+          return;
+        }
+        if (index + 1 < chunks.length) pending = load(chunks[index + 1]);
+        await playAudioBlob(result.blob);
+        played += 1;
+        if (speechRunRef.current !== run) return;
+      }
+      if (speechRunRef.current === run) setSpeakingId(null);
+    } finally {
+      if (ttsAbortRef.current === controller) ttsAbortRef.current = null;
+    }
+  }
+
+  function toggleSpeak(message: ChatMessage) {
+    if (speakingId === message.id) {
+      stopSpeaking();
+      return;
+    }
+    const text = readableText(splitAnswer(message.content).body);
+    if (!text) return;
+    stopSpeaking();
+    const run = speechRunRef.current + 1;
+    speechRunRef.current = run;
+    setSpeakingId(message.id);
+    void playCloudSpeech(text, run).catch((error: unknown) => {
+      if (speechRunRef.current !== run) return;
+      const played = typeof error === "object" && error !== null && "played" in error ? Number((error as { played?: number }).played ?? 0) : 0;
+      if (played || !ttsSupported) {
+        setSpeakingId(null);
+        if (!played) showVoiceHint("朗读暂时不可用，稍后再试。");
+        return;
+      }
+      speakWithBrowser(text, run);
+    });
   }
 
   async function send(value: string, options: { appendUser?: boolean; reaction?: ChatReactionId } = {}) {
@@ -999,7 +1105,7 @@ function ChatPanel({ identityKey }: { identityKey: string }) {
                       ))}
                     </div>
                   )}
-                  {ttsSupported && message.role === "assistant" && !message.failed && message.content.trim() && message.id !== streamingMessageId && (
+                  {message.role === "assistant" && !message.failed && message.content.trim() && message.id !== streamingMessageId && (
                     <button
                       type="button"
                       className={`message-speak${speakingId === message.id ? " is-speaking" : ""}`}

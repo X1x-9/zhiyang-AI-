@@ -1329,7 +1329,7 @@ export function MealRecorder() {
                   </figure>
                   <div className="meal-cam-actions">
                     <button type="button" className="meal-cam-action" disabled={cameraBusy} onClick={() => cameraInput.current?.click()}>
-                      <Camera size={14} />重新拍摄
+                      <Camera size={14} />重新拖入 / 上传
                     </button>
                     <button type="button" className="meal-cam-action" disabled={cameraBusy} onClick={() => fileInput.current?.click()}>
                       从相册更换
@@ -1342,11 +1342,11 @@ export function MealRecorder() {
                 </>
               ) : (
                 <>
-                  <strong className="meal-cam-title">镜头就是快门</strong>
-                  <p className="meal-cam-copy">拍照、拖入或粘贴截图都可以。</p>
+                  <strong className="meal-cam-title">快来记录美好的一餐吧！</strong>
+                  <p className="meal-cam-copy">上传、拖入或粘贴截图都可以。</p>
                   <div className="meal-cam-actions">
                     <button type="button" className="meal-cam-action is-primary" disabled={cameraBusy} onClick={() => cameraInput.current?.click()}>
-                      <Camera size={14} />打开相机拍摄
+                      <Camera size={14} />拖入 / 上传
                     </button>
                     <button type="button" className="meal-cam-action" disabled={cameraBusy} onClick={() => fileInput.current?.click()}>
                       从相册选择
@@ -1358,7 +1358,7 @@ export function MealRecorder() {
             </div>
           </div>
           <input ref={fileInput} className="sr-only" type="file" accept="image/*" aria-label="选择餐食照片" onChange={(event) => { void handleFile(event.target.files?.[0]); event.target.value = ""; }} />
-          <input ref={cameraInput} className="sr-only" type="file" accept="image/*" capture="environment" aria-label="拍摄餐食照片" onChange={(event) => { void handleFile(event.target.files?.[0]); event.target.value = ""; }} />
+          <input ref={cameraInput} className="sr-only" type="file" accept="image/*" capture="environment" aria-label="上传餐食照片" onChange={(event) => { void handleFile(event.target.files?.[0]); event.target.value = ""; }} />
           {(preparing || analyze.isPending) && <div className="mt-3"><HamsterLoader size="compact" label={preparing ? "正在压缩照片…" : "正在识别与分析…"} /></div>}
           <label className="mt-4 block text-sm font-medium" htmlFor="meal-note">餐食补充说明（可选）</label>
           <textarea id="meal-note" className="meal-note" value={note} onChange={(event) => setNote(event.target.value)} placeholder="例如：米饭只有半碗，鸡胸肉是煎的，少油…" />
