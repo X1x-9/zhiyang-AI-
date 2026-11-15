@@ -1,0 +1,228 @@
+.training-card {
+  min-height: 149px;
+  display: flex;
+  flex-direction: column;
+}
+
+.training-content--compact {
+  flex: 1;
+  align-items: center;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.training-content--compact .training-info {
+  min-width: 0;
+}
+
+.training-content--compact .training-info p {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.training-card .card-empty {
+  flex: 1;
+  align-items: center;
+}
+
+.training-safety {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Fancy start button — pill, inner gloss, layered waves and hover text swap. */
+.training-start {
+  position: relative;
+  flex: none;
+  display: grid;
+  place-items: center;
+  height: 46px;
+  min-width: 132px;
+  padding: 0 22px;
+  border: 0;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #6d9578 0%, #4d755a 48%, #355b46 100%);
+  color: #f4f1ea;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  overflow: hidden;
+  isolation: isolate;
+  cursor: pointer;
+  text-shadow: 0 1px 2px rgba(30, 55, 40, 0.22);
+  -webkit-box-reflect: below 6px linear-gradient(to bottom, rgba(0, 0, 0, 0) 70%, rgba(0, 0, 0, 0.1));
+  box-shadow:
+    0 8px 18px rgba(53, 91, 70, 0.26),
+    inset 0 1px 0 rgba(255, 255, 255, 0.28);
+  transition: transform 0.25s ease, box-shadow 0.25s ease, filter 0.25s ease;
+}
+
+.training-start:hover {
+  transform: translateY(-2px);
+  filter: saturate(1.08);
+  box-shadow:
+    0 12px 22px rgba(53, 91, 70, 0.32),
+    inset 0 1px 0 rgba(255, 255, 255, 0.34);
+}
+
+.training-start:active {
+  transform: translateY(0) scale(0.985);
+}
+
+.training-start:focus-visible {
+  outline: 3px solid #9bbba2;
+  outline-offset: 3px;
+}
+
+.training-start::after {
+  content: "";
+  position: absolute;
+  inset: 5px;
+  border-radius: inherit;
+  background: linear-gradient(180deg, rgba(244, 241, 234, 0.28), rgba(244, 241, 234, 0.05) 58%, rgba(53, 91, 70, 0.1));
+  box-shadow: inset 0 0 0 1px rgba(244, 241, 234, 0.16);
+  z-index: 1;
+  pointer-events: none;
+}
+
+.training-start__waves,
+.training-start__crest {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 100%;
+  pointer-events: none;
+}
+
+.training-start__waves {
+  height: 160%;
+  z-index: 0;
+  opacity: 0.8;
+  transform: translateY(16%) rotate(180deg) scaleX(1.2);
+  transition: transform 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.training-start:hover .training-start__waves {
+  transform: translateY(8%) rotate(180deg) scaleX(1.2);
+}
+
+.training-start__crest {
+  height: 112%;
+  z-index: 2;
+  transform: translateY(38%);
+  transition: transform 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.training-start:hover .training-start__crest {
+  transform: translateY(24%) scaleX(0.96);
+}
+
+.training-start__shine {
+  position: absolute;
+  top: -60%;
+  left: -130%;
+  z-index: 3;
+  width: 55%;
+  height: 220%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.34), transparent);
+  transform: rotate(20deg);
+  transition: left 0.7s ease;
+  pointer-events: none;
+}
+
+.training-start:hover .training-start__shine {
+  left: 145%;
+}
+
+.training-start__text {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  display: grid;
+  place-items: center;
+  transition: transform 0.3s ease, opacity 0.3s ease;
+  pointer-events: none;
+}
+
+.training-start__text--idle {
+  transform: translateY(0);
+  opacity: 1;
+}
+
+.training-start__text--hover {
+  transform: translateY(115%);
+  opacity: 0;
+}
+
+.training-start:hover .training-start__text--idle {
+  transform: translateY(-115%);
+  opacity: 0;
+}
+
+.training-start:hover .training-start__text--hover {
+  transform: translateY(0);
+  opacity: 1;
+}
+
+@media (max-width: 520px) {
+  .training-content--compact {
+    gap: 10px;
+  }
+
+  .training-start {
+    height: 40px;
+    min-width: 104px;
+    padding: 0 14px;
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    -webkit-box-reflect: none;
+  }
+
+  .training-content--compact .training-info p {
+    font-size: 9px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .training-start,
+  .training-start__waves,
+  .training-start__crest,
+  .training-start__shine,
+  .training-start__text {
+    transition: none;
+  }
+
+  .training-start:hover {
+    transform: none;
+  }
+
+  .training-start:hover .training-start__waves {
+    transform: translateY(16%) rotate(180deg) scaleX(1.2);
+  }
+
+  .training-start:hover .training-start__crest {
+    transform: translateY(38%);
+  }
+
+  .training-start:hover .training-start__shine {
+    left: -130%;
+  }
+
+  .training-start:hover .training-start__text--idle {
+    transform: translateY(0);
+    opacity: 1;
+  }
+
+  .training-start:hover .training-start__text--hover {
+    transform: translateY(115%);
+    opacity: 0;
+  }
+}

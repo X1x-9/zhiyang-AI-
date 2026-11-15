@@ -778,15 +778,15 @@
 .landing-sections .landing-footer__brand > span {
   color: #26362c;
   font-family: "Lemi XiaoYu", "Noto Serif SC", serif;
-  font-size: 21px;
+  font-size: 24px;
 }
 .landing-sections .landing-footer__ai {
-  margin-left: 5px;
+  margin-left: 7px;
   color: #78967d;
-  font-family: "Raleway", "Noto Sans SC", sans-serif;
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: 0.14em;
+  font-family: "Lemi XiaoYu", "Noto Serif SC", serif;
+  font-size: 22px;
+  font-weight: 400;
+  letter-spacing: 0.04em;
 }
 .landing-sections .landing-footer__brand p {
   margin: 0;
@@ -1049,4 +1049,21 @@
     transform: none;
     transition: none;
   }
+}
+
+/* Landing-only: keep the native page scrollbar out of the composition.
+   Scrolling itself is untouched (wheel, trackpad, keyboard and the rail still work). */
+html:has(.landing-shell:not([hidden])),
+html:has(.landing-shell:not([hidden])) body,
+html:has(.landing-shell:not([hidden])) .landing-shell {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+html:has(.landing-shell:not([hidden]))::-webkit-scrollbar,
+html:has(.landing-shell:not([hidden])) body::-webkit-scrollbar,
+html:has(.landing-shell:not([hidden])) .landing-shell::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
 }

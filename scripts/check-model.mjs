@@ -8,13 +8,32 @@ if (!process.env.OPENAI_API_KEY) {
 }
 
 const baseURL = process.env.OPENAI_BASE_URL?.trim();
-const provider = createOpenAI({ apiKey: process.env.OPENAI_API_KEY, ...(baseURL ? { baseURL } : {}) });
+const chatFetch = process.env.CHAT_DISABLE_THINKING === "true"
+  ? async (input, init) => {
+      if (init?.body && typeof init.body === "string") {
+        try {
+          const body = JSON.parse(init.body);
+          if (body && typeof body === "object" && body.thinking === undefined) {
+            init = { ...init, body: JSON.stringify({ ...body, thinking: { type: "disabled" } }) };
+          }
+        } catch {
+          // Non-JSON request bodies are passed through unchanged.
+        }
+      }
+      return fetch(input, init);
+    }
+  : undefined;
+const provider = createOpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+  ...(baseURL ? { baseURL } : {}),
+  ...(chatFetch ? { fetch: chatFetch } : {}),
+});
 
 try {
   const { text } = await generateText({
     model: provider(process.env.OPENAI_MODEL || "gpt-4.1-mini"),
     prompt: "只回复两个字：可用",
-    maxOutputTokens: 16,
+    maxOutputTokens: 256,
   });
   console.log("CHAT_OK", JSON.stringify(text.trim()));
 } catch (error) {

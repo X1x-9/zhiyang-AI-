@@ -65,22 +65,25 @@
 }
 
 .landing-shell .hero-38 .brand {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 9px;
   border: 0;
   background: transparent;
   padding: 6px 0;
   font-family: "Lemi XiaoYu", "Noto Sans SC", "Microsoft YaHei", sans-serif;
-  font-size: 24px;
+  font-size: 34px;
   font-weight: 400;
+  line-height: 1;
   letter-spacing: 0;
 }
 .landing-shell .hero-38 .brand-ai {
-  margin-left: 6px;
   color: #78967d;
-  font-family: "Raleway", "Noto Sans SC", sans-serif;
-  font-size: 12px;
-  font-weight: 800;
-  letter-spacing: 0.14em;
-  vertical-align: middle;
+  font-family: "Lemi XiaoYu", "Noto Sans SC", "Microsoft YaHei", sans-serif;
+  font-size: 31px;
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: 0.04em;
 }
 
 .landing-shell .hero-38 .nav-links {
@@ -354,10 +357,11 @@
     padding: 12px 18px 0;
   }
   .landing-shell .hero-38 .brand {
-    font-size: 20px;
+    gap: 7px;
+    font-size: 28px;
   }
   .landing-shell .hero-38 .brand-ai {
-    font-size: 11px;
+    font-size: 25px;
   }
   .landing-shell .hero-38 .nav-links {
     gap: 20px;

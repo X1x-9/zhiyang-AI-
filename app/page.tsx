@@ -7,9 +7,12 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Camera, ChartNoAxesCombined, ChevronRight, Droplets, Dumbbell, LayoutDashboard, Leaf, Loader2, Maximize2, MessageCircle, Mic, Minimize2, Plus, Salad, Square, Trash2, UserRound, Utensils, Volume2, X } from "lucide-react";
 import { AccountPanel } from "@/components/account-panel";
 import { AuthCheckingScreen, AuthScreen } from "@/components/auth-screen";
+import { ProfilePrompt } from "@/components/profile-prompt";
+import { TrainingStartButton } from "@/components/training-start-button";
 import { Button } from "@/components/ui/button";
 import Hero38 from "@/components/originkit/hero-38";
 import { LandingSections, MochiFigure } from "@/components/landing/landing-sections";
+import { LandingScrollbar } from "@/components/landing/landing-scrollbar";
 import { DashboardHero } from "@/components/dashboard-hero";
 import { BackToTop, FloatingCompanion, GrowingLoader, HamsterLoader, HealthTipsCarousel, ScrollProgress } from "@/components/experience";
 import { MealRecorder } from "@/components/meal-recorder";
@@ -72,7 +75,6 @@ function DemoNotice({ notice }: { notice?: string }) {
 function Dashboard({ identityKey }: { identityKey: string }) {
   const setPage = useHealthStore((state) => state.setPage);
   const { data, isPending, isError, error, refetch } = useQuery({ queryKey: ["dashboard"], queryFn: getDashboard, retry: authAwareRetry });
-  const [trainingStarted, setTrainingStarted] = React.useState(false);
   const [waterLog, setWaterLog] = React.useState<Record<string, number>>(() => loadWaterLog(identityKey));
   const waterAdded = waterLog[waterTodayKey()] ?? 0;
 
@@ -117,25 +119,33 @@ function Dashboard({ identityKey }: { identityKey: string }) {
         <div className="dashboard-pair">
           <section className="surface training-card">
             <SectionTitle title="今天的身体时间" action={<button onClick={() => setPage("exercise")}>查看运动计划 <ChevronRight size={13} /></button>} />
-            {data.workout ? (
+            {data.workout.status === "scheduled" ? (
               <>
-                <div className="training-content">
+                <div className="training-content training-content--compact">
                   <div className="training-icon"><Dumbbell size={21} /></div>
-                  <div className="training-info"><strong>{data.workout.title}</strong><p>{data.workout.exercises.join("、")}</p></div>
-                  <span className="training-time">约 {data.workout.durationMinutes} 分钟</span>
+                  <div className="training-info">
+                    <strong>{data.workout.title}</strong>
+                    <p>{data.workout.exercises.join("、")} · 轻松</p>
+                  </div>
+                  <TrainingStartButton onStart={() => setPage("exercise")} />
                 </div>
-                <div className="training-bottom">
-                  <span>{trainingStarted ? "已开始 · 按自己的状态调整强度" : "强度：轻松 · 可在家完成"}</span>
-                  {trainingStarted
-                    ? <Button variant="secondary" onClick={() => setTrainingStarted(false)}>结束训练</Button>
-                    : <Button onClick={() => setTrainingStarted(true)}>开始训练</Button>}
-                </div>
-                {trainingStarted && <p className="training-note" role="status">这里只做计划提醒，不记录心率或动作数据；身体不适请立即停止。</p>}
+                <p className="training-safety">这里只做计划提醒，不记录心率或动作数据；身体不适请立即停止。</p>
               </>
             ) : (
               <div className="card-empty">
                 <div className="training-icon"><Dumbbell size={21} /></div>
-                <div><strong>今天还没有训练安排</strong><p>训练计划还没有接入个人记录，先按自己的节奏活动。</p></div>
+                <div>
+                  <strong>{data.workout.status === "rest" ? "今天是休息日" : "计划还没有启用"}</strong>
+                  <p>
+                    {data.workout.status === "rest"
+                      ? data.workout.nextLabel
+                        ? `下一次训练在${data.workout.nextLabel}，今天按自己的节奏活动。`
+                        : "今天没有安排训练，按自己的节奏活动。"
+                      : data.workout.hasPlan
+                        ? "去运动计划启用后，这里会显示今天的安排。"
+                        : "去运动计划生成并启用后，这里会显示今天的安排。"}
+                  </p>
+                </div>
               </div>
             )}
           </section>
@@ -1302,6 +1312,7 @@ function CoreApp({ onHome }: { onHome: () => void }) {
   const previousPageRef = React.useRef<Page>(page);
   const [slideOrigin, setSlideOrigin] = React.useState<Page>(page);
   const [slideFrom, setSlideFrom] = React.useState<Page | null>(null);
+  const [profilePromptDismissed, setProfilePromptDismissed] = React.useState(false);
   if (slideOrigin !== page) {
     setSlideFrom(slideOrigin);
     setSlideOrigin(page);
@@ -1316,6 +1327,8 @@ function CoreApp({ onHome }: { onHome: () => void }) {
   const pendingMeals = dashboard?.pendingMeals ?? 0;
   const activeNavIndex = Math.max(0, navigation.findIndex((item) => item.id === page));
   const hasStoredSpace = Boolean(storedSpaceProfile?.savedAt);
+  const profileMissing = profileQuery.isSuccess && !profileQuery.data?.profile?.savedAt;
+  const showProfilePrompt = profileMissing && !profilePromptDismissed && page !== "profile";
   const identityKey = profileQuery.data?.account?.email ?? (profileQuery.data?.demo ? "demo" : "pending");
   const spaceProfile = React.useMemo(() => {
     if (storedSpaceProfile) return storedSpaceProfile;
@@ -1329,10 +1342,17 @@ function CoreApp({ onHome }: { onHome: () => void }) {
 
   const resetAccountData = React.useCallback(() => {
     setSpaceProfile(null);
+    setProfilePromptDismissed(false);
     void queryClient.resetQueries({ queryKey: ["dashboard"] });
     void queryClient.resetQueries({ queryKey: ["meals"] });
     void queryClient.resetQueries({ queryKey: ["profile"] });
   }, [queryClient, setSpaceProfile]);
+
+  const dismissProfilePrompt = React.useCallback(() => setProfilePromptDismissed(true), []);
+  const goToProfileFromPrompt = React.useCallback(() => {
+    setProfilePromptDismissed(true);
+    setPage("profile");
+  }, [setPage]);
 
   const handleAccountChanged = React.useCallback(() => {
     useHealthStore.setState({ page: "dashboard" });
@@ -1441,6 +1461,7 @@ function CoreApp({ onHome }: { onHome: () => void }) {
 
     <FloatingCompanion hidden={page === "coach" || page === "profile"} onOpen={() => setPage("coach")} />
     <BackToTop />
+    {showProfilePrompt && <ProfilePrompt onGo={goToProfileFromPrompt} onClose={dismissProfilePrompt} />}
   </div>;
 }
 
@@ -1505,6 +1526,7 @@ export default function HomePage() {
     <main className="landing-shell" hidden={!landing}>
       <Hero38 onEnter={(target: Page) => enterCore(target)} />
       <LandingSections onEnter={(target: Page) => enterCore(target, landingAnchors[target])} />
+      {landing && <LandingScrollbar />}
     </main>
     {!landing && <CoreApp onHome={() => setLanding(true)} />}
   </>;

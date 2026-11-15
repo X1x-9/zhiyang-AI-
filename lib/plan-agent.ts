@@ -1,6 +1,6 @@
 import { generateText, stepCountIs, tool } from "ai";
 import { z } from "zod";
-import { getModel } from "./ai-tools";
+import { getPlanModel, getPlanModelName } from "./ai-tools";
 import { deriveNutritionTargets } from "./nutrition-goal";
 import type {
   PlanAgentAdjustment,
@@ -368,19 +368,19 @@ export async function runPlanAgent(input: PlanAgentInput): Promise<PlanAgentDraf
 
   try {
     await generateText({
-      model: getModel(),
+      model: getPlanModel(),
       system,
       prompt: `请基于以下计划上下文调用工具并给出建议。\n${JSON.stringify(context)}`,
       tools,
       stopWhen: stepCountIs(8),
-      maxOutputTokens: 900,
+      maxOutputTokens: 1600,
       temperature: 0.2,
     });
 
     if (!captured.mealToolCalled && !captured.targetToolCalled && !captured.ragCalled) {
       return {
         status: "FAILED",
-        model: process.env.OPENAI_MODEL || "gpt-4.1-mini",
+        model: getPlanModelName(),
         fallbackReason: "模型本次没有调用计划工具，计划按确定性规则生成。",
         focus: "none",
         focusNote: null,
@@ -424,7 +424,7 @@ export async function runPlanAgent(input: PlanAgentInput): Promise<PlanAgentDraf
 
     return {
       status: "OK",
-      model: process.env.OPENAI_MODEL || "gpt-4.1-mini",
+      model: getPlanModelName(),
       fallbackReason: null,
       focus: captured.focus,
       focusNote: captured.focusNote,
@@ -453,7 +453,7 @@ export async function runPlanAgent(input: PlanAgentInput): Promise<PlanAgentDraf
     }
     return {
       status: "FAILED",
-      model: process.env.OPENAI_MODEL || "gpt-4.1-mini",
+      model: getPlanModelName(),
       fallbackReason: "AI 建议暂时没有完成，计划按确定性规则生成。",
       focus: "none",
       focusNote: null,

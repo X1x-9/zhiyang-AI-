@@ -70,3 +70,55 @@ export function assessHealthSafety(text: string): SafetyAssessment {
 
   return { level: "routine", reasons: [], directive: "" };
 }
+
+export type OutputGuardCategory = "self_harm_method" | "medication" | "diagnosis" | "care_dismissal";
+
+type OutputGuardRule = { id: OutputGuardCategory; pattern: RegExp; replacement: string };
+
+const OUTPUT_GUARD_RULES: OutputGuardRule[] = [
+  {
+    id: "self_harm_method",
+    pattern: /(?:自杀|轻生)(?:的)?(?:方法|方式|办法)|怎么(?:自杀|轻生)/,
+    replacement: "涉及自伤风险时，请立即联系 110 或心理援助热线 12356，并尽量不要独处。",
+  },
+  {
+    id: "medication",
+    pattern: /(?:建议|可以|应该|需要|不妨|直接)(?:自行)?(?:停|减|加|换)(?:药|用|服)|(?:建议|可以|应该|需要|不妨|试试)(?:服用|用药|吃药|注射|打)[^。！？；\n]{0,20}(?:药|片|胶囊|针剂|mg|毫克|单位|布洛芬|对乙酰氨基酚|阿司匹林|二甲双胍|胰岛素|褪黑素|抗生素|维生素)|(?:服用|用药|吃药|注射)[^。！？；\n]{0,16}\d+(?:\.\d+)?\s*(?:mg|毫克|片|粒|单位|iu)|(?:建议|可以|应该|需要)(?:吃|用)[^。！？；\n]{0,12}(?:维生素|钙片|鱼油|蛋白粉|褪黑素|布洛芬|对乙酰氨基酚|二甲双胍|胰岛素)[^。！？；\n]{0,12}(?:\d|片|粒|mg|毫克)/i,
+    replacement: "用药、剂量与是否停药请遵循医生的处方，我不能提供个体用药建议。",
+  },
+  {
+    id: "diagnosis",
+    pattern: /(?:你|您|这|那)(?:得了|患了|患有|确诊为|诊断为)|(?:确诊|诊断)(?:为|是)|(?:你|您|这|那)?(?:很可能是|可能是|应该是|就是|属于|是)[^。！？；\n]{0,4}(?:糖尿病|高血压|贫血|骨质疏松|感冒|流感|胃炎|胃溃疡|肠炎|焦虑症|抑郁症|失眠症|脂肪肝|冠心病|甲状腺|多囊|感染|综合征)/,
+    replacement: "具体原因需要医生结合检查判断，我不能给出疾病诊断。",
+  },
+  {
+    id: "care_dismissal",
+    pattern: /(?:不用|无需|不必|不需要)(?:去)?(?:医院|就医|看医生|检查|复查)|(?:没|没有)大碍/,
+    replacement: "如果症状持续或加重，建议及时就医，不要仅凭线上信息判断。",
+  },
+];
+
+const OUTPUT_GUARD_ORDER: OutputGuardCategory[] = ["self_harm_method", "medication", "diagnosis", "care_dismissal"];
+const SENTENCE_PATTERN = /[^。！？!?；;\n]+[。！？!?；;\n]?/g;
+
+export const OUTPUT_GUARD_NOTICE = "以上为一般健康信息，不能替代医生的诊断和处方。";
+
+export type OutputGuardResult = {
+  text: string;
+  flagged: OutputGuardCategory[];
+  changed: boolean;
+};
+
+export function guardAssistantOutput(text: string): OutputGuardResult {
+  const flagged = new Set<OutputGuardCategory>();
+  const guarded = text.replace(SENTENCE_PATTERN, (sentence) => {
+    const hits = OUTPUT_GUARD_RULES.filter((rule) => rule.pattern.test(sentence));
+    if (!hits.length) return sentence;
+    for (const hit of hits) flagged.add(hit.id);
+    const category = OUTPUT_GUARD_ORDER.find((id) => flagged.has(id)) ?? hits[0].id;
+    const replacement = OUTPUT_GUARD_RULES.find((rule) => rule.id === category)?.replacement ?? hits[0].replacement;
+    const prefix = sentence.match(/^(\s*(?:\d+[.、]|[·•-])\s*)/)?.[1] ?? "";
+    return `${prefix}${replacement}${sentence.endsWith("\n") ? "\n" : ""}`;
+  });
+  return { text: guarded, flagged: [...flagged], changed: flagged.size > 0 };
+}

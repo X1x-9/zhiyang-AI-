@@ -20,6 +20,7 @@ export type PlanRevisionOverride = {
   directive: PlanRevisionDirective;
   request: string | null;
   baseVersion: number;
+  skipAgent?: boolean;
 };
 
 export type PlanState = {
@@ -111,6 +112,7 @@ async function runPlanDraft(
   meals: PlanMealRecord[],
   currentPlan: PlanDocument | null,
   revision: { directive: PlanRevisionDirective | null; request: string | null },
+  options: { skipAgent?: boolean } = {},
 ) {
   const { mealSummary, nextVersion, targets } = planContext(profile, meals, currentPlan);
   const city = profile.city.trim();
@@ -124,15 +126,31 @@ async function runPlanDraft(
     revisionRequest: revision.request,
     weather,
   });
-  const agent = await runPlanAgent({
-    profile,
-    targets,
-    mealSummary,
-    currentPlanVersion: currentPlan?.version ?? null,
-    nextVersion,
-    weather,
-    movement: preview.movement,
-  });
+  const agent = options.skipAgent
+    ? {
+        status: "DIRECT" as const,
+        model: null,
+        fallbackReason: null,
+        focus: "none" as const,
+        focusNote: "已按对话确认的调整直接更新计划。",
+        rationale: [
+          `已按确认内容直接更新：${revision.directive?.summary?.trim() || revision.request?.trim() || "本次调整"}`,
+        ],
+        adjustments: [],
+        references: [],
+        citations: [],
+        toolLog: [],
+        ragStatus: "NOT_CALLED" as const,
+      }
+    : await runPlanAgent({
+        profile,
+        targets,
+        mealSummary,
+        currentPlanVersion: currentPlan?.version ?? null,
+        nextVersion,
+        weather,
+        movement: preview.movement,
+      });
   return { mealSummary, agent, weather };
 }
 
@@ -199,12 +217,15 @@ async function readLatestPlan(profileId: string): Promise<PlanDocument | null> {
   }
 }
 
-function saveToMemory(identity: Identity, plan: PlanDocument): StoredPlan {
+function saveToMemory(identity: Identity, plan: PlanDocument, activate = false): StoredPlan {
   if (identity.kind === "demo") clearDemoAdjustmentMemory(identity.sessionId);
   const store = memoryStore();
   const key = memoryKey(identity);
   const versions = store.get(key) ?? [];
-  versions.push({ plan, createdAt: plan.generatedAt, active: false });
+  if (activate) {
+    for (const record of versions) record.active = false;
+  }
+  versions.push({ plan, createdAt: plan.generatedAt, active: activate });
   store.set(key, versions);
   return { plan, persisted: false, demo: identity.kind === "demo" };
 }
@@ -220,9 +241,11 @@ export async function generatePlanVersion(
     const revision = revisionOverride
       ? resolveRevisionOverride(current, revisionOverride)
       : await resolveRevision(feedback, profile, current);
-    const draft = await runPlanDraft(profile, demoMealsForPlan(identity), current, revision);
+    const draft = await runPlanDraft(profile, demoMealsForPlan(identity), current, revision, {
+      skipAgent: revisionOverride?.skipAgent,
+    });
     const plan = composePlan(profile, draft.mealSummary, draft.agent, current, revision, draft.weather);
-    return saveToMemory(identity, plan);
+    return saveToMemory(identity, plan, true);
   }
   if (!process.env.DATABASE_URL) throw new PlanStorageError();
 
@@ -272,14 +295,30 @@ export async function generatePlanVersion(
     carbsG: meal.carbsG,
     fatG: meal.fatG,
   }));
-  const draft = await runPlanDraft(profile, meals, currentPlan, revision);
+  const draft = await runPlanDraft(profile, meals, currentPlan, revision, {
+    skipAgent: revisionOverride?.skipAgent,
+  });
 
   for (let attempt = 0; ; attempt += 1) {
     const plan = composePlan(profile, draft.mealSummary, draft.agent, currentPlan, revision, draft.weather);
     try {
-      await prisma.planVersion.create({
+      const created = await prisma.planVersion.create({
         data: { profileId: identity.profileId, version: plan.version, plan },
       });
+      try {
+        await prisma.$transaction([
+          prisma.planVersion.updateMany({
+            where: { profileId: identity.profileId, activeAt: { not: null } },
+            data: { activeAt: null },
+          }),
+          prisma.planVersion.update({
+            where: { id: created.id },
+            data: { activeAt: new Date() },
+          }),
+        ]);
+      } catch (activationError) {
+        console.error("PLAN AUTO ACTIVATE ERROR", activationError);
+      }
       await prisma.planAdjustment.deleteMany({ where: { profileId: identity.profileId } }).catch((error) => {
         console.error("PLAN ADJUSTMENT INVALIDATE ERROR", error);
       });

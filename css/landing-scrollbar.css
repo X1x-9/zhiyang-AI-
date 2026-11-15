@@ -1,0 +1,53 @@
+.landing-scrollbar {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 45;
+  width: 18px;
+  opacity: 0;
+  transition: opacity 0.22s ease;
+  touch-action: none;
+}
+
+.landing-scrollbar__thumb {
+  position: absolute;
+  right: 4px;
+  width: 5px;
+  border-radius: 999px;
+  background: rgba(53, 91, 70, 0.24);
+  box-shadow: 0 0 0 1px rgba(251, 252, 247, 0.4);
+  transition: background 0.18s ease, width 0.18s ease, right 0.18s ease;
+}
+
+.landing-scrollbar.is-visible {
+  opacity: 1;
+  cursor: grab;
+}
+
+.landing-scrollbar:active {
+  cursor: grabbing;
+}
+
+.landing-scrollbar.is-visible .landing-scrollbar__thumb {
+  background: rgba(53, 91, 70, 0.34);
+}
+
+.landing-scrollbar:hover .landing-scrollbar__thumb {
+  right: 3px;
+  width: 7px;
+  background: rgba(53, 91, 70, 0.46);
+}
+
+@media (hover: none) {
+  .landing-scrollbar {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .landing-scrollbar,
+  .landing-scrollbar__thumb {
+    transition: none;
+  }
+}

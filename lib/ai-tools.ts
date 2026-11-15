@@ -60,6 +60,23 @@ export function createHealthTools(options: HealthToolOptions = {}) {
   return createHealthToolSet(options);
 }
 
+function withThinking(mode: "enabled" | "disabled", effort?: string): typeof fetch {
+  return async (input, init) => {
+    if (!init?.body || typeof init.body !== "string") return fetch(input, init);
+    try {
+      const body = JSON.parse(init.body);
+      if (body && typeof body === "object" && body.thinking === undefined) {
+        const next = { ...body, thinking: { type: mode } };
+        if (effort) next.reasoning_effort = effort;
+        init = { ...init, body: JSON.stringify(next) };
+      }
+    } catch {
+      // Non-JSON request bodies are passed through unchanged.
+    }
+    return fetch(input, init);
+  };
+}
+
 export function getProvider() {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) throw new Error("OPENAI_API_KEY is not configured.");
@@ -67,9 +84,38 @@ export function getProvider() {
   return baseURL ? createOpenAI({ apiKey, baseURL }) : openai;
 }
 
+function getChatProvider() {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) throw new Error("OPENAI_API_KEY is not configured.");
+  const baseURL = process.env.OPENAI_BASE_URL?.trim();
+  const chatFetch = process.env.CHAT_DISABLE_THINKING === "true" ? withThinking("disabled") : undefined;
+  return createOpenAI({ apiKey, ...(baseURL ? { baseURL } : {}), ...(chatFetch ? { fetch: chatFetch } : {}) });
+}
+
+function getPlanProvider() {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) throw new Error("OPENAI_API_KEY is not configured.");
+  const baseURL = process.env.OPENAI_BASE_URL?.trim();
+  const planFetch = process.env.PLAN_ENABLE_THINKING === "true"
+    ? withThinking("enabled", process.env.PLAN_REASONING_EFFORT?.trim() || undefined)
+    : undefined;
+  return createOpenAI({ apiKey, ...(baseURL ? { baseURL } : {}), ...(planFetch ? { fetch: planFetch } : {}) });
+}
+
+export function getChatModelName() {
+  return process.env.OPENAI_MODEL || "gpt-4.1-mini";
+}
+
+export function getPlanModelName() {
+  return process.env.PLAN_MODEL?.trim() || getChatModelName();
+}
+
 export function getModel() {
-  const provider = getProvider();
-  return provider(process.env.OPENAI_MODEL || "gpt-4.1-mini");
+  return getChatProvider()(getChatModelName());
+}
+
+export function getPlanModel() {
+  return getPlanProvider()(getPlanModelName());
 }
 
 // Vision can use its own provider so it can be swapped independently of the

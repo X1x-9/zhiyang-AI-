@@ -11,10 +11,35 @@ import {
 import { IdentityError, resolveIdentity } from "@/lib/identity";
 import { deriveNutritionTargets } from "@/lib/nutrition-goal";
 import { loadProfile } from "@/lib/profile-store";
-import { chinaWeekDates, profileWeightPoint, weightDateLabel, type WeekSummary } from "@/lib/dashboard";
+import { chinaWeekDates, profileWeightPoint, weightDateLabel, type TodayWorkout, type WeekSummary } from "@/lib/dashboard";
+import type { PlanDocument } from "@/lib/plan-engine";
 import { readProfileWeightKg } from "@/lib/space";
 import { listWeightEntries } from "@/lib/weight-store";
 import { listWorkoutRecords } from "@/lib/workout-store";
+
+function buildTodayWorkout(activePlan: PlanDocument | null, hasPlan: boolean): TodayWorkout {
+  if (!activePlan) return { status: "inactive", hasPlan };
+  const week = activePlan.movement.week;
+  const todayIndex = chinaWeekDates().findIndex((day) => day.isToday);
+  const todaySession = todayIndex >= 0 ? week[todayIndex]?.session : null;
+  if (todaySession) {
+    return {
+      status: "scheduled",
+      title: todaySession.title,
+      durationMinutes: todaySession.minutes,
+      exercises: todaySession.focus.split(/\s*[·、]\s*/).filter(Boolean),
+    };
+  }
+  for (let offset = 1; offset <= 7; offset += 1) {
+    const index = (Math.max(todayIndex, 0) + offset) % 7;
+    const session = week[index]?.session;
+    if (session) {
+      const wraps = index < todayIndex || offset === 7;
+      return { status: "rest", nextLabel: `${wraps ? "下" : ""}${week[index].label}` };
+    }
+  }
+  return { status: "rest", nextLabel: null };
+}
 
 export async function GET() {
   try {
@@ -41,7 +66,7 @@ export async function GET() {
 
     const { start, end } = chinaDayRange();
     const weekStart = chinaWeekStart();
-    const [todayMeals, pendingMeals, weekMeals, weightEntries] = await Promise.all([
+    const [todayMeals, pendingMeals, weekMeals, weightEntries, activePlanRow, planTotal] = await Promise.all([
       prisma.mealRecord.findMany({
         where: { profileId: identity.profileId, status: "CONFIRMED", eatenAt: { gte: start, lt: end } },
         select: { estimatedKcal: true, proteinG: true, carbsG: true, fatG: true },
@@ -52,6 +77,11 @@ export async function GET() {
         select: { eatenAt: true, estimatedKcal: true },
       }),
       listWeightEntries(identity),
+      prisma.planVersion.findFirst({
+        where: { profileId: identity.profileId, activeAt: { not: null } },
+        orderBy: { activeAt: "desc" },
+      }),
+      prisma.planVersion.count({ where: { profileId: identity.profileId } }),
     ]);
 
     const calories = todayMeals.reduce((sum, meal) => sum + (meal.estimatedKcal ?? 0), 0);
@@ -127,7 +157,7 @@ export async function GET() {
       weightSource: latestWeight ? "records" : profilePoint ? "profile" : null,
       pendingMeals,
       mealsToday: todayMeals.length,
-      workout: null,
+      workout: buildTodayWorkout((activePlanRow?.plan as unknown as PlanDocument | null) ?? null, planTotal > 0),
       week,
     });
   } catch (error) {

@@ -1,9 +1,9 @@
 import { streamText, stepCountIs, type ToolSet } from "ai";
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { createAiCallLogger } from "@/lib/ai-logger";
-import { EMERGENCY_REPLY, assessHealthSafety } from "@/lib/ai-safety";
-import { createHealthTools, getModel } from "@/lib/ai-tools";
+import { createAiCallLogger, type AiUsageSnapshot } from "@/lib/ai-logger";
+import { EMERGENCY_REPLY, OUTPUT_GUARD_NOTICE, assessHealthSafety, guardAssistantOutput } from "@/lib/ai-safety";
+import { createHealthTools, getChatModelName, getModel } from "@/lib/ai-tools";
 import { createRecentMealsTool } from "@/lib/assistant-meals";
 import { IdentityError, resolveIdentity } from "@/lib/identity";
 import { createMcpHealthTools } from "@/lib/mcp-client";
@@ -59,7 +59,7 @@ export async function POST(request: Request) {
 
     const parsed = inputSchema.safeParse(await request.json().catch(() => null));
     const actorId = identity.kind === "user" ? identity.userId : identity.sessionId;
-    const modelName = process.env.OPENAI_MODEL || "gpt-4.1-mini";
+    const modelName = getChatModelName();
     if (!parsed.success) {
       const logger = createAiCallLogger({ route: "assistant", model: modelName, actorId, safety: { level: "routine", reasons: [] }, messageCount: 0, latestUserChars: 0 });
       logger.finish({ outcome: "blocked", reason: "invalid_input" });
@@ -127,6 +127,7 @@ export async function POST(request: Request) {
     responseHeaders["x-ai-tools"] = toolSource;
 
     try {
+      let endInfo: { usage?: AiUsageSnapshot; finishReason?: string | null } | null = null;
       const result = streamText({
         model: getModel(),
         system,
@@ -142,21 +143,57 @@ export async function POST(request: Request) {
           toolCalls: step.toolCalls,
           toolResults: step.toolResults,
         }),
-        onEnd: (event) => logger.finish({ outcome: "ok", usage: event.usage, finishReason: event.finishReason, textChars: event.text.length, notes: [`tools=${toolSource}`] }),
+        onEnd: (event) => {
+          endInfo = { usage: event.usage, finishReason: event.finishReason };
+        },
         onError: ({ error }) => logger.finish({ outcome: "error", reason: "stream_error", error, notes: [`tools=${toolSource}`] }),
         onAbort: () => logger.finish({ outcome: "error", reason: "aborted", notes: [`tools=${toolSource}`] }),
       });
 
       const encoder = new TextEncoder();
       let streamedText = "";
+      let guardBuffer = "";
+      const guardFlags = new Set<string>();
+      const emit = (text: string, controller: TransformStreamDefaultController<Uint8Array>) => {
+        const guarded = guardAssistantOutput(text);
+        for (const flag of guarded.flagged) guardFlags.add(flag);
+        if (!guarded.text) return;
+        streamedText += guarded.text;
+        controller.enqueue(encoder.encode(guarded.text));
+      };
+      const finishLog = () => logger.finish({
+        outcome: "ok",
+        usage: endInfo?.usage,
+        finishReason: endInfo?.finishReason ?? null,
+        textChars: streamedText.length,
+        notes: [`tools=${toolSource}`, `post_guard=${guardFlags.size ? [...guardFlags].join(",") : "clean"}`],
+      });
+
       const stream = result.textStream.pipeThrough(new TransformStream<string, Uint8Array>({
         transform(chunk, controller) {
-          streamedText += chunk;
-          controller.enqueue(encoder.encode(chunk));
+          guardBuffer += chunk;
+          const boundary = Math.max(
+            guardBuffer.lastIndexOf("。"),
+            guardBuffer.lastIndexOf("！"),
+            guardBuffer.lastIndexOf("？"),
+            guardBuffer.lastIndexOf("；"),
+            guardBuffer.lastIndexOf("\n"),
+          );
+          if (boundary < 0) return;
+          const ready = guardBuffer.slice(0, boundary + 1);
+          guardBuffer = guardBuffer.slice(boundary + 1);
+          emit(ready, controller);
         },
         flush(controller) {
+          if (guardBuffer) emit(guardBuffer, controller);
+          if (guardFlags.size) {
+            const notice = `\n\n${OUTPUT_GUARD_NOTICE}`;
+            streamedText += notice;
+            controller.enqueue(encoder.encode(notice));
+          }
           const footer = knowledgeFooter(streamedText, knowledgePassages);
           if (footer) controller.enqueue(encoder.encode(footer));
+          finishLog();
         },
       }));
 

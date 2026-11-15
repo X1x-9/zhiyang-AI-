@@ -600,7 +600,7 @@ export function MySpace({ data, loading, profile, hasStored, demo }: MySpaceProp
             ))}
           </h1>
           <p className="ms-hero-lede">
-            把身体的情况和生活的节奏写在这里。饮食与运动计划，会跟着你填的内容重新排；没填的部分，保持空白。
+            把身体的情况和生活的节奏写在这里。饮食与运动计划，会跟着你填的内容重新排。
           </p>
           <div className="ms-hero-meta" aria-label="资料状态">
             <span className={`ms-source ${sourceClass}`}><i aria-hidden="true" />{sourceLabel}</span>

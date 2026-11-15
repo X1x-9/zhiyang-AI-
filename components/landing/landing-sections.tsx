@@ -567,7 +567,6 @@ export function LandingSections({ onEnter }: LandingSectionsProps) {
               fill
               sizes="(max-width: 960px) 82vw, 36vw"
             />
-            <figcaption className="media-tag">确认后才计入</figcaption>
           </figure>
           <figure className="media-frame meal-collage__inset">
             <Image
@@ -577,7 +576,6 @@ export function LandingSections({ onEnter }: LandingSectionsProps) {
               sizes="(max-width: 960px) 46vw, 20vw"
             />
           </figure>
-          <p className="media-credit">图片示意</p>
         </div>
       </ModuleSection>
 
@@ -625,7 +623,6 @@ export function LandingSections({ onEnter }: LandingSectionsProps) {
               />
             </div>
           </div>
-          <p className="media-credit diet-stack__credit">图片示意</p>
         </figure>
       </ModuleSection>
 

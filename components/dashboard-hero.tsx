@@ -49,13 +49,19 @@ type Slice = {
 
 function buildSlices(data: DashboardData, water: number, percent: number): Slice[] {
   const macros = data.macros;
+  const workout = data.workout;
+  const workoutValue = workout.status === "scheduled"
+    ? `${workout.durationMinutes} 分钟`
+    : workout.status === "rest"
+      ? "休息日"
+      : "未启用";
   return [
     { key: "meals", icon: UtensilsCrossed, label: "餐食", value: `${data.mealsToday} 餐`, empty: data.mealsToday === 0, target: "food", targetLabel: "饮食记录" },
     { key: "protein", icon: Beef, label: "蛋白质", value: macros ? `${macros.protein.consumed} g` : "未接入", empty: !macros, target: "plans", targetLabel: "饮食计划" },
     { key: "water", icon: Droplets, label: "饮水", value: `${water.toLocaleString("zh-CN")} ml`, empty: false, target: "hydration", targetLabel: "今日饮水记录" },
     { key: "calories", icon: Flame, label: "热量进度", value: `${percent}%`, empty: false, target: "plans", targetLabel: "饮食计划" },
     { key: "space", icon: UserRound, label: "我的空间", value: "健康画像", empty: false, target: "profile", targetLabel: "我的空间" },
-    { key: "workout", icon: Dumbbell, label: "训练安排", value: data.workout ? `${data.workout.durationMinutes} 分钟` : "未安排", empty: !data.workout, target: "exercise", targetLabel: "运动计划" },
+    { key: "workout", icon: Dumbbell, label: "训练安排", value: workoutValue, empty: workout.status === "inactive", target: "exercise", targetLabel: "运动计划" },
     { key: "carbs", icon: Wheat, label: "碳水", value: macros ? `${macros.carbs.consumed} g` : "未接入", empty: !macros, target: "plans", targetLabel: "饮食计划" },
     { key: "fat", icon: Nut, label: "脂肪", value: macros ? `${macros.fat.consumed} g` : "未接入", empty: !macros, target: "plans", targetLabel: "饮食计划" },
     { key: "weight", icon: Scale, label: "体重", value: data.weightKg === null ? "未记录" : `${data.weightKg.toFixed(1)} kg`, empty: data.weightKg === null, target: "review", targetLabel: "每周复盘" },

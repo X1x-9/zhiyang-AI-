@@ -60,7 +60,7 @@ export type PlanProfileSnapshot = {
 };
 
 export type PlanFocus = "none" | "protein_focus" | "portion_focus";
-export type PlanAgentStatus = "OK" | "SKIPPED" | "FAILED";
+export type PlanAgentStatus = "OK" | "DIRECT" | "SKIPPED" | "FAILED";
 export type PlanRagStatus = "OK" | "NO_MATCH" | "NOT_CONFIGURED" | "RETRIEVAL_FAILED" | "NOT_CALLED";
 
 export type PlanAgentReference = {
@@ -473,6 +473,8 @@ function buildDataBasis(profile: SpaceProfile, targets: SpaceTargets | null, mea
   }
   if (agent?.status === "OK") {
     notes.push("AI 仅选择建议重点，数值与安全边界由规则完成。");
+  } else if (agent?.status === "DIRECT") {
+    notes.push("本版按对话确认的调整直接更新，未重新运行计划 Agent。");
   } else if (agent) {
     notes.push("AI 建议未完成，计划仍按规则生成。");
   }

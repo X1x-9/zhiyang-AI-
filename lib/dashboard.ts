@@ -16,6 +16,10 @@ export function profileWeightPoint(kg: number | null): WeightPoint | null {
   return { label: "资料", kg, source: "profile" };
 }
 export type WorkoutSummary = { title: string; durationMinutes: number; exercises: string[] };
+export type TodayWorkout =
+  | ({ status: "scheduled" } & WorkoutSummary)
+  | { status: "rest"; nextLabel: string | null }
+  | { status: "inactive"; hasPlan: boolean };
 export type WeekDaySummary = {
   key: string;
   label: string;
@@ -54,7 +58,7 @@ export type DashboardData = {
   weightSource: "records" | "profile" | null;
   pendingMeals: number;
   mealsToday: number;
-  workout: WorkoutSummary | null;
+  workout: TodayWorkout;
   week: WeekSummary;
 };
 

@@ -332,6 +332,7 @@ function useGeneratedPlan(hasStored: boolean): PlanState {
       if (!response.ok || !data?.plan) throw new Error(data?.message ?? "计划生成失败，请稍后重试。");
       applyState(data);
       void queryClient.invalidateQueries({ queryKey: ["plan"] });
+      void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
       return {
         ok: true,
         version: data.generatedVersion ?? data.plan.version,
@@ -362,6 +363,7 @@ function useGeneratedPlan(hasStored: boolean): PlanState {
       if (data.plan) {
         applyState(data);
         void queryClient.invalidateQueries({ queryKey: ["plan"] });
+        void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
       }
       return {
         ok: true,
@@ -391,6 +393,7 @@ function useGeneratedPlan(hasStored: boolean): PlanState {
       if (!response.ok || !data) throw new Error(data?.message ?? "这个版本暂时无法启用，请稍后重试。");
       applyState(data);
       void queryClient.invalidateQueries({ queryKey: ["plan"] });
+      void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
     } catch (err) {
       setError(err instanceof Error ? err.message : "这个版本暂时无法启用，请稍后重试。");
     } finally {
@@ -416,6 +419,7 @@ function useGeneratedPlan(hasStored: boolean): PlanState {
       if (!response.ok || !data) throw new Error(data?.message ?? "删除失败，请稍后重试。");
       applyState(data);
       void queryClient.invalidateQueries({ queryKey: ["plan"] });
+      void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
       return {
         ok: true,
         deletedCount: typeof data.deletedCount === "number" ? data.deletedCount : versions.length,
@@ -1087,6 +1091,7 @@ function formatPlanTime(value: string) {
 
 const agentStatusShort = {
   OK: "建议已完成",
+  DIRECT: "直接应用",
   SKIPPED: "未运行",
   FAILED: "已回退",
 } as const;

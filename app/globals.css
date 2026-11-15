@@ -4,15 +4,19 @@
 @import "./originkit-section-theme.css";
 @import "../css/styles.css";
 @import "../css/effects.css";
+@import "../css/training-card.css";
 @import "../css/weight.css";
 @import "../css/plans.css";
 @import "../css/space.css";
 @import "../css/chat-loader.css";
 @import "../css/meal-camera.css";
+@import "../css/meal-result.css";
+@import "../css/profile-prompt.css";
 @import "../css/account.css";
 @import "../css/auth-screen.css";
 @import "../css/landing-hero.css";
 @import "../css/landing-sections.css";
+@import "../css/landing-scrollbar.css";
 
 @font-face {
   font-family: "Lemi XiaoYu";

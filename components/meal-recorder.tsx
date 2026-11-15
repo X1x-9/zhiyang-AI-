@@ -388,6 +388,242 @@ function per100Of(item: AnalysisItem): Per100 {
   };
 }
 
+function MealAnalysisCard({
+  analysis,
+  mealType,
+  eatenAt,
+  saving,
+  confirmed,
+  saveError,
+  estimatingIndex,
+  estimateErrorIndex,
+  estimateError,
+  onDishChange,
+  onMealTypeChange,
+  onEatenAtChange,
+  onItemChange,
+  onAddItem,
+  onRemoveItem,
+  onEstimate,
+  onConfirm,
+  onClose,
+}: {
+  analysis: Analysis;
+  mealType: string;
+  eatenAt: string;
+  saving: boolean;
+  confirmed: boolean;
+  saveError: string | null;
+  estimatingIndex: number | null;
+  estimateErrorIndex: number | null;
+  estimateError: string | null;
+  onDishChange: (value: string) => void;
+  onMealTypeChange: (value: string) => void;
+  onEatenAtChange: (value: string) => void;
+  onItemChange: (index: number, patch: Partial<AnalysisItem>) => void;
+  onAddItem: () => void;
+  onRemoveItem: (index: number) => void;
+  onEstimate: (index: number, name: string) => void;
+  onConfirm: () => void;
+  onClose: () => void;
+}) {
+  const dialogRef = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    dialogRef.current?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.body.style.overflow = previous;
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [onClose]);
+
+  if (typeof document === "undefined") return null;
+
+  const canConfirm = !saving && !confirmed && analysis.items.length > 0
+    && analysis.items.every((item) => item.name.trim().length > 0);
+
+  return createPortal(
+    <div
+      className="meal-result-overlay"
+      role="presentation"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <div className="meal-result-stage">
+      <div
+        ref={dialogRef}
+        className="meal-result-card"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="meal-result-title"
+        tabIndex={-1}
+      >
+        <span className="meal-result-tape" aria-hidden="true" />
+        <svg className="meal-result-doodle is-star" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M12 2.5l2.6 6.1 6.6.6-5 4.3 1.5 6.5L12 16.5 6.3 20l1.5-6.5-5-4.3 6.6-.6z" />
+        </svg>
+        <svg className="meal-result-doodle is-sparkle" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M12 2c.7 5.4 4 8.7 9.4 9.4-5.4.7-8.7 4-9.4 9.4-.7-5.4-4-8.7-9.4-9.4C7.9 10.7 11.2 7.4 12 2z" />
+        </svg>
+        <svg className="meal-result-doodle is-swirl" viewBox="0 0 48 48" aria-hidden="true">
+          <path d="M8 34c2-9 9-14 17-12s12 10 8 16-13 6-16 0 1-12 8-12 10 5 9 10" />
+        </svg>
+
+        <header className="meal-result-head">
+          <span className="meal-result-kicker">AI 的营养分析</span>
+          <button type="button" className="meal-result-close" onClick={onClose} aria-label="关闭营养分析">
+            <X size={16} />
+          </button>
+        </header>
+
+        <div className="meal-result-scroll">
+          <span className="meal-result-done"><Sparkles size={12} aria-hidden="true" />识别完成 · 可直接修改</span>
+          <h2 id="meal-result-title" className="sr-only">{analysis.dish || "这一餐"}</h2>
+          <input
+            className="meal-result-title-input"
+            value={analysis.dish}
+            onChange={(event) => onDishChange(event.target.value)}
+            placeholder="给这一餐起个名字"
+            aria-label="餐食名称"
+          />
+
+          <div className="meal-result-meta-row">
+            <label>
+              <span>餐次</span>
+              <select value={mealType} onChange={(event) => onMealTypeChange(event.target.value)} aria-label="餐次">
+                <option value="BREAKFAST">早餐</option>
+                <option value="LUNCH">午餐</option>
+                <option value="DINNER">晚餐</option>
+                <option value="SNACK">加餐</option>
+                <option value="OTHER">其他</option>
+              </select>
+            </label>
+            <label>
+              <span>用餐时间</span>
+              <input
+                type="datetime-local"
+                value={eatenAt}
+                onChange={(event) => onEatenAtChange(event.target.value)}
+                aria-label="用餐时间"
+              />
+            </label>
+          </div>
+
+          <div className="meal-result-summary">
+            <div className="meal-result-total">
+              <strong>{analysis.totalKcal}</strong>
+              <span>kcal</span>
+            </div>
+            <div className="meal-result-macros" aria-label="蛋白质、碳水、脂肪">
+              <span><strong>{formatNutrition(analysis.nutrition.proteinG)}</strong>蛋白 g</span>
+              <span><strong>{formatNutrition(analysis.nutrition.carbsG)}</strong>碳水 g</span>
+              <span><strong>{formatNutrition(analysis.nutrition.fatG)}</strong>脂肪 g</span>
+            </div>
+          </div>
+
+          <ul className="meal-result-items">
+            {analysis.items.map((item, index) => {
+              const per100 = per100Of(item);
+              const source = sourceMeta(item);
+              const nameChanged = item.estimatedName !== undefined && item.estimatedName !== item.name.trim();
+              const estimating = estimatingIndex === index;
+              return (
+                <li className="meal-result-item" key={index}>
+                  <div className="meal-result-item-head">
+                    <input
+                      className="meal-result-item-name"
+                      value={item.name}
+                      onChange={(event) => onItemChange(index, {
+                        name: event.target.value,
+                        estimatedName: undefined,
+                        dataSource: undefined,
+                        foodId: undefined,
+                        matchedName: undefined,
+                        matchScore: undefined,
+                      })}
+                      aria-label={`第 ${index + 1} 项食物名称`}
+                    />
+                    <div className="meal-result-grams-wrap">
+                      <input
+                        className="meal-result-item-grams"
+                        type="number"
+                        min="0"
+                        max="3000"
+                        step="1"
+                        value={item.grams}
+                        onChange={(event) => onItemChange(index, {
+                          grams: Math.max(0, Math.min(3000, Number(event.target.value) || 0)),
+                        })}
+                        aria-label={`${item.name}克数`}
+                      />
+                      <span>g</span>
+                    </div>
+                    <span className="meal-result-item-kcal">{item.kcal} kcal</span>
+                    <button
+                      type="button"
+                      className="meal-result-item-remove"
+                      onClick={() => onRemoveItem(index)}
+                      aria-label={`删除${item.name || "这项食物"}`}
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                  <div className="meal-result-item-meta">
+                    <span className={`food-source-badge is-${source.tone}`}>{source.label}</span>
+                    <span>{confidenceLabel[item.confidence]}</span>
+                    <span>每 100g 约 {per100.kcal} kcal（蛋白 {per100.proteinG} / 碳水 {per100.carbsG} / 脂肪 {per100.fatG} g）</span>
+                  </div>
+                  <button
+                    type="button"
+                    className="meal-result-estimate"
+                    disabled={saving || estimating || !item.name.trim()}
+                    onClick={() => onEstimate(index, item.name.trim())}
+                  >
+                    {estimating ? "估算中…" : nameChanged ? "按新名称重新估算" : "重新估算营养"}
+                  </button>
+                  {estimateErrorIndex === index && estimateError && (
+                    <p className="meal-result-estimate-error" role="alert">{estimateError}</p>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+
+          <button type="button" className="meal-result-add" onClick={onAddItem} disabled={saving}>
+            <Plus size={12} aria-hidden="true" />添加食物
+          </button>
+
+          {analysis.foodDataVersion && analysis.nutritionSummary && (
+            <p className="meal-result-source">
+              来源：{analysis.nutritionSummary.foodTableItems} 项按食物参考库换算，{analysis.nutritionSummary.modelEstimateItems} 项为 AI 估算 · 食物库 {analysis.foodDataVersion}
+            </p>
+          )}
+          {analysis.uncertainty && <p className="meal-result-note">误差说明：{analysis.uncertainty}</p>}
+          <p className="meal-result-footnote">可直接修改后确认；只有确认后才会计入今天的统计。</p>
+        </div>
+
+        {saveError && <p className="meal-result-save-error" role="alert">{saveError}</p>}
+        <button type="button" className="meal-result-action" onClick={onConfirm} disabled={!canConfirm}>
+          {saving
+            ? <><Loader2 size={14} className="animate-spin" aria-hidden="true" />正在保存…</>
+            : confirmed
+              ? <><Check size={14} aria-hidden="true" />已确认并记录</>
+              : <><Check size={14} aria-hidden="true" />确认并记录</>}
+        </button>
+      </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
 function applyGrams(item: AnalysisItem, grams: number): AnalysisItem {
   const per100 = per100Of(item);
   const ratio = grams / 100;
@@ -746,10 +982,12 @@ export function MealRecorder() {
   const confirmed = useHealthStore((s) => s.confirmed);
   const confirm = useHealthStore((s) => s.confirmMeal);
   const queryClient = useQueryClient();
+  const page = useHealthStore((s) => s.page);
 
   const [preview, setPreview] = React.useState<string | null>(null);
   const [filmKey, setFilmKey] = React.useState(0);
   const [analysis, setAnalysis] = React.useState<Analysis | null>(null);
+  const [resultOpen, setResultOpen] = React.useState(false);
   const [mealType, setMealType] = React.useState(guessMealType);
   const [eatenAt, setEatenAt] = React.useState(() => { const now = new Date(); now.setMinutes(now.getMinutes() - now.getTimezoneOffset()); return now.toISOString().slice(0, 16); });
   const [error, setError] = React.useState<string | null>(null);
@@ -764,6 +1002,8 @@ export function MealRecorder() {
   const [adjustSuggestion, setAdjustSuggestion] = React.useState<DynamicPlanAdjustment | null>(null);
   const [adjustApplying, setAdjustApplying] = React.useState(false);
   const [adjustNotice, setAdjustNotice] = React.useState<string | null>(null);
+  const closeResult = React.useCallback(() => setResultOpen(false), []);
+  if (page !== "food" && resultOpen) setResultOpen(false);
 
   React.useEffect(() => {
     const layout = foodLayoutRef.current;
@@ -850,6 +1090,7 @@ export function MealRecorder() {
     },
     onSuccess: (data) => {
       setAnalysis(data);
+      setResultOpen(data.items.length > 0);
       useHealthStore.getState().resetMealConfirmation();
       setError(null);
     },
@@ -894,6 +1135,7 @@ export function MealRecorder() {
       return data;
     },
     onSuccess: () => {
+      setResultOpen(false);
       confirm();
       invalidateAll();
       void checkAdjustment();
@@ -906,6 +1148,7 @@ export function MealRecorder() {
     setPreparing(true);
     setError(null);
     setAnalysis(null);
+    setResultOpen(false);
     try {
       const dataUrl = await prepareImage(file);
       setPreview(dataUrl);
@@ -922,6 +1165,7 @@ export function MealRecorder() {
   function clearPhoto() {
     setPreview(null);
     setAnalysis(null);
+    setResultOpen(false);
     setError(null);
     useHealthStore.getState().resetMealConfirmation();
     save.reset();
@@ -1226,6 +1470,38 @@ export function MealRecorder() {
         applying={adjustApplying}
         onClose={() => setAdjustSuggestion(null)}
         onApply={(payload) => applyAdjustment(payload)}
+      />
+    )}
+    {page === "food" && resultOpen && analysis && (
+      <MealAnalysisCard
+        analysis={analysis}
+        mealType={mealType}
+        eatenAt={eatenAt}
+        saving={save.isPending}
+        confirmed={confirmed}
+        saveError={save.isError ? save.error?.message ?? "餐食没有保存成功，请稍后重试。" : null}
+        estimatingIndex={estimate.isPending ? estimate.variables?.index ?? null : null}
+        estimateErrorIndex={estimate.isError ? estimate.variables?.index ?? null : null}
+        estimateError={estimate.isError ? estimate.error?.message ?? "营养估算失败，请稍后重试。" : null}
+        onDishChange={(value) => {
+          setAnalysis((current) => current ? { ...current, dish: value } : current);
+          useHealthStore.getState().resetMealConfirmation();
+          save.reset();
+        }}
+        onMealTypeChange={(value) => {
+          setMealType(value);
+          save.reset();
+        }}
+        onEatenAtChange={(value) => {
+          setEatenAt(value);
+          save.reset();
+        }}
+        onItemChange={updateItem}
+        onAddItem={addItem}
+        onRemoveItem={removeItem}
+        onEstimate={(index, name) => estimate.mutate({ index, name })}
+        onConfirm={() => save.mutate()}
+        onClose={closeResult}
       />
     )}
     </>

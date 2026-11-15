@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>智养AI · 技术文档</title>
+<style>
+@font-face { font-family: "Lemi XiaoYu"; src: url("../public/fonts/lemi-xiaoyu.woff2") format("woff2"); }
+@page { size: A4; margin: 17mm 15mm 16mm; }
+* { box-sizing: border-box; }
+html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+body { margin: 0; font: 10.5pt/1.8 "SimSun", "Noto Serif SC", serif; color: #26332b; }
+h1, h2, h3, h4, table, .fig-cap, .kpi, .toc, .cover, .callout { font-family: "Microsoft YaHei", "Noto Sans SC", sans-serif; }
+p { margin: 0 0 6pt; text-align: justify; }
+ul, ol { margin: 0 0 6pt; padding-left: 16pt; }
+li { margin-bottom: 2.5pt; }
+b, strong { color: #3f5a47; }
+
+.cover { page-break-after: always; border: 1.5px solid #7c9a7f; outline: 1px solid #d8e2d2; outline-offset: 4px; padding: 26mm 18mm 16mm; height: 258mm; display: flex; flex-direction: column; position: relative; background: linear-gradient(160deg, #fbfaf7 0%, #f2f6ec 55%, #e7efe0 100%); }
+.cover-comp { font-size: 10pt; letter-spacing: .35em; color: #7f8e83; }
+.cover-mark { margin: 16mm 0 4mm; font-family: "Lemi XiaoYu", "Microsoft YaHei", sans-serif; font-size: 58pt; line-height: 1; color: #3f5a47; }
+.cover-mark em { font-style: normal; color: #78967d; font-size: 50pt; margin-left: 4mm; }
+.cover-sub { font-size: 15pt; font-weight: 700; color: #43564a; letter-spacing: .12em; }
+.cover-line { margin: 6mm 0 8mm; height: 2px; background: linear-gradient(90deg, #7c9a7f, #c9a86a 60%, transparent); }
+.cover-desc { font-size: 10pt; color: #5c6d61; max-width: 150mm; }
+.cover-meta { margin-top: auto; display: grid; grid-template-columns: 1fr 1fr; gap: 3mm 8mm; font-size: 9.5pt; color: #5c6d61; border-top: 1px solid #cbd9c4; padding-top: 6mm; }
+.cover-meta b { display: block; font-size: 8.5pt; letter-spacing: .2em; color: #8a978c; margin-bottom: 1mm; }
+.cover-chips { display: flex; gap: 3mm; margin-top: 7mm; }
+.cover-chips span { border: 1px solid #b9c6b4; border-radius: 999px; background: rgba(255,255,255,.7); color: #48634d; font-size: 8.5pt; padding: 1.5mm 4mm; }
+.cover-star { position: absolute; right: 16mm; top: 24mm; }
+
+.toc { page-break-after: always; }
+.toc h1 { font-size: 17pt; color: #3f5a47; letter-spacing: .2em; margin: 0 0 8mm; }
+.toc-line { display: flex; align-items: baseline; gap: 3mm; font-size: 10.5pt; margin-bottom: 3.2mm; color: #33443a; }
+.toc-line .no { flex: none; width: 9mm; font-weight: 700; color: #7c9a7f; }
+.toc-line .dots { flex: 1; border-bottom: 1px dotted #b9c6b4; transform: translateY(-2px); }
+.toc-line .pg { flex: none; font-weight: 700; color: #43564a; }
+.toc-sub { margin: -1.6mm 0 3.2mm 12mm; font-size: 9pt; color: #7f8e83; }
+
+.chapter { page-break-before: always; }
+.chapter-head { display: flex; align-items: baseline; gap: 5mm; border-bottom: 2px solid #7c9a7f; padding-bottom: 3mm; margin-bottom: 6mm; }
+.chapter-no { font-size: 24pt; font-weight: 800; color: #adc0aa; line-height: 1; }
+.chapter-head h1 { margin: 0; font-size: 17pt; color: #3f5a47; letter-spacing: .08em; }
+h2 { font-size: 12.5pt; color: #3f5a47; border-left: 3px solid #7c9a7f; padding-left: 3mm; margin: 8pt 0 4pt; page-break-after: avoid; }
+h3 { font-size: 10.5pt; color: #43564a; margin: 7pt 0 3pt; page-break-after: avoid; }
+table { width: 100%; border-collapse: collapse; font-size: 9pt; line-height: 1.55; margin: 4pt 0 7pt; page-break-inside: avoid; }
+th { background: #eef4e8; color: #3f5a47; text-align: left; }
+th, td { border: 1px solid #d8e2d2; padding: 3pt 5pt; vertical-align: top; }
+td { color: #33443a; }
+.fig { margin: 6pt 0 8pt; page-break-inside: avoid; }
+.fig svg { width: 100%; height: auto; display: block; }
+.fig-cap { font-size: 8.5pt; color: #7f8e83; text-align: center; margin-top: 2.5mm; }
+pre { font: 8.3pt/1.6 Consolas, "Courier New", monospace; background: #f2f6ee; border: 1px solid #e0e8d8; border-radius: 4px; padding: 5pt 7pt; white-space: pre-wrap; margin: 4pt 0 7pt; page-break-inside: avoid; color: #3c4a40; }
+code { font: 8.8pt Consolas, monospace; background: #eef4e8; border-radius: 3px; padding: 0 3px; color: #48634d; }
+.callout { border-left: 3px solid #c9a86a; background: #faf6ec; padding: 5pt 8pt; font-size: 9.3pt; line-height: 1.7; margin: 5pt 0 7pt; page-break-inside: avoid; color: #5f5136; }
+.callout.green { border-left-color: #7c9a7f; background: #f0f5ea; color: #44584a; }
+.callout b { color: inherit; }
+.kpis { display: flex; gap: 3mm; margin: 5pt 0 8pt; page-break-inside: avoid; }
+.kpi { flex: 1; border: 1px solid #d8e2d2; background: #fbfaf7; border-radius: 5px; padding: 3.5mm 2mm; text-align: center; }
+.kpi b { display: block; font-size: 14pt; color: #3f5a47; line-height: 1.2; }
+.kpi span { font-size: 8pt; color: #7f8e83; }
+.keep { page-break-inside: avoid; }
+</style>
+</head>
+<body>
+
+<div class="cover">
+  <svg class="cover-star" width="54" height="54" viewBox="0 0 54 54"><path d="M27 3l6.2 15.4L50 21l-12.4 10.6L41.4 49 27 40.2 12.6 49l3.8-17.4L4 21l16.8-2.6z" fill="#c9a86a" opacity=".85"/></svg>
+  <div class="cover-comp">传智杯 · 参赛项目技术文档</div>
+  <div class="cover-mark">智养<em>AI</em></div>
+  <div class="cover-sub">个人健康管理平台 · 技术文档</div>
+  <div class="cover-line"></div>
+  <p class="cover-desc">以「诚实、可解释、有边界」为原则的 AI 健康管理平台：多模态餐食记录、受约束的计划 Agent、混合检索指南引用、天气联动训练与全链路安全校验。本文档按参赛要求阐述项目概述、需求分析、系统架构、AI 技术方案、核心实现、测试部署与创新点。</p>
+  <div class="cover-chips"><span>受约束 Agent</span><span>混合检索 + 引用回链</span><span>流式输出后置安全</span><span>MCP 工具集成</span></div>
+  <div class="cover-meta">
+    <div><b>文档版本</b>V1.0 · 2026-11-14</div>
+    <div><b>交付格式</b>A4 · PDF · 不超过 30 页</div>
+    <div><b>技术栈</b>Next.js 16 · React 19 · MySQL 8 · AI SDK</div>
+    <div><b>证据来源</b>源码 · RAG 评测报告 · .ai-logs 请求日志</div>
+  </div>
+</div>
+
+<div class="toc">
+  <h1>目 录</h1>
+  <div class="toc-line"><span class="no">01</span>项目概述<span class="dots"></span><span class="pg" id="toc-p1">3</span></div>
+  <div class="toc-sub">背景与定位 / 用户与场景 / 功能总览 / 技术栈 / 证据来源</div>
+  <div class="toc-line"><span class="no">02</span>需求分析<span class="dots"></span><span class="pg" id="toc-p2">5</span></div>
+  <div class="toc-sub">功能需求 / 非功能需求 / 边界与约束</div>
+  <div class="toc-line"><span class="no">03</span>系统架构设计<span class="dots"></span><span class="pg" id="toc-p3">7</span></div>
+  <div class="toc-sub">总体架构 / 模块组织 / 数据模型 / 身份与演示沙盒 / 前端架构 / 部署架构</div>
+  <div class="toc-line"><span class="no">04</span>AI 技术方案<span class="dots"></span><span class="pg" id="toc-p4">10</span></div>
+  <div class="toc-sub">选型理由 / 集成方式 / 受约束 Agent / RAG / 多模态 / MCP / 优化策略 / 安全 / 评测</div>
+  <div class="toc-line"><span class="no">05</span>核心功能实现<span class="dots"></span><span class="pg" id="toc-p5">14</span></div>
+  <div class="toc-sub">餐食闭环 / 计划版本 / 动态调整 / 训练打卡 / 体重趋势 / 助手与语音 / 概览</div>
+  <div class="toc-line"><span class="no">06</span>测试与部署<span class="dots"></span><span class="pg" id="toc-p6">15</span></div>
+  <div class="toc-sub">质量门禁 / 检索评测 / 浏览器回归 / 日志佐证 / 部署运维</div>
+  <div class="toc-line"><span class="no">07</span>创新点说明<span class="dots"></span><span class="pg" id="toc-p7">16</span></div>
+  <div class="toc-sub">技术创新点 / 应用创新点</div>
+  <div class="toc-line"><span class="no">08</span>总结与展望<span class="dots"></span><span class="pg" id="toc-p8">17</span></div>
+  <div class="toc-sub">总结 / 局限 / 展望</div>
+</div>
+
+<section class="chapter" id="ch1">
+  <div class="chapter-head"><span class="chapter-no">01</span><h1>项目概述</h1></div>
+  <h2>1.1 背景与定位</h2>
+  <p>智养AI 的设计出发点是把生活方式指导做得<b>低门槛、可持续、不越界</b>：不走医疗诊断路线，也不走指标堆叠路线，而是定位为面向普通用户的综合型 AI 健康管理平台，覆盖饮食、运动、体重、复盘与健康助手五大板块，微运动只是运动板块中的一个模块，而非产品全部。</p>
+  <p>平台以三条原则贯穿全部设计：<b>诚实</b>——缺数据不猜测、示例必标注、计划修订只描述真实变化；<b>可解释</b>——指南建议带引用回链，AI 工具调用顺序落日志可审计；<b>有边界</b>——不诊断、不开处方、不承诺疗效，输入与输出两端都有安全校验。项目作为传智杯参赛项目，以 AI 技术深度为核心建设方向。</p>
+  <h2>1.2 目标用户与使用场景</h2>
+  <table>
+    <tr><th style="width:22%">用户画像</th><th style="width:39%">典型场景</th><th>平台回应</th></tr>
+    <tr><td>久坐办公族</td><td>外卖为主、作息不规律，想控制体重但无从下手</td><td>拍照记餐 + 营养估算；按资料生成饮食/运动计划；天气联动户外训练</td></tr>
+    <tr><td>健身初学者</td><td>不知道练什么、练多久，难以坚持</td><td>按器械与时长排训练；逐项打卡；周复盘同步完成度</td></tr>
+    <tr><td>学生与备考人群</td><td>时间碎片化，需要轻量记录与鼓励式陪伴</td><td>健康搭子多轮对话与语音播报；轻提示与今日切片概览</td></tr>
+    <tr><td>评审与演示观众</td><td>需要在无真实数据时完整体验闭环</td><td>演示沙盒按会话隔离，真实账号与演示数据互不污染</td></tr>
+  </table>
+  <h2>1.3 产品功能总览</h2>
+  <table>
+    <tr><th style="width:20%">模块</th><th style="width:46%">核心功能</th><th>AI 参与方式</th></tr>
+    <tr><td>我的空间</td><td>统一资料建档（目标/节奏/器械/饮食/忌口/城市/体重）</td><td>资料作为全部 AI 决策的唯一画像来源</td></tr>
+    <tr><td>餐食记录</td><td>拍照识别、营养估算、食物库匹配、按天统计</td><td>视觉模型 + 结构化 JSON 双模型流水线</td></tr>
+    <tr><td>饮食/运动计划</td><td>确定性引擎生成、版本管理、意见调整、动态调整</td><td>受约束计划 Agent 在规则边界内补充建议</td></tr>
+    <tr><td>训练打卡</td><td>逐项勾选、全步骤完成记一次训练、周复盘同步</td><td>规则引擎排程，天气驱动户外调整</td></tr>
+    <tr><td>体重趋势</td><td>同日覆盖记录、资料起点标注、ECharts 折线</td><td>无 AI 虚构，趋势只来自真实记录</td></tr>
+    <tr><td>每周复盘</td><td>餐食/训练/体重三区汇总与偏差信号</td><td>偏差信号驱动动态调整评估</td></tr>
+    <tr><td>健康搭子</td><td>多会话对话、语音输入与播报、指南引用回链</td><td>流式对话 + MCP 工具 + RAG + 双端安全校验</td></tr>
+    <tr><td>概览首页</td><td>今日切片、热量/饮水/体重卡、今日训练三态</td><td>只读已启用计划，不伪造健康分</td></tr>
+  </table>
+  <h2>1.4 技术栈总览</h2>
+  <table>
+    <tr><th style="width:24%">层次</th><th>选型</th></tr>
+    <tr><td>前端框架</td><td>Next.js 16（App Router）· React 19 · TypeScript；TanStack Query 服务端状态 + Zustand 客户端状态</td></tr>
+    <tr><td>视觉与动效</td><td>手写 CSS 设计系统（白瓷 + 鼠尾草绿）· Framer Motion · ECharts · lucide 图标 · 乐米小语品牌字体</td></tr>
+    <tr><td>服务端</td><td>Next.js API Routes · Prisma ORM · MySQL 8（业务数据 + JSON 向量存储）</td></tr>
+    <tr><td>AI 基础设施</td><td>AI SDK（streamText / generateText / tools / stopWhen）· 双模型场景路由 · 1024 维嵌入 · MCP 协议</td></tr>
+    <tr><td>外部服务</td><td>Open-Meteo 天气（免密钥）· Web Speech API 语音（浏览器原生）</td></tr>
+    <tr><td>部署运维</td><td>阿里云 ECS · Node 24 · systemd 服务 · 环境变量注入密钥 · .ai-logs 请求日志</td></tr>
+  </table>
+  <h2>1.5 文档依据与证据来源</h2>
+  <p>本文档所有指标与行为描述均来自可复核证据：源码（<code>app/api/*</code>、<code>lib/*</code>）、RAG 评测集与脚本（<code>content/rag-eval.json</code>、<code>scripts/rag-eval.mjs</code>）、AI 请求日志（<code>.ai-logs/ai-YYYY-MM-DD.jsonl</code>，含工具调用顺序与安全校验结果）、以及 <code>docs/rag-guide.md</code>、<code>docs/production-readiness.md</code>。文中不出现未经测量的性能数字与虚构健康指标。</p>
+</section>
+
+<section class="chapter" id="ch2">
+  <div class="chapter-head"><span class="chapter-no">02</span><h1>需求分析</h1></div>
+  <h2>2.1 功能需求</h2>
+  <table>
+    <tr><th style="width:13%">编号</th><th style="width:25%">需求</th><th>验收要点</th></tr>
+    <tr><td>FR-01</td><td>账号与资料</td><td>邮箱注册登录；资料服务端持久化；未保存资料不展示示例计划；可清空并二次确认</td></tr>
+    <tr><td>FR-02</td><td>餐食记录</td><td>拍照→识别→营养估算→食物库匹配→入库；来源可见；按天/周统计真实记录</td></tr>
+    <tr><td>FR-03</td><td>计划生成</td><td>按资料确定性计算目标与排程；Agent 仅在边界内补充；版本可启用/删除/回看</td></tr>
+    <tr><td>FR-04</td><td>计划调整</td><td>意见调整走多轮 AI 对话且只描述真实变化；动态调整仅显著偏差才评估，临时层不占版本号</td></tr>
+    <tr><td>FR-05</td><td>训练执行</td><td>逐项勾选打卡；全步骤完成记一次训练；示例/未来日期不可打卡；周复盘同步</td></tr>
+    <tr><td>FR-06</td><td>体重管理</td><td>同日覆盖；资料体重作标注起点；单条记录即出图；我的空间只读同步</td></tr>
+    <tr><td>FR-07</td><td>健康助手</td><td>多会话隔离；流式回答；指南引用回链；语音输入可编辑、逐条播报可停止</td></tr>
+    <tr><td>FR-08</td><td>天气联动</td><td>资料城市→实时预报→户外训练确定性调整；无城市/服务失败不声称参考天气</td></tr>
+    <tr><td>FR-09</td><td>概览首页</td><td>今日训练/休息日/未启用三态；卡片只读已启用计划；饮水按天持久化</td></tr>
+    <tr><td>FR-10</td><td>演示模式</td><td>按会话沙盒隔离演示数据；与真实账号数据互不串流</td></tr>
+  </table>
+  <h2>2.2 非功能需求</h2>
+  <table>
+    <tr><th style="width:13%">编号</th><th style="width:25%">需求</th><th>设计回应</th></tr>
+    <tr><td>NFR-01</td><td>安全合规</td><td>输入安全闸门（紧急求助直达应急回复）；输出句级后置校验；Agent 工具白名单与拒绝日志</td></tr>
+    <tr><td>NFR-02</td><td>隐私与归属</td><td>全部业务数据按身份归属；演示沙盒会话隔离；密钥仅环境变量注入，绝不入源码</td></tr>
+    <tr><td>NFR-03</td><td>性能</td><td>对话流式首句优先；餐食双模型流水线约 9 秒级；计划生成异步反馈与日志延迟记录</td></tr>
+    <tr><td>NFR-04</td><td>可用性</td><td>RAG 关键词回退、天气失败降级、模型失败确定性兜底；存储失败与生成失败区分报错</td></tr>
+    <tr><td>NFR-05</td><td>无障碍</td><td>prefers-reduced-motion 全动效降级；焦点可见；提示可再次唤出；对比度按设计令牌实测：正文 12.3:1、主色 7.8:1、强调绿 5.1:1（≥4.5:1，WCAG AA），辅助灰字 3.5:1 仅用于非必需小字</td></tr>
+    <tr><td>NFR-06</td><td>响应式</td><td>桌面 / 平板 / 手机三档回归；移动端输入框避开底部导航；首屏可见输入框</td></tr>
+    <tr><td>NFR-07</td><td>可观测性</td><td>.ai-logs 记录路由、模型、延迟、toolSequence、安全标记，供审计与提交材料引用</td></tr>
+    <tr><td>NFR-08</td><td>内容诚实</td><td>缺数据不猜；不虚构健康分与疾病风险；示例必标注；修订只描述实际变化</td></tr>
+  </table>
+  <h2>2.3 边界与约束</h2>
+  <ul>
+    <li><b>非医疗器械边界</b>：所有输出止于生活方式层面，禁止诊断、治疗、药物与疗效保证；紧急情形绕过模型直接应急回复。</li>
+    <li><b>数据诚实边界</b>：趋势与统计只来自真实记录或授权采集；未记录餐食不等于没吃，建议重点只由汇总信号触发，不凭单日记录推断。</li>
+    <li><b>运行约束</b>：密钥经环境/终端注入；演示与真实身份按会话沙盒隔离，dev/预览/公网三环境端口分离（3.6）；未经明确要求不构建、不发布。</li>
+    <li><b>交付约束</b>：技术文档 PDF 不超过 30 页，须覆盖概述、需求、架构、AI 方案、实现、测试部署、总结展望，并单列创新点。</li>
+  </ul>
+</section>
+
+<section class="chapter" id="ch3">
+  <div class="chapter-head"><span class="chapter-no">03</span><h1>系统架构设计</h1></div>
+  <h2>3.1 总体架构</h2>
+  <p>平台采用 Next.js 16 App Router 全栈单体：客户端 React 19 组件经 API Routes 调用服务层 <code>lib/*</code>，服务层统一访问 MySQL 8 与外部 AI/数据服务。AI 能力不分散在页面里，而是收敛为「安全闸门 → 模型路由 → 工具/RAG → 输出校验 → 日志」一条可审计链路。</p>
+  <div class="fig">
+    <svg viewBox="0 0 720 300" xmlns="http://www.w3.org/2000/svg">
+      <defs><marker id="ar1" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L8 4L0 8z" fill="#8a978c"/></marker></defs>
+      <g font-family="Microsoft YaHei,sans-serif">
+        <rect x="16" y="6" width="688" height="50" rx="6" fill="#fbfaf7" stroke="#7c9a7f"/>
+        <text x="28" y="26" font-size="10" font-weight="bold" fill="#3f5a47">客户端层 · React 19</text>
+        <text x="28" y="44" font-size="8.5" fill="#5c6d61">概览 / 餐食 / 计划 / 复盘 / 我的空间 / 助手 · TanStack Query + Zustand · ECharts · Framer Motion · Web Speech</text>
+        <rect x="16" y="76" width="688" height="50" rx="6" fill="#eef4e8" stroke="#7c9a7f"/>
+        <text x="28" y="96" font-size="10" font-weight="bold" fill="#3f5a47">Next.js 16 App Router · API Routes（23 个端点）</text>
+        <text x="28" y="114" font-size="8.5" fill="#5c6d61">assistant · plans(generate/chat/adjust/*) · meals(analyze/estimate) · weight · workouts · dashboard · mcp · rag/eval · auth</text>
+        <rect x="16" y="146" width="688" height="50" rx="6" fill="#fbfaf7" stroke="#7c9a7f"/>
+        <text x="28" y="166" font-size="10" font-weight="bold" fill="#3f5a47">服务层 lib/</text>
+        <text x="28" y="184" font-size="8.5" fill="#5c6d61">ai-safety 双端安全 · ai-tools 模型路由 · plan-engine 确定性引擎 · plan-agent 受约束 Agent · rag 混合检索 · ai-logger · identity / rate-limit</text>
+        <rect x="16" y="216" width="344" height="70" rx="6" fill="#eef4e8" stroke="#7c9a7f"/>
+        <text x="28" y="238" font-size="10" font-weight="bold" fill="#3f5a47">MySQL 8 · Prisma 7</text>
+        <text x="28" y="256" font-size="8.5" fill="#5c6d61">业务表（用户/资料/餐食/计划/调整/体重/训练）</text>
+        <text x="28" y="272" font-size="8.5" fill="#5c6d61">KnowledgeChunk：指南片段 + 1024 维向量 JSON</text>
+        <rect x="376" y="216" width="328" height="70" rx="6" fill="#faf6ec" stroke="#c9a86a"/>
+        <text x="388" y="238" font-size="10" font-weight="bold" fill="#5f5136">外部服务</text>
+        <text x="388" y="256" font-size="8.5" fill="#5f5136">DashScope 兼容模型（对话/计划/视觉/嵌入）</text>
+        <text x="388" y="272" font-size="8.5" fill="#5f5136">Open-Meteo 天气 · MCP 工具链（/api/mcp）</text>
+        <line x1="360" y1="56" x2="360" y2="74" stroke="#8a978c" marker-end="url(#ar1)"/>
+        <line x1="360" y1="126" x2="360" y2="144" stroke="#8a978c" marker-end="url(#ar1)"/>
+        <line x1="188" y1="196" x2="188" y2="214" stroke="#8a978c" marker-end="url(#ar1)"/>
+        <line x1="540" y1="196" x2="540" y2="214" stroke="#8a978c" marker-end="url(#ar1)"/>
+      </g>
+    </svg>
+    <div class="fig-cap">图 3-1 总体架构：客户端 → API Routes → 服务层 → 数据与外部服务</div>
+  </div>
+  <p>以助手请求为例：身份解析与限流 → 输入安全闸门 → MCP 工具（安全核对/知识检索/营养/天气）→ 流式生成 → 句级输出校验 → SSE 推送，同时整条链路写入 <code>.ai-logs</code>。计划请求则先经确定性引擎计算，再由受约束 Agent 补充建议，两者产物合并为新的 PlanVersion。</p>
+  <h2>3.2 目录与模块组织</h2>
+  <pre>app/            页面（App Router）与 app/api/* 23 个端点
+components/     页面体验组件（计划/餐食/复盘/助手/概览等）
+lib/            服务层：identity · rate-limit · ai-safety · ai-tools · ai-logger
+                plan-engine · plan-store · plan-agent · plan-adjustment
+                rag · weather · mcp-server · mcp-client · meal-vision · workout · dashboard
+stores/         Zustand 客户端状态（健康数据/聊天会话等）
+css/            按页面拆分的设计系统样式（landing / plans / meals / review …）
+content/        knowledge.json 指南语料（27 篇 / 62 片段，含来源与核对日期）
+prisma/         schema.prisma（MySQL）与迁移
+scripts/        db-setup · ingest-knowledge · rag-eval · mcp-smoke · check-model · print-doc-pdf
+docs/           rag-guide · production-readiness · 本技术文档
+.ai-logs/       AI 请求日志（jsonl，按日分文件）
+.rag-eval/      检索评测报告（last-report.json）</pre>
+  <h2>3.3 数据模型</h2>
+  <table>
+    <tr><th style="width:22%">模型</th><th style="width:40%">关键字段</th><th>约束与设计意图</th></tr>
+    <tr><td>User / HealthProfile</td><td>email+passwordHash；资料 Json（目标/节奏/器械/饮食/忌口/城市/体重）</td><td>一用户一资料；资料是全部 AI 决策的唯一画像来源</td></tr>
+    <tr><td>MealRecord</td><td>items Json、估算热量与区间、三大营养素、status</td><td>PENDING→CONFIRMED 保留用户确认环节；按 profile+eatenAt 索引</td></tr>
+    <tr><td>PlanVersion</td><td>version、plan Json（含 agent 轨迹）、activeAt</td><td>unique(profileId, version) 防并发撞号；activeAt 标记启用版本</td></tr>
+    <tr><td>PlanAdjustment</td><td>dayKey、baseVersion、adjustment Json</td><td>unique(profileId, dayKey)：临时动态层按天覆盖、不占版本号</td></tr>
+    <tr><td>WeightRecord</td><td>dateKey、kg、note</td><td>unique(profileId, dateKey) 同日覆盖；趋势只认真实记录</td></tr>
+    <tr><td>WorkoutRecord</td><td>dateKey+sessionKey、steps Json、completedAt</td><td>全步骤完成才记一次训练；周复盘据此同步</td></tr>
+    <tr><td>KnowledgeChunk</td><td>title/source/content、embedding Json、reviewedAt</td><td>只检索 reviewedAt 非空内容；向量 1024 维 JSON 存储</td></tr>
+    <tr><td>Feedback</td><td>topic、rating、note</td><td>助手回答点赞/点踩留痕，供持续改进</td></tr>
+  </table>
+  <h2>3.4 身份体系与演示沙盒</h2>
+  <p>正式身份基于 next-auth（邮箱+密码，bcryptjs 哈希），<code>resolveIdentity</code> 统一解析「真实用户 / 演示会话」两种身份；所有业务读写按身份归属隔离。演示模式开启时向访客下发 httpOnly cookie（<code>zy_demo_session</code>，UUID），服务端按 sessionId 开辟内存会话沙盒：资料、餐食、体重、训练各用独立 Map 存放，不写真实 MySQL 表，服务重启即自然清空；不同演示会话互不可见，也不污染真实账号。<code>DEMO_MODE</code> 是环境级开关（true 强制开 / false 强制关），与会话级隔离正交：开关决定「是否提供演示身份」，沙盒决定「演示数据如何隔离」。接口层叠加 <code>rateLimit(clientKey(...))</code> 按用户/IP 限流；生产清单要求正式环境置 <code>DEMO_MODE=false</code>、API 默认拒绝以演示 ID 代替鉴权（见 <code>docs/production-readiness.md</code>），公网 ECS 按此配置、默认真实身份。</p>
+  <h2>3.5 前端架构</h2>
+  <ul>
+    <li><b>状态分层</b>：服务端数据走 TanStack Query（缓存/失效/乐观更新），客户端瞬时状态走 Zustand，避免竞争状态源。</li>
+    <li><b>设计系统</b>：手写 CSS 按页面拆分，白瓷 + 鼠尾草绿主色、琥珀强调；乐米小语品牌字标；图标 lucide + 品牌 Mochi 头像。</li>
+    <li><b>动效与无障碍</b>：Framer Motion 入场/悬停/翻面动效，全部在 prefers-reduced-motion 下降级；焦点可见、提示可再次唤出。</li>
+    <li><b>体验保活</b>：页面保活与滚动记忆、聊天固定高度内部滚动、移动端输入框避开底部导航；三档视口回归。</li>
+  </ul>
+  <h2>3.6 部署架构</h2>
+  <table>
+    <tr><th style="width:24%">环境</th><th style="width:20%">端口</th><th>用途与约束</th></tr>
+    <tr><td>本地 dev</td><td>3100</td><td>Turbopack 开发验收；演示验收在此端口带 DEMO_MODE 重启、完成后复原（6.3）；3101 为本地预留保护端口（被其他服务占用），各环境与脚本一律避开</td></tr>
+    <tr><td>本地生产预览</td><td>3102</td><td>next build 产物彩排，与 dev 数据隔离验证</td></tr>
+    <tr><td>阿里云 ECS</td><td>3100（公网）</td><td>Node 24 + MySQL 8 + systemd 服务；密钥经环境变量注入；真实账号默认</td></tr>
+  </table>
+  <p>数据库迁移使用独立凭证，运行时角色仅授所需表权限；构建命令 <code>prisma generate &amp;&amp; next build</code> 保证客户端与 schema 同步。公网版本与本地迭代解耦：本地验收通过后才按明确指令更新公网。</p>
+</section>
+
+<section class="chapter" id="ch4">
+  <div class="chapter-head"><span class="chapter-no">04</span><h1>AI 技术方案</h1></div>
+  <h2>4.1 AI 能力总览与选型理由</h2>
+  <table>
+    <tr><th style="width:20%">能力</th><th style="width:30%">当前部署选型</th><th>选型理由</th></tr>
+    <tr><td>对话助手</td><td>deepseek-flash · 关思考</td><td>陪伴式对话要求低延迟与稳定工具调用；思考 token 是该场景主要延迟源，关闭后端到端秒级</td></tr>
+    <tr><td>计划 Agent</td><td>deepseek-v4-pro · 开思考 + reasoning_effort</td><td>多约束推理（营养/器械/天气/忌口）需要深度；生成是低频异步操作，可容忍数十秒</td></tr>
+    <tr><td>餐食视觉</td><td>qwen3.8-flash 看图 + deepseek-v4.1-flash 出 JSON</td><td>视觉与结构化解耦：看图模型负责食材/份量，JSON 模型负责 zod 约束输出，各自可独立替换</td></tr>
+    <tr><td>嵌入</td><td>text-embedding-v4 · 1024 维</td><td>中文语义质量优；docs/rag-guide.md 预留同维 Ollama bge-m3 本地离线路径（文档化备选，当前部署未启用）</td></tr>
+    <tr><td>向量存储</td><td>MySQL JSON 列 + 应用层余弦</td><td>复用既有数据库、零新增运维；62 片段规模下平均 23ms；万篇级有明确向量索引迁移路径</td></tr>
+    <tr><td>工具协议</td><td>MCP（server + client + /api/mcp）</td><td>标准协议、工具可独立冒烟测试；助手与外部集成共用同一链路</td></tr>
+    <tr><td>天气</td><td>Open-Meteo</td><td>免密钥、实时预报；失败显式返回 UNAVAILABLE，机制上禁止编造天气</td></tr>
+    <tr><td>语音</td><td>Web Speech API</td><td>浏览器原生、零后端成本；识别入框可编辑、播报逐条可停止</td></tr>
+  </table>
+  <p>所有模型经 AI SDK 统一抽象（<code>streamText</code> / <code>generateText</code> / <code>tools</code> / <code>stopWhen</code>），provider 按场景分离：对话、计划、视觉、餐食、嵌入各有独立凭证与 base URL 配置，互不牵连，可单独降级或替换。表中模型名为网关配置层的路由别名：DeepSeek 系列承担对话/计划/结构化输出，Qwen 系列承担视觉，DashScope 提供嵌入；具体厂商版本号随网关配置，代码只依赖 provider 抽象，改配置即可整体替换而不改业务代码。</p>
+  <p>术语约定：<b>MCP</b>（Model Context Protocol）模型调用外部工具的标准化协议；<b>BM25</b> 经典概率关键词检索算法；<b>Hit@K</b> 前 K 条检索结果是否包含期望片段；<b>MRR</b>（Mean Reciprocal Rank）首个正确结果排名倒数的均值；<b>SSE</b>（Server-Sent Events）服务端单向流式推送；<b>reasoning_effort</b> 推理力度参数，控制模型思考深度。</p>
+  <h2>4.2 模型路由与流式集成</h2>
+  <p>思考开关在 fetch 包装层注入：<code>withThinking("disabled")</code> 为对话关闭思考，<code>withThinking("enabled", effort)</code> 为计划开启并附 <code>reasoning_effort</code>；餐食链路注入 <code>enable_thinking:false</code>。开关全部由环境变量驱动（<code>CHAT_DISABLE_THINKING</code> / <code>PLAN_ENABLE_THINKING</code> / <code>MEAL_DISABLE_THINKING</code>），不改代码即可做延迟/深度权衡。</p>
+  <div class="fig">
+    <svg viewBox="0 0 720 170" xmlns="http://www.w3.org/2000/svg">
+      <defs><marker id="ar2" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L8 4L0 8z" fill="#8a978c"/></marker></defs>
+      <g font-family="Microsoft YaHei,sans-serif" font-size="9">
+        <rect x="16" y="30" width="84" height="44" rx="6" fill="#fbfaf7" stroke="#7c9a7f"/><text x="58" y="49" text-anchor="middle" fill="#3f5a47" font-weight="bold">用户输入</text><text x="58" y="63" text-anchor="middle" fill="#5c6d61" font-size="8">限流+身份</text>
+        <rect x="116" y="30" width="104" height="44" rx="6" fill="#faf6ec" stroke="#c9a86a"/><text x="168" y="49" text-anchor="middle" fill="#5f5136" font-weight="bold">输入安全闸门</text><text x="168" y="63" text-anchor="middle" fill="#5f5136" font-size="8">emergency/caution</text>
+        <rect x="236" y="30" width="124" height="44" rx="6" fill="#eef4e8" stroke="#7c9a7f"/><text x="298" y="49" text-anchor="middle" fill="#3f5a47" font-weight="bold">streamText + 工具</text><text x="298" y="63" text-anchor="middle" fill="#5c6d61" font-size="8">MCP / RAG / 天气</text>
+        <rect x="376" y="30" width="104" height="44" rx="6" fill="#fbfaf7" stroke="#7c9a7f"/><text x="428" y="49" text-anchor="middle" fill="#3f5a47" font-weight="bold">句子边界缓冲</text><text x="428" y="63" text-anchor="middle" fill="#5c6d61" font-size="8">。！？；换行</text>
+        <rect x="496" y="30" width="104" height="44" rx="6" fill="#faf6ec" stroke="#c9a86a"/><text x="548" y="49" text-anchor="middle" fill="#5f5136" font-weight="bold">输出后置校验</text><text x="548" y="63" text-anchor="middle" fill="#5f5136" font-size="8">句级替换+免责</text>
+        <rect x="616" y="30" width="88" height="44" rx="6" fill="#eef4e8" stroke="#7c9a7f"/><text x="660" y="49" text-anchor="middle" fill="#3f5a47" font-weight="bold">SSE 客户端</text><text x="660" y="63" text-anchor="middle" fill="#5c6d61" font-size="8">来源footer</text>
+        <rect x="116" y="112" width="104" height="36" rx="6" fill="#faf6ec" stroke="#c9a86a"/><text x="168" y="134" text-anchor="middle" fill="#5f5136">应急回复·绕过模型</text>
+        <rect x="496" y="112" width="104" height="36" rx="6" fill="#fbfaf7" stroke="#8a978c"/><text x="548" y="134" text-anchor="middle" fill="#5c6d61">.ai-logs · post_guard</text>
+        <line x1="100" y1="52" x2="114" y2="52" stroke="#8a978c" marker-end="url(#ar2)"/>
+        <line x1="220" y1="52" x2="234" y2="52" stroke="#8a978c" marker-end="url(#ar2)"/>
+        <line x1="360" y1="52" x2="374" y2="52" stroke="#8a978c" marker-end="url(#ar2)"/>
+        <line x1="480" y1="52" x2="494" y2="52" stroke="#8a978c" marker-end="url(#ar2)"/>
+        <line x1="600" y1="52" x2="614" y2="52" stroke="#8a978c" marker-end="url(#ar2)"/>
+        <line x1="168" y1="74" x2="168" y2="110" stroke="#c9a86a" marker-end="url(#ar2)"/>
+        <line x1="548" y1="74" x2="548" y2="110" stroke="#8a978c" marker-end="url(#ar2)"/>
+      </g>
+    </svg>
+    <div class="fig-cap">图 4-1 流式对话管线：输入闸门 → 工具增强生成 → 句级缓冲 → 后置校验 → SSE</div>
+  </div>
+  <p>缓冲器只在句子边界（。！？；换行）切分，完整句子才进入校验，因此<b>首句延迟不被安全校验拖慢</b>，也不会把半句话误判。流结束时 flush 剩余文本、按需追加免责声明与来源 footer，并调用 <code>logger.finish</code> 记录 usage、finishReason 与 <code>post_guard</code> 标记。</p>
+  <h2>4.3 受约束计划 Agent</h2>
+  <p>计划数值与排程由确定性引擎完成；Agent（<code>lib/plan-agent.ts</code>）只读取依据、在边界内补充说明。上下文注入资料、营养目标、餐食信号与规则引擎已排好的训练安排；<code>stepCountIs(8)</code>、<code>maxOutputTokens 1600</code>、<code>temperature 0.2</code> 约束步数与发散。白名单工具中 <code>applyFocus</code> 仅在餐食汇总存在对应信号时才把「蛋白质重点 / 份量重点」写进食次建议，每次至多一项、不自动改热量目标；<code>getWeatherForecast</code> 无城市或服务失败时显式失败，禁止编造天气。</p>
+  <div class="fig">
+    <svg viewBox="0 0 720 240" xmlns="http://www.w3.org/2000/svg">
+      <defs><marker id="ar3" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L8 4L0 8z" fill="#8a978c"/></marker><marker id="ar3a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L8 4L0 8z" fill="#c9a86a"/></marker></defs>
+      <g font-family="Microsoft YaHei,sans-serif" font-size="9">
+        <rect x="16" y="8" width="196" height="64" rx="6" fill="#fbfaf7" stroke="#7c9a7f"/><text x="28" y="28" fill="#3f5a47" font-weight="bold">上下文注入</text><text x="28" y="44" fill="#5c6d61" font-size="8">profile / targets / mealSummary</text><text x="28" y="58" fill="#5c6d61" font-size="8">movement / weatherAdjustments</text>
+        <rect x="232" y="8" width="180" height="64" rx="6" fill="#eef4e8" stroke="#7c9a7f"/><text x="244" y="28" fill="#3f5a47" font-weight="bold">计划 Agent · pro 开思考</text><text x="244" y="44" fill="#5c6d61" font-size="8">stepCountIs(8) · temp 0.2</text><text x="244" y="58" fill="#5c6d61" font-size="8">不写计划·不算数值</text>
+        <rect x="432" y="8" width="272" height="64" rx="6" fill="#fbfaf7" stroke="#7c9a7f"/><text x="444" y="28" fill="#3f5a47" font-weight="bold">白名单工具 ×6</text><text x="444" y="44" fill="#5c6d61" font-size="8">getRecentMealSummary · getNutritionTargets</text><text x="444" y="58" fill="#5c6d61" font-size="8">searchGuidelines · getWeatherForecast · applyFocus · addCoachNote</text>
+        <rect x="432" y="104" width="272" height="52" rx="6" fill="#faf6ec" stroke="#c9a86a"/><text x="444" y="124" fill="#5f5136" font-weight="bold">参数与安全校验</text><text x="444" y="140" fill="#5f5136" font-size="8">天气须先查预报 · 指南须绑引用 · 医疗越界/链接/重复 → 拒绝</text>
+        <rect x="232" y="104" width="180" height="52" rx="6" fill="#eef4e8" stroke="#7c9a7f"/><text x="244" y="124" fill="#3f5a47" font-weight="bold">捕获产物</text><text x="244" y="140" fill="#5c6d61" font-size="8">notes / citations / adjustments / toolLog</text>
+        <rect x="16" y="104" width="196" height="52" rx="6" fill="#fbfaf7" stroke="#7c9a7f"/><text x="28" y="124" fill="#3f5a47" font-weight="bold">plan.agent 持久化</text><text x="28" y="140" fill="#5c6d61" font-size="8">status / references / ragStatus / inputSummary</text>
+        <rect x="16" y="184" width="688" height="44" rx="6" fill="#fbfaf7" stroke="#8a978c" stroke-dasharray="4 3"/><text x="28" y="202" fill="#5c6d61" font-weight="bold">兜底链</text><text x="28" y="218" fill="#5c6d61" font-size="8">无工具调用 → FAILED 确定性计划 · RAG 未调用 → 补充检索 · 天气失败 → 不声称参考天气 · 全量轨迹汇入 .ai-logs</text>
+        <line x1="212" y1="40" x2="230" y2="40" stroke="#8a978c" marker-end="url(#ar3)"/>
+        <line x1="412" y1="40" x2="430" y2="40" stroke="#8a978c" marker-end="url(#ar3)"/>
+        <line x1="568" y1="72" x2="568" y2="102" stroke="#8a978c" marker-end="url(#ar3)"/>
+        <line x1="432" y1="130" x2="414" y2="130" stroke="#8a978c" marker-end="url(#ar3)"/>
+        <line x1="660" y1="104" x2="660" y2="74" stroke="#c9a86a" stroke-dasharray="4 3" marker-end="url(#ar3a)"/>
+        <text x="652" y="92" fill="#c9a86a" font-size="8" text-anchor="end">REJECTED→重试</text>
+        <line x1="232" y1="130" x2="214" y2="130" stroke="#8a978c" marker-end="url(#ar3)"/>
+        <line x1="114" y1="156" x2="114" y2="182" stroke="#8a978c" stroke-dasharray="4 3" marker-end="url(#ar3)"/>
+      </g>
+    </svg>
+    <div class="fig-cap">图 4-2 受约束 Agent 循环：白名单工具 → 校验（拒绝即记录并令模型自纠）→ 捕获 → 持久化</div>
+  </div>
+  <p>拒绝不是静默过滤：每次越界调用写入 <code>toolLog REJECTED</code> 并把原因返回模型令其自纠。真实日志可见 <code>addCoachNote:REJECTED</code>（非指南说明绑定引用、医疗越界等）后模型改写为合规说明（见 6.4）。Agent 产物随 PlanVersion 持久化，但界面不铺开解释面板——决策过程以日志佐证，对用户克制、对评审透明。</p>
+  <h2>4.4 RAG 知识检索与引用回链</h2>
+  <p>语料为 27 篇 / 62 片段：中国居民膳食指南、健康中国行动、身体活动指南及 BMJ、Clinical Nutrition、Circulation 等同行评审文献与 2025 美国膳食指南咨询委员会报告；入库前核对 DOI/期刊/年份/摘要，<code>reviewedAt</code> 留痕，未审核内容不可检索。分块约 280 字、内容哈希稳定 ID、每批 10 条向量化。</p>
+  <div class="fig">
+    <svg viewBox="0 0 720 190" xmlns="http://www.w3.org/2000/svg">
+      <defs><marker id="ar4" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L8 4L0 8z" fill="#8a978c"/></marker></defs>
+      <g font-family="Microsoft YaHei,sans-serif" font-size="9">
+        <rect x="16" y="8" width="150" height="40" rx="6" fill="#fbfaf7" stroke="#7c9a7f"/><text x="91" y="32" text-anchor="middle" fill="#3f5a47">指南文献（审核留痕）</text>
+        <rect x="182" y="8" width="150" height="40" rx="6" fill="#fbfaf7" stroke="#7c9a7f"/><text x="257" y="32" text-anchor="middle" fill="#3f5a47">~280 字分块·哈希 ID</text>
+        <rect x="348" y="8" width="170" height="40" rx="6" fill="#eef4e8" stroke="#7c9a7f"/><text x="433" y="32" text-anchor="middle" fill="#3f5a47">text-embedding-v4 · 1024 维</text>
+        <rect x="534" y="8" width="170" height="40" rx="6" fill="#eef4e8" stroke="#7c9a7f"/><text x="619" y="32" text-anchor="middle" fill="#3f5a47">MySQL JSON 向量列</text>
+        <rect x="16" y="110" width="90" height="44" rx="6" fill="#fbfaf7" stroke="#7c9a7f"/><text x="61" y="136" text-anchor="middle" fill="#3f5a47">用户问题</text>
+        <rect x="122" y="110" width="180" height="44" rx="6" fill="#eef4e8" stroke="#7c9a7f"/><text x="212" y="128" text-anchor="middle" fill="#3f5a47" font-weight="bold">混合召回</text><text x="212" y="143" text-anchor="middle" fill="#5c6d61" font-size="8">向量余弦 ∪ BM25</text>
+        <rect x="318" y="110" width="140" height="44" rx="6" fill="#eef4e8" stroke="#7c9a7f"/><text x="388" y="128" text-anchor="middle" fill="#3f5a47" font-weight="bold">归一化重排</text><text x="388" y="143" text-anchor="middle" fill="#5c6d61" font-size="8">阈值 0.45 过滤</text>
+        <rect x="474" y="110" width="230" height="44" rx="6" fill="#fbfaf7" stroke="#7c9a7f"/><text x="589" y="128" text-anchor="middle" fill="#3f5a47" font-weight="bold">Top-K + 引用回链</text><text x="589" y="143" text-anchor="middle" fill="#5c6d61" font-size="8">referenceIndex 绑定指南序号</text>
+        <line x1="166" y1="28" x2="180" y2="28" stroke="#8a978c" marker-end="url(#ar4)"/>
+        <line x1="332" y1="28" x2="346" y2="28" stroke="#8a978c" marker-end="url(#ar4)"/>
+        <line x1="518" y1="28" x2="532" y2="28" stroke="#8a978c" marker-end="url(#ar4)"/>
+        <path d="M 619 48 L 619 78 L 212 78 L 212 108" fill="none" stroke="#8a978c" marker-end="url(#ar4)"/>
+        <line x1="106" y1="132" x2="120" y2="132" stroke="#8a978c" marker-end="url(#ar4)"/>
+        <line x1="302" y1="132" x2="316" y2="132" stroke="#8a978c" marker-end="url(#ar4)"/>
+        <line x1="458" y1="132" x2="472" y2="132" stroke="#8a978c" marker-end="url(#ar4)"/>
+        <text x="16" y="176" fill="#7f8e83" font-size="8">低于阈值 → NO_MATCH，明确说明无法确认、不编造来源；向量不可用时关键词（BM25）回退。</text>
+      </g>
+    </svg>
+    <div class="fig-cap">图 4-3 RAG 管线：审核入库 → 混合召回 → 重排 → 引用回链</div>
+  </div>
+  <table>
+    <tr><th>策略</th><th>Hit@3</th><th>Hit@5</th><th>MRR</th><th>负向通过</th><th>平均耗时</th></tr>
+    <tr><td>hybrid（向量 ∪ BM25 + 重排）</td><td>100%</td><td>100%</td><td>0.987</td><td>100%</td><td>23ms</td></tr>
+    <tr><td>vector</td><td>100%</td><td>100%</td><td>0.987</td><td>100%</td><td>23ms</td></tr>
+    <tr><td>keyword（BM25）</td><td>94.9%</td><td>94.9%</td><td>0.949</td><td>100%</td><td>23ms</td></tr>
+  </table>
+  <p>评测集 43 条（正向 39 / 负向 4），hybrid 未命中与负向误召回均为 0（<code>.rag-eval/last-report.json</code>，2026-11-12）。如实说明：当前评测集上 vector 单路已命中全部正向题，故 hybrid 与其指标持平；hybrid 的增量价值在双路互补与降级——q05/q16 这类换述题 keyword 单路 NO_MATCH 而向量路仍命中，向量服务不可用时 keyword 可独立接管（94.9%）。本文档不宣称 hybrid 在本评测集上的数值优势。引用回链在两端落地：助手来源栏可点击回链；计划 Agent 的指南说明必须绑定 <code>referenceIndex</code>，否则校验拒绝。</p>
+  <h2>4.5 多模态餐食识别</h2>
+  <p>流水线：拍照 → 视觉模型识别食材与份量 → 结构化模型按 zod schema 输出 JSON → <code>calculateNutrition</code> 工具计算估算与 ±区间（0.85–1.2 倍，提示视觉份量与烹饪用油误差）→ 食物参考库匹配并显示来源 → 用户确认（PENDING→CONFIRMED）→ 入库统计。餐食链路关闭思考是延迟关键，实测全链路约 8.8 秒；估算永远表述为估算，确认环节不可跳过。</p>
+  <h2>4.6 MCP 与外部数据集成</h2>
+  <table>
+    <tr><th style="width:34%">MCP 工具</th><th>职责</th></tr>
+    <tr><td>search_wellness_knowledge</td><td>检索审核知识库，返回带 source 的片段</td></tr>
+    <tr><td>calculate_nutrition</td><td>单餐营养估算，结果表述为估算</td></tr>
+    <tr><td>safety_check</td><td>急症/自伤/特殊人群核对，高风险转介</td></tr>
+    <tr><td>get_weather_forecast</td><td>城市实时预报，失败显式 UNAVAILABLE</td></tr>
+  </table>
+  <p><code>lib/mcp-server.ts</code> 注册工具，<code>/api/mcp</code> 暴露 HTTP 端点，助手经 <code>lib/mcp-client.ts</code> 以真实 MCP Client 调用（日志 <code>tools=mcp</code>），<code>scripts/mcp-smoke.mjs</code> 可独立冒烟。天气采用两段式诚实设计：规则引擎先按预报完成户外训练调整并记录 <code>weatherAdjustments</code>，Agent 只照记录说明；无城市或服务失败时不声称参考过天气。</p>
+  <h2>4.7 性能与成本优化策略</h2>
+  <table>
+    <tr><th style="width:20%">维度</th><th>策略与实测</th></tr>
+    <tr><td>延迟</td><td>场景化思考开关；流式首句优先；句级缓冲不阻塞首句。对话首步 2.0–2.7s、端到端 5.8–8.1s（日志实测）；餐食约 8.8s；计划 42.6s 异步容忍</td></tr>
+    <tr><td>检索</td><td>混合召回 + 归一化重排，平均 23ms；阈值与关键词回退保证空检索不编造</td></tr>
+    <tr><td>成本</td><td>模型分层（flash/pro/视觉/嵌入各司其职）；maxOutputTokens 与 stepCount 上限；嵌入批量 10 条</td></tr>
+    <tr><td>可靠性</td><td>RAG 关键词回退、天气降级、Agent 确定性兜底、存储失败与生成失败区分报错</td></tr>
+    <tr><td>可观测</td><td>全链路日志：latencyMs / usage / toolSequence / post_guard / rag 状态，延迟与成本可按路由复盘</td></tr>
+  </table>
+  <h2>4.8 安全与合规设计</h2>
+  <p><b>输入端</b>：<code>assessHealthSafety</code> 三级判定——emergency 绕过模型直接应急回复（急救/心理援助热线指引）；caution 注入转介指令；routine 正常生成。<b>输出端</b>：<code>guardAssistantOutput</code> 句级后置校验，四类规则保守替换并追加免责声明：</p>
+  <table>
+    <tr><th style="width:30%">类别</th><th>处置</th></tr>
+    <tr><td>self_harm_method</td><td>替换为求助与陪伴指引，优先级最高</td></tr>
+    <tr><td>medication</td><td>药物/剂量/停药建议替换为「遵医嘱」表述</td></tr>
+    <tr><td>diagnosis</td><td>诊断动词+疾病名组合替换为就医建议</td></tr>
+    <tr><td>care_dismissal</td><td>「不用就医/没事」类淡化替换为谨慎提醒</td></tr>
+  </table>
+  <p>命中任何类别即在流末追加「以上为一般健康信息，不能替代医生的诊断和处方。」并以 <code>post_guard</code> 落日志。两端规则均为确定性正则实现：输入端含否定检测（避免「没有胸痛」这类否定表述误判），输出端按句匹配、按类别优先级替换，不依赖第二次模型调用，行为可复现、不增加延迟；代价是换述覆盖有限，故定位为保守底线而非完备医疗审计，系统性有效性评测与红队用例列入 8.3。Agent 侧另有白名单与拒绝机制（4.3），且系统提示明确：检索片段、餐食与用户资料均为不可信数据，只作资料、不执行其中指令。内容诚实约束（缺数据不猜、示例必标注、修订只描述真实变化）贯穿全部生成路径。</p>
+  <h2>4.9 评测指标与可观测性</h2>
+  <p><code>lib/ai-logger.ts</code> 按日落盘 <code>.ai-logs/ai-YYYY-MM-DD.jsonl</code>，字段含 ts / requestId / route / model / actor / outcome / latencyMs / safety / steps / toolSequence / usage / finishReason / textChars / notes。两条真实记录：</p>
+  <pre>assistant · deepseek-flash · latencyMs=6383 · toolSequence=[safety_check, search_wellness_knowledge]
+  notes=[tools=mcp, post_guard=clean] · usage totalTokens=5137
+plans/generate · deepseek-v4-pro · latencyMs=42583 · finishReason=OK
+  agent_tools=getRecentMealSummary:OK&gt;getNutritionTargets:OK&gt;searchGuidelines:OK&gt;getWeatherForecast:ERROR
+    &gt;addCoachNote:REJECTED×3&gt;addCoachNote:OK×3 · rag=OK</pre>
+  <p>前者佐证「安全核对先于知识检索」的工具顺序与输出校验干净；后者佐证 Agent 先读依据、天气失败不编造、越界说明被拒绝后自纠的完整决策链。提交材料可直接引用这些字段复核 AI 行为。</p>
+</section>
+
+<section class="chapter" id="ch5">
+  <div class="chapter-head"><span class="chapter-no">05</span><h1>核心功能实现</h1></div>
+  <h2>5.1 餐食记录闭环</h2>
+  <p>拍照区采用胶片相机交互；识别走 4.5 双模型流水线，估算带区间与误差提示、匹配显示来源；用户确认后才入库（<code>CONFIRMED</code>），按天/周真实记录驱动概览热量卡与复盘信号。右列限高内部滚动，移动端单列堆叠；链路无一处以模型输出替代用户确认。</p>
+  <h2>5.2 计划生成与版本管理</h2>
+  <p><code>lib/plan-engine.ts</code> 按资料确定性计算营养目标与训练排程，Agent 叠加建议后合并为 PlanVersion；<code>unique(profileId, version)</code> 防并发撞号，新版本默认自动启用，历史版本可回看、启用、删除。意见调整走多轮 AI 对话（<code>plans/chat</code>），修订跳过二次 Agent、实测约 4.5 秒，只描述实际变化；Agent 还可依据餐食汇总信号经 <code>applyFocus</code> 把「蛋白质重点 / 份量重点」写进下一版食次建议（至多一项、不自动改热量目标），记录不完整时保持不调整。</p>
+  <h2>5.3 意见调整与动态调整</h2>
+  <p>动态调整只评估显著偏差：单餐已记录热量高出参考上限 max(180 kcal, 上限×30%)、或全天高出热量上限 max(150 kcal, 上限×10%)，才触发 <code>plans/adjust/evaluate</code>，否则返回暂不需要调整；建议经约束校验与用户确认生效（<code>apply</code>），可 <code>restore</code> 撤销。临时层以 <code>unique(profileId, dayKey)</code> 按天覆盖、不占版本号，与长期版本互不污染；调整对话只在约束内改建议，越界即拒绝；天气户外调整由规则引擎记录，Agent 照记录说明（4.6）。</p>
+  <h2>5.4 训练打卡与每周复盘</h2>
+  <p>训练卡逐项勾选，<code>steps Json</code> 记每步完成态，全步骤完成才写 <code>completedAt</code> 记一次训练；示例与未来日期不可打卡。周复盘同步完成记录，与餐食偏差信号构成调整输入；训练日可指定，器械多选筛选动作。</p>
+  <h2>5.5 体重与数据趋势</h2>
+  <p>体重同日覆盖（<code>unique(profileId, dateKey)</code>），我的空间填写只读同步概览/复盘；资料体重作标注来源的趋势起点，单条即出图、同值也显示，平线用局部刻度防误导；趋势只认真实记录，无记录不画图、不虚构。</p>
+  <h2>5.6 健康搭子对话与语音</h2>
+  <p>多会话按账号隔离，固定高度内部滚动 + 全屏；手机输入框避开底部导航、首屏可见。语音经 Web Speech 入框可编辑再发送，播报逐条可停；来源栏引用回链（4.4），回答禁 Markdown 与工具过程说明，点赞/点踩留痕 Feedback 表。浮动头像可拖拽（拖动≠点击），气泡悬停/聚焦可再唤出且不出屏。</p>
+  <h2>5.7 概览页与今日训练</h2>
+  <p>今日训练卡只读已启用计划三态（训练 / 休息 / 未启用），开始训练跳转计划页；饮水柱状图按天持久化；今日切片九宫格可点击跳转，悬停凸起、其余模糊，减弱动效全降级。</p>
+</section>
+
+<section class="chapter" id="ch6">
+  <div class="chapter-head"><span class="chapter-no">06</span><h1>测试与部署</h1></div>
+  <h2>6.1 质量门禁</h2>
+  <p>每次改动执行 <code>npm run typecheck</code>（tsc --noEmit）与 <code>npm run lint</code>，基线保持 0 error（5 条 img 警告为已接受的 Next 图片提示）。项目无单元测试框架，行为正确性由「检索评测脚本 + 三端浏览器回归 + 端到端彩排」三层验证承担，所有验收在本地 dev 完成，未经明确指令不构建、不发布。</p>
+  <h2>6.2 检索评测</h2>
+  <p>评测集 <code>content/rag-eval.json</code> 与语料同步构建：39 条正向题按知识库文档标题逐条写成口语化换述，<code>expectTitle</code> 标注期望命中文档（须与标题完全一致）；4 条负向题为天气/代码/电影/路由器等域外请求，期望 NO_MATCH。<code>npm run rag:eval</code> 调用 <code>/api/rag/eval</code>，对 43 条逐条跑 hybrid / vector / keyword 三策略，输出 Hit@3、Hit@5、MRR、负向通过率与平均耗时，并列出未命中与负向误召回明细；报告写入 <code>.rag-eval/last-report.json</code> 供复核。最近一次（2026-11-12）hybrid 全指标 100% / MRR 0.987 / 23ms，未命中与误召回均为 0（4.4）。评测集与语料同步扩充，形成「改检索→跑评测→看明细」的闭环。</p>
+  <h2>6.3 浏览器回归与演示彩排</h2>
+  <p>回归采用 headless Chrome + CDP、仅访问 localhost，覆盖 1440 桌面、1415×949 与 390 移动三档视口；计划弹窗等重交互可用 mock profile/plan 隔离验收。端到端彩排走完整链路：注册→建档→拍照记餐→生成计划→意见调整→打卡→复盘→助手对话→体重记录，真实账号与演示沙盒各跑一遍；演示 QA 以 <code>DEMO_MODE=true</code> 重启 dev 跑演示链路后复原——开关是环境级、沙盒隔离是会话级（3.4），两者正交，保证真实与演示两种身份互不串流。</p>
+  <h2>6.4 请求日志佐证</h2>
+  <p><code>.ai-logs</code> 只记录元数据与字符数（textChars），不落敏感提示词全文，兼顾审计与隐私。4.9 的两条记录分别佐证：对话工具顺序「先安全核对、后知识检索」且 <code>post_guard=clean</code>；计划 Agent「先读依据→天气失败不编造→越界说明 REJECTED 后自纠→rag=OK」。写提交材料时直接引用 <code>toolSequence</code> / <code>agent_tools</code> / <code>post_guard</code> / <code>latencyMs</code> 字段即可复核，无需在界面展示决策面板。</p>
+  <h2>6.5 部署与运维</h2>
+  <p>公网部署于阿里云 ECS：Node 24 + MySQL 8，<code>prisma generate &amp;&amp; next build</code> 后以 systemd 服务常驻，环境变量注入 <code>AUTH_SECRET</code> / <code>DATABASE_URL</code> / 模型密钥，密钥不入源码、不入仓库。迁移与运行时凭证分离，运行时角色仅授所需表权限。本地 dev（3100）/ 生产预览（3102）/ 公网 ECS 三环境解耦：本地验收通过后才按明确指令更新公网；计划版本历史与 git 快照提供行为级与代码级双重回退。公网当前为 HTTP 直连（未配域名与 HTTPS），备份与监控的现状和补齐计划见 8.2 / 8.3。</p>
+</section>
+
+<section class="chapter" id="ch7">
+  <div class="chapter-head"><span class="chapter-no">07</span><h1>创新点说明</h1></div>
+  <h2>7.1 技术创新点</h2>
+  <ol>
+    <li><b>确定性引擎 + 受约束 Agent 的两段式决策。</b>营养计算、目标与排程全部由规则引擎完成；Agent 只能通过白名单工具读取依据、在边界内补充建议，越界调用被拒绝并记录原因。决策过程持久化为 <code>toolLog</code> 并汇入 <code>.ai-logs</code> 的 <code>toolSequence</code>/<code>agent_tools</code> 字段，形成可审计证据链（见 4.3、6.4）。</li>
+    <li><b>混合检索 + 重排 + 引用回链 + 评测闭环。</b>向量 ∪ BM25 双路互补召回、归一化重排，向量不可用时关键词独立降级；答案引用绑定具体指南序号并可回链；配套 43 条含负例的评测集，Hit@3 / Hit@5 100%、MRR 0.987，并如实报告当前评测集上 vector 单路与 hybrid 持平、增量在互补与降级稳健性（见 4.4、6.2）。</li>
+    <li><b>流式句级输出后置安全校验。</b>在 SSE 流上按句子边界缓冲，命中医疗越界规则的句子被保守替换并追加免责声明，不牺牲首句延迟；校验结果以 <code>post_guard</code> 标记落日志（见 4.8）。</li>
+    <li><b>MCP 标准化工具集成。</b>自建 MCP server 暴露 4 个工具并经 <code>/api/mcp</code> 提供，助手以真实 MCP Client 调用，天气等外部数据走同一协议链路，工具可独立冒烟测试（见 4.6）。</li>
+    <li><b>双模型场景路由与思考开关。</b>对话用 flash 关思考保低延迟，计划用 pro 开思考保推理深度，餐食用视觉 + JSON 双模型分工；按场景配置 temperature / token 上限 / 步数上限（见 4.2、4.7）。</li>
+    <li><b>天气→确定性调整→Agent 说明的两段式诚实设计。</b>户外训练调整先由规则引擎按实时预报完成并记录，Agent 只照记录说明，从机制上杜绝模型虚构「改过训练」（见 4.6、5.3）。</li>
+  </ol>
+  <h2>7.2 应用创新点</h2>
+  <ol>
+    <li><b>「缺数据不猜」的诚实健康管理。</b>把内容诚实做成产品级约束：无资料不展示示例计划、不虚构健康分与疾病风险、示例必标注、计划修订只描述真实变化——把「不编造」当成产品约束而非宣传话术。</li>
+    <li><b>版本 / 临时层 / 实时层三层计划分离。</b>长期目标走版本管理，短期波动走不占版本号的临时动态层，天气走确定性实时调整；三者互不污染，用户可随时回看与启用历史版本。</li>
+    <li><b>真实账号与演示沙盒双轨。</b>评审无需注册即可按会话隔离体验完整闭环，演示数据与真实数据互不串流，兼顾比赛演示与真实可用。</li>
+    <li><b>低刺激陪伴感与无障碍一体设计。</b>白瓷 + 鼠尾草绿的低刺激视觉系统与品牌字标降低焦虑感；正文对比度 12.3:1、减弱动效全降级、可再次唤出的提示、三档响应式回归，把「陪伴感」与「可访问性」用可测指标同时落地（NFR-05）。</li>
+    <li><b>证据链式交付。</b>AI 决策过程不在界面铺开解释面板，而是后台持久化、日志佐证，提交材料直接引用字段——对用户克制、对评审透明。</li>
+  </ol>
+</section>
+
+<section class="chapter" id="ch8">
+  <div class="chapter-head"><span class="chapter-no">08</span><h1>总结与展望</h1></div>
+  <h2>8.1 总结</h2>
+  <p>智养AI 完成了「记录→计划→执行→复盘→调整」的真实闭环，并围绕 AI 技术深度建成六项能力：受约束 Agent、混合检索引用、流式后置安全、MCP 集成、双模型路由与天气联动。质量门禁保持类型检查与 lint 0 error，检索评测全指标达标，公网部署可用，全部关键行为均有源码与日志佐证。项目证明了「有边界的 AI」可以在消费级健康场景中同时做到有用、可信、可审计。</p>
+  <h2>8.2 局限</h2>
+  <ul>
+    <li><b>模态覆盖</b>：已覆盖图像、文本、语音，视频模态（如动作视频分析）尚未实现。</li>
+    <li><b>评测规模</b>：43 条检索评测集覆盖主要指南主题，但规模有限，需持续扩充与线上监控。</li>
+    <li><b>检索扩展性</b>：向量存于 MySQL JSON 列、应用层计算相似度，千篇级知识库足够，万篇级需引入向量索引。</li>
+    <li><b>语音依赖</b>：Web Speech 识别与播报依赖浏览器实现，跨浏览器体验不一致。</li>
+    <li><b>计划延迟</b>：开思考的计划 Agent 单次生成约数十秒，需靠异步反馈与日志持续优化。</li>
+    <li><b>运维与安全评测</b>：公网当前 HTTP 直连（未配域名与 HTTPS），备份与监控依赖人工与 systemd 自动重启；双端安全规则仅有冒烟级 post_guard 记录，缺系统性红队有效性评测。</li>
+  </ul>
+  <h2>8.3 展望</h2>
+  <ul>
+    <li>引入视频模态：训练动作短视频的要点提示与计数，补齐多模态最后一块。</li>
+    <li>检索升级：扩充评测集至数百条、引入向量索引与在线命中率监控，保持评测驱动迭代。</li>
+    <li>长期记忆：在隐私边界内沉淀用户长期偏好与历史响应，让计划随时间更贴合本人。</li>
+    <li>多端同步与离线：移动端 PWA 离线记录、联网合并，降低记录摩擦。</li>
+    <li>安全持续运营：扩充输入闸门与输出校验规则库，建立红队用例对双端规则做系统性有效性评测（当前仅冒烟级记录），把 post_guard 命中率纳入常态监控。</li>
+    <li>运维补齐：域名与 HTTPS、加密备份与恢复演练、延迟/检索命中率/安全命中纳入监控，与 8.2 局限逐项对应。</li>
+  </ul>
+</section>
+
+</body>
+</html>

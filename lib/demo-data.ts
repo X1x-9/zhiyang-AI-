@@ -248,6 +248,7 @@ export function createDemoDashboard(
     pendingMeals: todayAll.filter((meal) => meal.status === "PENDING").length,
     mealsToday: todayMeals.length,
     workout: {
+      status: "scheduled",
       title: "全身基础力量 · 轻松开始",
       durationMinutes: 25,
       exercises: ["深蹲", "臀桥", "墙面俯卧撑"],

@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { createAiCallLogger } from "@/lib/ai-logger";
+import { getPlanModelName } from "@/lib/ai-tools";
 import { IdentityError, resolveIdentity } from "@/lib/identity";
 import { clientKey, rateLimit } from "@/lib/rate-limit";
 import { generatePlanVersion, getPlanState, PlanRevisionError, PlanStorageError } from "@/lib/plan-store";
@@ -46,8 +48,32 @@ export async function POST(request: Request) {
       );
     }
 
+    const logger = createAiCallLogger({
+      route: "plans/generate",
+      model: getPlanModelName(),
+      actorId: identity.kind === "user" ? identity.userId : identity.sessionId,
+      safety: { level: "routine", reasons: [] },
+      messageCount: 1,
+      latestUserChars: feedback?.length ?? 0,
+    });
+    const startedAt = Date.now();
     const result = await generatePlanVersion(identity, profile, feedback);
     const state = await getPlanState(identity);
+    const agent = result.plan.agent;
+    if (agent) {
+      const calls = agent.toolLog.map((tool, index) => ({ toolCallId: `agent-${index}`, toolName: tool.name }));
+      logger.recordStep({ stepNumber: 0, finishReason: agent.status, latencyMs: Date.now() - startedAt, toolCalls: calls, toolResults: calls });
+    }
+    logger.finish({
+      outcome: "ok",
+      finishReason: agent?.status ?? null,
+      notes: [
+        `agent_model=${agent?.model ?? "-"}`,
+        `agent_status=${agent?.status ?? "-"}`,
+        `agent_tools=${agent?.toolLog.map((tool) => `${tool.name}:${tool.status}`).join(">") || "-"}`,
+        `rag=${agent?.ragStatus ?? "-"}`,
+      ],
+    });
     return NextResponse.json({ ...state, generatedVersion: result.plan.version }, { status: 201 });
   } catch (error) {
     if (error instanceof IdentityError) {

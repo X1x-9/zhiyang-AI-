@@ -84,6 +84,7 @@ export async function POST(request: Request) {
       directive: outcome.directive,
       request: outcome.request,
       baseVersion: currentPlan.version,
+      skipAgent: true,
     });
     const nextState = await getPlanState(identity);
     return NextResponse.json(
