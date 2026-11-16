@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Build docs/智养AI技术文档.docx from structured content."""
+"""Build 智养AI技术文档.docx from structured content."""
 
 import re
 from docx import Document
@@ -1100,7 +1100,7 @@ def build():
     doc.core_properties.subject = "Next.js 16 + React 19 + MySQL 8 + AI SDK 7"
     doc.core_properties.comments = ""
 
-    out = r"C:\Users\高志豪\Desktop\智养AI\docs\智养AI技术文档.docx"
+    out = r"C:\Users\高志豪\Desktop\智养AI\智养AI技术文档.docx"
     doc.save(out)
     print("saved", out)
 
