@@ -8,11 +8,13 @@ type HealthState = {
   mealNote: string;
   confirmed: boolean;
   spaceProfile: SpaceProfile | null;
+  planGenerating: boolean;
   setPage: (page: Page) => void;
   setMealNote: (note: string) => void;
   confirmMeal: () => void;
   resetMealConfirmation: () => void;
   setSpaceProfile: (profile: SpaceProfile | null) => void;
+  setPlanGenerating: (value: boolean) => void;
 };
 
 export const useHealthStore = create<HealthState>((set) => ({
@@ -21,9 +23,11 @@ export const useHealthStore = create<HealthState>((set) => ({
   mealNote: "",
   confirmed: false,
   spaceProfile: null,
+  planGenerating: false,
   setPage: (page) => set((state) => state.visitedPages.includes(page) ? { page } : { page, visitedPages: [...state.visitedPages, page] }),
   setMealNote: (mealNote) => set({ mealNote }),
   confirmMeal: () => set({ confirmed: true }),
   resetMealConfirmation: () => set({ confirmed: false }),
   setSpaceProfile: (spaceProfile) => set({ spaceProfile }),
+  setPlanGenerating: (planGenerating) => set({ planGenerating }),
 }));

@@ -67,6 +67,9 @@ export async function POST(request: Request) {
     }
 
     const { messages, reaction } = parsed.data;
+    const modelMessages = reaction && messages[messages.length - 1]?.role === "assistant"
+      ? [...messages, { role: "user" as const, content: `（快捷评价：${reactionPrompts[reaction].label}）` }]
+      : messages;
     const latestUser = [...messages].reverse().find((message) => message.role === "user");
     const safety = assessHealthSafety(latestUser?.content ?? "");
     const logger = createAiCallLogger({
@@ -131,7 +134,7 @@ export async function POST(request: Request) {
       const result = streamText({
         model: getModel(),
         system,
-        messages,
+        messages: modelMessages,
         tools,
         stopWhen: stepCountIs(4),
         maxOutputTokens: 1500,

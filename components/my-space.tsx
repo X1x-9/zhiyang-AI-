@@ -198,6 +198,7 @@ function formatMoment(value?: string) {
 export function MySpace({ data, loading, profile, hasStored, demo }: MySpaceProps) {
   const setPage = useHealthStore((state) => state.setPage);
   const setSpaceProfile = useHealthStore((state) => state.setSpaceProfile);
+  const setPlanGenerating = useHealthStore((state) => state.setPlanGenerating);
   const queryClient = useQueryClient();
   const reduce = useReducedMotion();
   const heroStageRef = React.useRef<HTMLDivElement>(null);
@@ -527,12 +528,15 @@ export function MySpace({ data, loading, profile, hasStored, demo }: MySpaceProp
     void queryClient.invalidateQueries({ queryKey: ["profile"] });
     void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
     setStatus({ kind: "idle", text: "资料已保存，正在按资料生成计划…" });
+    setPlanGenerating(true);
 
     try {
       const response = await fetch("/api/plans/generate", { method: "POST" });
       const result = (await response.json().catch(() => null)) as { plan?: { version?: number }; message?: string } | null;
       if (!response.ok || !result?.plan?.version) throw new Error(result?.message ?? "计划生成失败，请稍后重试。");
       void queryClient.invalidateQueries({ queryKey: ["plan"] });
+      void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      window.dispatchEvent(new CustomEvent("plan-generated", { detail: { version: result.plan.version } }));
       setStatus({
         kind: "saved",
         text: `已保存到${isDemo ? "演示沙盒" : "你的账户"} · ${formatMoment(persisted.savedAt)}。饮食与运动计划已生成（v${result.plan.version}）。`,
@@ -543,6 +547,7 @@ export function MySpace({ data, loading, profile, hasStored, demo }: MySpaceProp
         text: `已保存到${isDemo ? "演示沙盒" : "你的账户"} · ${formatMoment(persisted.savedAt)}。${error instanceof Error ? error.message : "计划生成失败，请稍后重试。"}可在计划页重试。`,
       });
     } finally {
+      setPlanGenerating(false);
       setSaving(false);
     }
   }

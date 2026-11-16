@@ -172,19 +172,22 @@
 - **访问地址**：http://116.62.42.146:3100
 - **演示账号**：3359786126@qq.com
 - **演示密码**：11111111
-- **使用提示**：该账号仅用于功能体验，请勿修改密码或填写真实健康数据。
-- **运行环境**：阿里云 ECS，Node.js 24，MySQL 8，systemd 常驻。
 - **构建与启动**：`prisma generate && next build`，`next start` 监听 3100 端口。
 - **环境变量**：`AUTH_SECRET`、`DATABASE_URL`、`OPENAI_*`、`EMBEDDING_*`、`PLAN_MODEL` 等在服务器环境注入；生产环境设置 `DEMO_MODE="false"`。
 - **数据**：MySQL 与业务同机；迁移使用独立账号，运行时账号只授予业务表权限。
 - **环境分离**：本地开发与公网 ECS 分开部署，计划版本与代码快照可回退。
+
 ## 🚀 快速开始
+
+> 提交包不包含 `node_modules/`、`.next/` 与 `.env.local`，首次运行需要安装依赖并生成本地配置。
 
 ### 1. 环境准备
 
 - Node.js 24
-- MySQL 8
-- 一个 OpenAI 兼容的模型服务与 Embedding 服务（本地体验可先配置演示模式）
+- MySQL 8（本机安装或可访问的实例）
+- 可选：OpenAI 兼容的对话/视觉/Embedding 服务与云端 TTS 服务
+
+不配置模型 Key 也可以启动：`DEMO_MODE=true` 时可直接体验演示流程；AI 助手、拍照识别、语音朗读与 RAG 检索需要对应 Key。
 
 ### 2. 安装依赖
 
@@ -204,7 +207,19 @@ macOS / Linux 使用：
 cp .env.example .env.local
 ```
 
-在 `.env.local` 中填写数据库与模型服务配置。密钥只保存在本机环境变量中，不要提交到仓库。
+至少填写数据库连接；需要 AI 能力时再补模型配置：
+
+| 变量 | 是否必需 | 用途 |
+| --- | --- | --- |
+| `DATABASE_URL` | 必需 | MySQL 连接串，例如 `mysql://user:password@127.0.0.1:3306/zhiyang` |
+| `AUTH_SECRET` | 生产必需 | 登录会话签名；本地开发与演示模式有兜底值 |
+| `OPENAI_*` | AI 功能需要 | 对话、计划生成与修订的模型服务 |
+| `VISION_*`、`MEAL_*` | 餐食识别需要 | 图片识别与结构化分析 |
+| `EMBEDDING_*` | RAG 检索需要 | 知识库向量化与检索 |
+| `TTS_*` | 云端朗读需要 | 百炼 Qwen-TTS；留空时复用 `EMBEDDING_API_KEY` |
+| `DEMO_MODE` | 可选 | 默认 `true`；生产环境设为 `false` 恢复登录校验 |
+
+`.env.local` 只保存在本机，已被 `.gitignore` 排除，不要提交到仓库或发给评委。
 
 ### 4. 初始化数据库
 
@@ -213,13 +228,29 @@ npm run db:setup
 npm run db:generate
 ```
 
+`db:setup` 会自动创建 `DATABASE_URL` 指定的数据库（如果不存在）并建表，需要 MySQL 账号具备建库、建表权限。需要知识库检索时，再执行：
+
+```bash
+npm run rag:ingest
+```
+
+该步骤需要 `EMBEDDING_API_KEY`。
+
 ### 5. 启动
 
 ```bash
 npm run dev
 ```
 
-浏览器打开开发地址即可。未配置模型服务时，可先使用演示模式走完记录与计划流程。
+浏览器打开 http://localhost:3000。
+
+Windows 也可以双击 `启动智养AI.bat`：首次运行缺少 `.env.local` 时，脚本会用 `.env.example` 生成并打开记事本，填好 `DATABASE_URL` 保存后再次双击即可；该脚本默认使用 3100 端口，启动后打开 http://localhost:3100。macOS / Linux 或需要指定端口时运行：
+
+```bash
+npm run dev -- -p 3100
+```
+
+首次启动会生成 `.next` 缓存，之后启动会快很多。
 
 ### 6. 质量检查
 
@@ -228,6 +259,13 @@ npm run typecheck
 npm run lint
 npm run build
 ```
+
+### 7. 常见问题
+
+- 页面打不开：确认终端已出现 `Ready`，并检查端口是否被占用。
+- 页面能打开但 AI 报错：检查 `OPENAI_*`、`VISION_*`、`EMBEDDING_*` 是否已配置。
+- 登录或计划保存失败：确认 MySQL 正在运行，`DATABASE_URL` 的账号能访问对应数据库。
+- 首次启动很慢：属于正常安装与编译；`node_modules` 与 `.next` 不随提交包分发。
 
 
 
@@ -315,8 +353,9 @@ npm run build
 - v22 · 2026-11-14 · 训练打卡、体重编辑与计划预览同步
 - v23 · 2026-11-15 · 项目细节优化
 - v24 · 2026-11-15 · 打磨细节
+- v25 · 2026-11-16 · 最新版
 
-> v01–v24 为开发快照编号；当前发布版本为 v1.0.0。
+> v01–v25 为开发快照编号；当前发布版本为 v1.0.0。
 
 ### 待优化项
 

@@ -92,13 +92,18 @@ function getChatProvider() {
   return createOpenAI({ apiKey, ...(baseURL ? { baseURL } : {}), ...(chatFetch ? { fetch: chatFetch } : {}) });
 }
 
+// Demo speed mode: plans use the chat model with thinking disabled.
+const PLAN_DEMO_FAST_MODE = true;
+
 function getPlanProvider() {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) throw new Error("OPENAI_API_KEY is not configured.");
   const baseURL = process.env.OPENAI_BASE_URL?.trim();
-  const planFetch = process.env.PLAN_ENABLE_THINKING === "true"
-    ? withThinking("enabled", process.env.PLAN_REASONING_EFFORT?.trim() || undefined)
-    : undefined;
+  const planFetch = PLAN_DEMO_FAST_MODE
+    ? withThinking("disabled")
+    : process.env.PLAN_ENABLE_THINKING === "true"
+      ? withThinking("enabled", process.env.PLAN_REASONING_EFFORT?.trim() || undefined)
+      : undefined;
   return createOpenAI({ apiKey, ...(baseURL ? { baseURL } : {}), ...(planFetch ? { fetch: planFetch } : {}) });
 }
 
@@ -107,7 +112,7 @@ export function getChatModelName() {
 }
 
 export function getPlanModelName() {
-  return process.env.PLAN_MODEL?.trim() || getChatModelName();
+  return PLAN_DEMO_FAST_MODE ? getChatModelName() : process.env.PLAN_MODEL?.trim() || getChatModelName();
 }
 
 export function getModel() {

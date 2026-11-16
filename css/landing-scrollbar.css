@@ -12,11 +12,13 @@
 
 .landing-scrollbar__thumb {
   position: absolute;
+  top: 0;
   right: 4px;
   width: 5px;
   border-radius: 999px;
   background: rgba(53, 91, 70, 0.24);
   box-shadow: 0 0 0 1px rgba(251, 252, 247, 0.4);
+  will-change: transform;
   transition: background 0.18s ease, width 0.18s ease, right 0.18s ease;
 }
 

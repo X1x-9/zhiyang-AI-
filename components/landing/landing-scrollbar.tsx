@@ -6,47 +6,72 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
 }
 
+type Metrics = {
+  maxScroll: number;
+  railTop: number;
+  railHeight: number;
+  thumbHeight: number;
+};
+
 export function LandingScrollbar() {
   const railRef = React.useRef<HTMLDivElement>(null);
+  const thumbRef = React.useRef<HTMLSpanElement>(null);
   const dragging = React.useRef(false);
+  const frame = React.useRef(0);
+  const metrics = React.useRef<Metrics>({ maxScroll: 0, railTop: 0, railHeight: 0, thumbHeight: 0 });
   const [active, setActive] = React.useState(false);
-  const [metrics, setMetrics] = React.useState({ top: 0, height: 16 });
 
   React.useEffect(() => {
-    let frame = 0;
-    const update = () => {
-      cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(() => {
-        const viewport = window.innerHeight;
-        const total = Math.max(document.documentElement.scrollHeight, viewport);
-        const maxScroll = total - viewport;
-        const height = clamp((viewport / total) * 100, 9, 100);
-        const top = maxScroll > 0 ? clamp(window.scrollY / maxScroll, 0, 1) * (100 - height) : 0;
-        setMetrics({ top, height });
-      });
+    const rail = railRef.current;
+    if (!rail) return;
+
+    const paint = () => {
+      frame.current = 0;
+      const thumb = thumbRef.current;
+      if (!thumb) return;
+      const { railHeight, railTop } = metrics.current;
+      const viewport = window.innerHeight;
+      const total = Math.max(document.documentElement.scrollHeight, viewport);
+      const thumbHeight = Math.max((viewport / total) * railHeight, railHeight * 0.09);
+      const maxScroll = Math.max(0, total - viewport);
+      metrics.current = { maxScroll, railTop, railHeight, thumbHeight };
+      const progress = maxScroll > 0 ? clamp(window.scrollY / maxScroll, 0, 1) : 0;
+      const offset = progress * Math.max(0, railHeight - thumbHeight);
+      const height = `${thumbHeight}px`;
+      if (thumb.style.height !== height) thumb.style.height = height;
+      thumb.style.transform = `translate3d(0, ${offset}px, 0)`;
     };
-    update();
-    window.addEventListener("scroll", update, { passive: true });
-    window.addEventListener("resize", update);
-    const observer = new ResizeObserver(update);
+
+    const schedule = () => {
+      if (frame.current) return;
+      frame.current = requestAnimationFrame(paint);
+    };
+
+    const measure = () => {
+      const rect = rail.getBoundingClientRect();
+      metrics.current = { ...metrics.current, railTop: rect.top, railHeight: rect.height };
+      paint();
+    };
+
+    measure();
+    window.addEventListener("scroll", schedule, { passive: true });
+    window.addEventListener("resize", measure);
+    const observer = new ResizeObserver(measure);
     observer.observe(document.body);
     return () => {
-      cancelAnimationFrame(frame);
-      window.removeEventListener("scroll", update);
-      window.removeEventListener("resize", update);
+      if (frame.current) cancelAnimationFrame(frame.current);
+      frame.current = 0;
+      window.removeEventListener("scroll", schedule);
+      window.removeEventListener("resize", measure);
       observer.disconnect();
     };
   }, []);
 
   const scrollToPointer = (clientY: number) => {
-    const rail = railRef.current;
-    if (!rail) return;
-    const rect = rail.getBoundingClientRect();
-    const thumb = (rect.height * metrics.height) / 100;
-    const usable = Math.max(1, rect.height - thumb);
-    const y = clamp(clientY - rect.top - thumb / 2, 0, usable);
-    const maxScroll = document.documentElement.scrollHeight - window.innerHeight;
-    window.scrollTo({ top: (y / usable) * maxScroll });
+    const { railTop, railHeight, thumbHeight, maxScroll } = metrics.current;
+    const usable = Math.max(1, railHeight - thumbHeight);
+    const y = clamp(clientY - railTop - thumbHeight / 2, 0, usable);
+    window.scrollTo({ top: (y / usable) * maxScroll, behavior: "instant" });
   };
 
   const onPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
@@ -80,10 +105,7 @@ export function LandingScrollbar() {
       onPointerUp={onPointerEnd}
       onPointerCancel={onPointerEnd}
     >
-      <span
-        className="landing-scrollbar__thumb"
-        style={{ top: `${metrics.top}%`, height: `${metrics.height}%` }}
-      />
+      <span ref={thumbRef} className="landing-scrollbar__thumb" />
     </div>
   );
 }

@@ -313,7 +313,11 @@ function useGeneratedPlan(hasStored: boolean): PlanState {
     if (!hasStored) return;
     const handler = () => { void refresh(); };
     window.addEventListener("plan-adjustment-changed", handler);
-    return () => window.removeEventListener("plan-adjustment-changed", handler);
+    window.addEventListener("plan-generated", handler);
+    return () => {
+      window.removeEventListener("plan-adjustment-changed", handler);
+      window.removeEventListener("plan-generated", handler);
+    };
   }, [hasStored, refresh]);
 
   const generate = React.useCallback(async (feedback?: string, options?: { silentError?: boolean }): Promise<PlanGenerateOutcome> => {
@@ -1550,9 +1554,11 @@ function GeneratedPlanPanel({ kind, profile, hasStored, planState }: {
   planState: PlanState;
 }) {
   const setPage = useHealthStore((state) => state.setPage);
+  const externalGenerating = useHealthStore((state) => state.planGenerating);
   const { plan, activeVersion, versions, versionTotal, adjustment, loading, chatting, activating, deleting, restoringAdjustment, error, generate, chat, activate, remove, restoreAdjustment } = planState;
   const completeness = hasStored ? spaceCompleteness(profile) : spaceCompleteness(createEmptySpaceProfile());
   const [revisionOpen, setRevisionOpen] = React.useState(false);
+  const generating = loading || externalGenerating;
 
   if (!hasStored) {
     return (
@@ -1594,10 +1600,10 @@ function GeneratedPlanPanel({ kind, profile, hasStored, planState }: {
             type="button"
             className="pp-generated-regen"
             onClick={() => { if (plan) setRevisionOpen(true); else void generate(); }}
-            disabled={loading || activating !== null || deleting}
+            disabled={generating || activating !== null || deleting}
           >
-            {loading ? <Loader2 size={15} className="pp-spin" aria-hidden="true" /> : plan ? <MessageCircle size={15} aria-hidden="true" /> : <RotateCw size={15} aria-hidden="true" />}
-            {loading ? "生成中…" : plan ? "生成新版本" : "生成我的计划"}
+            {generating ? <Loader2 size={15} className="pp-spin" aria-hidden="true" /> : plan ? <MessageCircle size={15} aria-hidden="true" /> : <RotateCw size={15} aria-hidden="true" />}
+            {generating ? "生成中…" : plan ? "生成新版本" : "生成我的计划"}
           </button>
         </header>
 
@@ -1615,10 +1621,10 @@ function GeneratedPlanPanel({ kind, profile, hasStored, planState }: {
         {plan && <PlanStatusBanner plan={plan} activeVersion={activeVersion} activating={activating} deleting={deleting} activate={activate} />}
 
         {error && <p className="pp-generated-error" role="alert">{error}</p>}
-        {loading && !plan && (
+        {generating && !plan && (
           <div className="pp-generated-loading">
             <Loader2 size={18} className="pp-spin" aria-hidden="true" />
-            <span>正在汇总记录并计算…</span>
+            <span>{loading ? "正在汇总记录并计算…" : "正在按你保存的资料生成计划…"}</span>
           </div>
         )}
 
